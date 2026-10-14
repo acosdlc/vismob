@@ -46,17 +46,21 @@ export function uploadLimitError(existing: number, files: readonly File[]): stri
   return null;
 }
 
-async function compress(file: File): Promise<File> {
+/**
+ * The photo re-encoded as JPEG, or null when the browser cannot decode it: the signed
+ * path ends in `.jpg`, so nothing else may go there. Compression runs on the main
+ * thread: the library's web worker loads itself from a CDN, which the CSP refuses.
+ */
+async function compress(file: File): Promise<File | null> {
   try {
     return await imageCompression(file, {
       maxWidthOrHeight: UPLOAD_LIMITS.maxSidePx,
       initialQuality: UPLOAD_LIMITS.jpegQuality,
       fileType: "image/jpeg",
-      useWebWorker: true,
+      useWebWorker: false,
     });
   } catch {
-    // An image the browser cannot decode is sent as it is (the bucket enforces size and type).
-    return file;
+    return file.type === "image/jpeg" ? file : null;
   }
 }
 
@@ -104,24 +108,34 @@ export function FileUpload({ id, error, onUploadingChange }: FileUploadProps) {
 
     try {
       const compressed = await Promise.all(files.map(compress));
-      const urls = await createUploadUrls(files.length);
+      // A file the browser could not decode is refused here; the others go on.
+      const ready = batch.filter((item, index) => {
+        if (compressed[index]) return true;
+        update(item.id, { status: "error" });
+        setLocalError(FORM_MESSAGES.uploads);
+        return false;
+      });
+      if (ready.length === 0) return;
+
+      const urls = await createUploadUrls(ready.length);
       if (!urls.ok) {
-        for (const item of batch) update(item.id, { status: "error" });
+        for (const item of ready) update(item.id, { status: "error" });
         setLocalError(urls.message);
         return;
       }
 
       const bucket = createClient().storage.from(UPLOAD_LIMITS.bucket);
       await Promise.all(
-        batch.map(async (item, index) => {
+        ready.map(async (item, index) => {
           const target = urls.uploads[index];
-          if (!target) {
+          const file = compressed[batch.indexOf(item)];
+          if (!target || !file) {
             update(item.id, { status: "error" });
             setLocalError(FORM_MESSAGES.generic);
             return;
           }
-          const { error: uploadError } = await bucket.uploadToSignedUrl(target.path, target.token, compressed[index], {
-            contentType: compressed[index].type || "image/jpeg",
+          const { error: uploadError } = await bucket.uploadToSignedUrl(target.path, target.token, file, {
+            contentType: file.type || "image/jpeg",
           });
           if (uploadError) {
             update(item.id, { status: "error" });

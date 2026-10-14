@@ -49,7 +49,8 @@ export const UPLOAD_LIMITS = {
 
 /** Anti-spam and bookkeeping fields every form posts (hidden inputs). */
 export const FORM_FIELDS = {
-  honeypot: "company",
+  /** Not `company`: Chrome's profile autofill fills a field by that name with the organisation. */
+  honeypot: "website",
   startedAt: "startedAt",
   turnstile: "turnstileToken",
   source: "source",

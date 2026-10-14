@@ -33,6 +33,8 @@ export interface ContactFormProps {
   responseTime: string;
   /** The page the form sits on („/” or „/contact”), stored in `leads.source.page`. */
   page: string;
+  /** Level of the confirmation heading: 3 under the H2 of Acasă (default), 2 under the H1 of /contact. */
+  confirmHeadingLevel?: 2 | 3;
 }
 
 /** The field order of DESIGN §4.1 09; the first invalid one gets the focus (§3.16). */
@@ -79,13 +81,27 @@ const subscribeNoop = () => () => undefined;
 // DESIGN §4.1 09 „Cerere de ofertă” and §3.16. `useActionState` drives the Server
 // Action; a client pre-pass of the same Zod schema puts the focus on the first error
 // without a round trip; without JavaScript the `<form action>` posts to the action.
-export function ContactForm({ responseTime, page }: ContactFormProps) {
+export function ContactForm({ responseTime, page, confirmHeadingLevel = 3 }: ContactFormProps) {
   // „Trimite altă cerere” remounts the form, which resets useActionState and every field.
   const [round, setRound] = useState(0);
-  return <RequestForm key={round} responseTime={responseTime} page={page} onReset={() => setRound((r) => r + 1)} />;
+  return (
+    <RequestForm
+      key={round}
+      responseTime={responseTime}
+      page={page}
+      confirmHeadingLevel={confirmHeadingLevel}
+      onReset={() => setRound((r) => r + 1)}
+    />
+  );
 }
 
-function RequestForm({ responseTime, page, onReset }: ContactFormProps & { onReset: () => void }) {
+function RequestForm({
+  responseTime,
+  page,
+  confirmHeadingLevel,
+  onReset,
+}: ContactFormProps & { confirmHeadingLevel: 2 | 3; onReset: () => void }) {
+  const ConfirmHeading = confirmHeadingLevel === 2 ? "h2" : "h3";
   const [state, formAction, pending] = useActionState(submitContact, INITIAL_FORM_STATE);
   const [clientErrors, setClientErrors] = useState<FieldErrors | null>(null);
   const [startedAt, setStartedAt] = useState("");
@@ -147,9 +163,9 @@ function RequestForm({ responseTime, page, onReset }: ContactFormProps & { onRes
       <FormCard bar={{ left: "Cerere de ofertă", right: `Răspuns în ${responseTime}` }}>
         <div className="flex flex-col gap-4">
           <Eyebrow className="text-accent">Cerere trimisă</Eyebrow>
-          <h3 ref={confirmHeadingRef} tabIndex={-1} className="h3-confirm outline-none">
+          <ConfirmHeading ref={confirmHeadingRef} tabIndex={-1} className="h3-confirm outline-none">
             Mulțumim! Te sunăm în {responseTime}.
-          </h3>
+          </ConfirmHeading>
           <p className="text-ink-2">Între timp, poți să te uiți prin materiale sau să încerci configuratorul.</p>
           <div className="flex flex-wrap gap-3 pt-2">
             <Button href="/configurator" variant="primary">
@@ -238,7 +254,7 @@ function RequestForm({ responseTime, page, onReset }: ContactFormProps & { onRes
 
         {/* Anti-spam and bookkeeping (ARHITECTURA §6.1 step 3.1; hidden, never shown). */}
         <div className="sr-only" aria-hidden="true">
-          <label htmlFor={`${id}-${FORM_FIELDS.honeypot}`}>Companie</label>
+          <label htmlFor={`${id}-${FORM_FIELDS.honeypot}`}>Lasă acest câmp gol</label>
           <input
             id={`${id}-${FORM_FIELDS.honeypot}`}
             name={FORM_FIELDS.honeypot}

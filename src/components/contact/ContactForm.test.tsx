@@ -79,7 +79,8 @@ describe("ContactForm", () => {
     expect(honeypot).toHaveAttribute("tabindex", "-1");
     expect(honeypot).toHaveAttribute("autocomplete", "off");
     expect(honeypot!.closest("[aria-hidden='true']")?.className).toContain("sr-only");
-    expect(honeypot).toHaveAccessibleName(); // labelled, like every input
+    expect(honeypot).toHaveAccessibleName("Lasă acest câmp gol"); // labelled, like every input
+    expect(honeypot).toHaveAttribute("name", "website"); // never `company`: Chrome autofills that
 
     expect(container.querySelector(`input[name="${FORM_FIELDS.startedAt}"]`)).toHaveAttribute("type", "hidden");
     const source = container.querySelector<HTMLInputElement>(`input[name="${FORM_FIELDS.source}"]`);
@@ -152,6 +153,17 @@ describe("ContactForm", () => {
 
     expect(await screen.findByText("Cerere trimisă")).toBeInTheDocument();
     const heading = screen.getByRole("heading", { level: 3, name: "Mulțumim! Te sunăm în 24 de ore." });
+    expect(heading.className).toContain("h3-confirm");
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("renders the confirmation as an H2 under the H1 of /contact", async () => {
+    parseLeadForm.mockReturnValue({ ok: true, data: {} });
+    render(<ContactForm responseTime="24 de ore" page="/contact" confirmHeadingLevel={2} />);
+    fillValid();
+    fireEvent.click(screen.getByRole("button", { name: "Trimite cererea" }));
+
+    const heading = await screen.findByRole("heading", { level: 2, name: "Mulțumim! Te sunăm în 24 de ore." });
     expect(heading.className).toContain("h3-confirm");
     expect(document.activeElement).toBe(heading);
     expect(
