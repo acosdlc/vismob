@@ -48,7 +48,7 @@ export function Swatch({
       </div>
       <div className="flex flex-col gap-[2px]">
         <span className="text-[14px] leading-[1.3] font-semibold">{name}</span>
-        <span className="font-mono text-[11px] leading-[1.4] text-muted">{subText}</span>
+        <span className="font-mono text-[12px] leading-[1.4] text-muted">{subText}</span>
       </div>
     </div>
   );

@@ -15,7 +15,7 @@ export interface SpecListProps {
 // muted (padding 12px 20px 12px 0), dd 16px (padding 12px 0), both with a rule below.
 export function SpecList({ items, className }: SpecListProps) {
   return (
-    <dl className={cx("grid grid-cols-[auto_1fr] items-baseline border-t border-rule", className)}>
+    <dl className={cx("grid grid-cols-[auto_1fr] border-t border-rule", className)}>
       {items.map((item) => (
         <Fragment key={item.k}>
           <dt className="border-b border-rule py-3 pr-5 font-mono text-[12px] leading-[1.5] tracking-[.06em] text-muted uppercase">
