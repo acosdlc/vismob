@@ -27,7 +27,7 @@ export function ConfiguratorBand() {
             <DimensionLine label="160 cm" orientation="horizontal" background="var(--color-accent)" />
           </div>
           <div className="absolute bottom-[13.3%] left-[89%] h-[66.7%]">
-            <DimensionLine label="120 cm" orientation="vertical" background="var(--color-accent)" />
+            <DimensionLine label="120 cm" orientation="vertical" background="var(--color-accent)" className="h-full" />
           </div>
         </div>
       </div>
