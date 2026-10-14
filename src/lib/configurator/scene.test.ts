@@ -188,6 +188,14 @@ describe("drawingScene", () => {
     const r = roles(s);
     expect(r.indexOf("led")).toBeGreaterThan(r.lastIndexOf("leg"));
     expect(r.indexOf("led")).toBeLessThan(r.indexOf("frame"));
+
+    // On a base that sits on the floor the glow stops at the floor line instead of bleeding under it.
+    const low = scene({ led: true, base: "lada" });
+    const lowLed = byRole(low, "led")[0];
+    if (lowLed.type !== "group") throw new Error("led is a group");
+    const glow = lowLed.children[0];
+    if (glow.type !== "rect") throw new Error("glow is a rect");
+    expect(glow.y + glow.height).toBeLessThanOrEqual(low.floor);
   });
 
   it("nightstands: two groups with legs, box, drawer line; the world widens at 200", () => {

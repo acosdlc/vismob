@@ -120,7 +120,7 @@ const LED_GLOW = "rgba(255,176,72,.55)";
 const GRAIN = "rgba(60,35,10,.16)";
 
 /** Numbers rounded to 3 decimals, so 0.58 × 120 prints as 69.6, not 69.60000000000001. */
-export function n(value: number): number {
+function n(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
@@ -345,7 +345,9 @@ export function drawingScene(r: Resolved, opts: SceneOptions = {}): DrawingScene
       stdDeviation: 3,
       region: { x: "-10%", y: "-400%", width: "120%", height: "900%" },
     });
-    const glow: Rect = { x: g.led.x, y: g.led.y - 2, w: g.led.w, h: g.led.h + 2 };
+    // The glow reaches 2 cm under the strip, but never below the floor (bases on the floor).
+    const below = Math.min(2, g.led.y - g.world.floor);
+    const glow: Rect = { x: g.led.x, y: g.led.y - below, w: g.led.w, h: g.led.h + below };
     nodes.push({
       type: "group",
       role: "led",
@@ -376,7 +378,7 @@ export function drawingScene(r: Resolved, opts: SceneOptions = {}): DrawingScene
   }
 
   // 10. Pillows.
-  for (const p of g.pillows) nodes.push(rect(p, H, { rx: 4, fill: PILLOW, ...OUTLINE, role: "pillow" }));
+  for (const p of g.pillows) nodes.push({ ...rect(p, H, { fill: PILLOW, ...OUTLINE, role: "pillow" }), rx: 4 });
 
   return { width: W, height: 180, floor: floorY, defs, nodes };
 }

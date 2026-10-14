@@ -26,23 +26,19 @@ export function DimensionOverlay({ resolved }: DimensionOverlayProps) {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 text-ink">
       {/* width: from dimWidth.x1 to x2, bottom 2.2%, 14px high */}
-      <DimensionLine
-        label={g.dimWidth.label}
-        orientation="horizontal"
-        background={PAPER}
-        className="absolute bottom-[2.2%] h-[14px]!"
-        style={{ left: pct(x1, W), width: pct(x2 - x1, W) }}
-      />
+      <div className="absolute bottom-[2.2%]" style={{ left: pct(x1, W), width: pct(x2 - x1, W) }} data-dim="width">
+        <DimensionLine label={g.dimWidth.label} orientation="horizontal" background={PAPER} className="h-[14px]!" />
+      </div>
 
       {/* height: in the 40px column on the right, from the floor to floor + hb */}
-      <div className="absolute top-0 bottom-0 -right-10 w-10">
-        <DimensionLine
-          label={g.dimHeight.label}
-          orientation="vertical"
-          background={PAPER}
+      <div className="absolute top-0 -right-10 bottom-0 w-10">
+        <div
           className="absolute left-1/2 -translate-x-1/2"
           style={{ bottom: pct(floor, H), height: pct(hb, H) }}
-        />
+          data-dim="height"
+        >
+          <DimensionLine label={g.dimHeight.label} orientation="vertical" background={PAPER} className="h-full" />
+        </div>
       </div>
 
       {/* scale: a 50 cm bar, half filled, „0 — 50 cm” in DM Mono 10px */}

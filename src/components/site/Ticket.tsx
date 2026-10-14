@@ -29,9 +29,9 @@ const ROWS: Record<NonNullable<TicketProps["size"]>, string> = {
 export function Ticket({ title, number, rows, size = "sm", children, className }: TicketProps) {
   return (
     <div className={cx("border-[1.5px] border-ink bg-white text-ink", className)}>
-      <div className="flex items-baseline justify-between gap-4 bg-ink px-[14px] py-2 font-mono text-[11px] leading-[1.4] tracking-[.08em] text-paper uppercase">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 bg-ink px-[14px] py-2 font-mono text-[11px] leading-[1.4] tracking-[.08em] text-paper uppercase">
         <span>{title}</span>
-        {number && <span className="text-right">{number}</span>}
+        {number && <span className="text-right whitespace-nowrap">{number}</span>}
       </div>
       <div className="flex flex-col gap-3 p-[14px]">
         <dl className={cx("grid grid-cols-[auto_1fr] font-mono leading-[1.5]", ROWS[size])}>

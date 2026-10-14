@@ -28,7 +28,7 @@ export function StepExtras({ value, onChange }: StepExtrasProps) {
           name={extra.key}
           checked={value[extra.key]}
           onChange={(e) => onChange({ [extra.key]: e.target.checked })}
-          labelClassName="rounded-ui border border-rule bg-card p-[14px] has-checked:border-ink"
+          labelClassName="rounded-ui border border-rule bg-card p-[14px]"
         >
           <span className="flex flex-col gap-[2px]">
             <span className="text-[16px] leading-[1.3] font-semibold">{extra.title}</span>

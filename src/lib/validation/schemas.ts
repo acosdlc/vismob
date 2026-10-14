@@ -1,5 +1,7 @@
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { z } from "zod";
+import { QUOTE_FIELDS } from "@/components/configurator/types";
+import { configFromParams } from "@/lib/configurator/url";
 import { FORM_FIELDS, FORM_MESSAGES, MATTRESS_SIZES, UPLOAD_LIMITS, type FieldErrors } from "@/lib/leads/types";
 
 // Zod schemas for the request forms (ARHITECTURA §6.1 table). Every message is a
@@ -90,8 +92,24 @@ export const contactSchema = leadBaseSchema.extend({
   [FORM_FIELDS.uploads]: uploads,
 });
 
+/**
+ * The configurator's hidden `config` input: `paramsFromConfig(cfg).toString()` (DESIGN
+ * §5.3). Only its presence is checked here; `resolve()` repairs every value on the
+ * server, and the code and the price are recomputed from the result (§5.7).
+ */
+const config = z
+  .string({ error: FORM_MESSAGES.required })
+  .trim()
+  .min(1, FORM_MESSAGES.required)
+  .transform((value) => configFromParams(new URLSearchParams(value)));
+
+export const quoteSchema = leadBaseSchema.extend({
+  [QUOTE_FIELDS.config]: config,
+});
+
 export type LeadBaseInput = z.output<typeof leadBaseSchema>;
 export type ContactInput = z.output<typeof contactSchema>;
+export type QuoteInput = z.output<typeof quoteSchema>;
 
 /** The form's string fields, first value per name; files and React's `$ACTION_*` entries are skipped. */
 export function formValues(formData: FormData): Record<string, string> {

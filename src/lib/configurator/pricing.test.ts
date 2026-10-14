@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, SEED_CATALOG } from "./catalog.seed";
-import { estimatePrice, type Pricing } from "./pricing";
+import { estimatePrice, priceFor, type Pricing } from "./pricing";
 import { resolve } from "./rules";
 import type { Config } from "./types";
 
@@ -82,5 +82,21 @@ describe("estimatePrice", () => {
     expect(estimatePrice(lamele, PRICING, "A")).toBeNull();
     const missing = { ...PRICING, grid: { capitonat: PRICING.grid.capitonat } as Pricing["grid"] };
     expect(estimatePrice(res({ model: "canale" }), missing, "A")).toBeNull();
+  });
+});
+
+describe("priceFor", () => {
+  it("returns null without a grid and estimatePrice's result with one", () => {
+    expect(priceFor(res(), null)).toBeNull();
+    expect(priceFor(res(), PRICING)).toBe(3150);
+    expect(priceFor(res({ model: "lamele", family: "lemn", color: "lm-stejar" }), PRICING)).toBeNull();
+  });
+
+  it("uses the colour's price category, A when the catalog gives none", () => {
+    const r = res({ hb: 100 });
+    expect(r.color.priceCategory).toBeUndefined();
+    expect(priceFor(r, PRICING)).toBe(3000);
+    const catB = { ...r, color: { ...r.color, priceCategory: "B" as const } };
+    expect(priceFor(catB, PRICING)).toBe(3300);
   });
 });

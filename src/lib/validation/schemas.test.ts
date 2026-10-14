@@ -1,7 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
+import { QUOTE_FIELDS } from "@/components/configurator/types";
+import { DEFAULT_CONFIG } from "@/lib/configurator/catalog.seed";
+import { paramsFromConfig } from "@/lib/configurator/url";
 import { FORM_FIELDS, FORM_MESSAGES, UPLOAD_LIMITS } from "@/lib/leads/types";
-import { contactSchema, formValues, leadBaseSchema, parseLeadForm } from "./schemas";
+import { contactSchema, formValues, leadBaseSchema, parseLeadForm, quoteSchema } from "./schemas";
 
 const UUID = "0b3a9a1e-1234-4abc-8def-0123456789ab";
 
@@ -164,6 +167,42 @@ describe("contactSchema", () => {
     if (!notStrings.success) {
       expect(notStrings.error.issues.find((i) => i.path[0] === "uploads")?.message).toBe(FORM_MESSAGES.uploads);
     }
+  });
+});
+
+describe("quoteSchema", () => {
+  const QUOTE = { name: VALID.name, phone: VALID.phone, email: VALID.email, privacy: VALID.privacy };
+
+  it("round-trips the default configuration through the hidden field", () => {
+    const result = quoteSchema.safeParse({ ...QUOTE, [QUOTE_FIELDS.config]: paramsFromConfig(DEFAULT_CONFIG).toString() });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.config).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("round-trips a custom size with its extras", () => {
+    const custom = { ...DEFAULT_CONFIG, size: "custom" as const, customW: 150, customL: 210, led: true, nightstands: true };
+    const result = quoteSchema.safeParse({ ...QUOTE, [QUOTE_FIELDS.config]: paramsFromConfig(custom).toString() });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.config).toEqual(custom);
+  });
+
+  it("requires the field; an unknown value is left to resolve()", () => {
+    for (const value of [undefined, "", "   "]) {
+      const result = quoteSchema.safeParse({ ...QUOTE, [QUOTE_FIELDS.config]: value });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.find((i) => i.path[0] === QUOTE_FIELDS.config)?.message).toBe(FORM_MESSAGES.required);
+      }
+    }
+    const odd = quoteSchema.safeParse({ ...QUOTE, [QUOTE_FIELDS.config]: "m=nope&h=abc" });
+    expect(odd.success).toBe(true);
+    if (odd.success) expect(odd.data.config).toMatchObject({ model: "nope", hb: DEFAULT_CONFIG.hb });
+  });
+
+  it("maps a missing config to its FORM_MESSAGES text through parseLeadForm", () => {
+    const result = parseLeadForm(form(QUOTE), quoteSchema);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.fieldErrors).toEqual({ [QUOTE_FIELDS.config]: FORM_MESSAGES.required });
   });
 });
 

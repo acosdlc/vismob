@@ -30,7 +30,7 @@ export const RIGHT_CLASSES = "order-2 flex min-w-0 shrink grow basis-[400px] fle
 
 /** The top bar of the drawing frame (§4.2 item 1): DM Mono 11px uppercase, rule below, 10px 14px. */
 export const FIGURE_BAR_CLASSES =
-  "flex items-baseline justify-between gap-4 border-b border-rule px-[14px] py-[10px] font-mono text-[11px] leading-[1.4] tracking-[.08em] uppercase";
+  "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-rule px-[14px] py-[10px] font-mono text-[11px] leading-[1.4] tracking-[.08em] uppercase";
 
 export interface StepFieldsetProps {
   n: string;
@@ -64,7 +64,9 @@ export function FigureFrame({ code, children }: { code?: ReactNode; children?: R
         <span>Desen la scară · vedere din față</span>
         {code && <span className="text-right">{code}</span>}
       </div>
-      <div className="drafting aspect-[320/180] w-full">{children}</div>
+      <div className="drafting pr-10">
+        <div className="aspect-[320/180] w-full">{children}</div>
+      </div>
     </div>
   );
 }

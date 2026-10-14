@@ -15,7 +15,7 @@ export interface StepHeadboardProps {
 export function StepHeadboard({ value, onChange }: StepHeadboardProps) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid max-w-[420px] grid-cols-3 divide-x-[1.5px] divide-ink overflow-hidden rounded-ui border-[1.5px] border-ink">
+      <div className="grid max-w-[420px] grid-cols-3 divide-x-[1.5px] divide-ink rounded-ui border-[1.5px] border-ink">
         {HEIGHTS.map((hb) => {
           const selected = hb === value;
           return (
