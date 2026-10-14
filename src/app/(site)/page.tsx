@@ -1,5 +1,6 @@
 import { Atelier } from "@/components/home/Atelier";
 import { ConfiguratorBand } from "@/components/home/ConfiguratorBand";
+import { ContactForm } from "@/components/contact/ContactForm";
 import { ContactSection } from "@/components/home/ContactSection";
 import { FaqSection } from "@/components/home/FaqSection";
 import { Gallery } from "@/components/home/Gallery";
@@ -45,7 +46,7 @@ export default async function Home() {
       <Atelier settings={settings} />
       <Reviews reviews={reviews} settings={settings} />
       <FaqSection settings={settings} />
-      <ContactSection settings={settings} />
+      <ContactSection settings={settings} form={<ContactForm responseTime={settings.response_time} page="/" />} />
     </>
   );
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { MapEmbed } from "@/components/contact/MapEmbed";
 import { Button } from "@/components/site/Button";
 import { telHref } from "@/components/site/links";
 import { SpecList } from "@/components/site/SpecList";
@@ -6,20 +7,21 @@ import type { Settings } from "@/lib/data/settings.seed";
 import { Section } from "./Section";
 
 // DESIGN §4.1, 09 — Contact. The request form (right column) is passed in by the
-// page: PR-2 adds it with its Server Action; until then the column stays empty
-// rather than showing a form that does not submit.
+// page (`ContactForm` with its Server Action); the map loads only on click (MapEmbed).
 export function ContactSection({
   settings,
   form,
   headingLevel = 2,
+  mapHeight = 220,
 }: {
   settings: Settings;
   form?: ReactNode;
   headingLevel?: 1 | 2;
+  /** 220px on Acasă (DESIGN §4.1), 400px on /contact (§4.5 „harta mare”, docs/PLAN.md). */
+  mapHeight?: number;
 }) {
   const digits = settings.whatsapp_number.replace(/\D/g, "");
   const wa = digits.length >= 8 ? `https://wa.me/${digits}` : null;
-  const maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(settings.address)}`;
   const Heading = headingLevel === 1 ? "h1" : "h2";
   return (
     <Section id="contact" rule>
@@ -46,13 +48,7 @@ export function ContactSection({
               Sună acum
             </Button>
           </div>
-          {/* The map loads only on request (no Google cookies before a click): PR-2 adds
-              the click-to-load embed; until then the button opens Google Maps. */}
-          <div className="photo-placeholder flex h-[220px] items-center justify-center border border-rule">
-            <Button href={maps} variant="secondary" target="_blank" rel="noreferrer">
-              Arată harta
-            </Button>
-          </div>
+          <MapEmbed address={settings.address} height={mapHeight} />
         </div>
         {form && <div className="flex-[1_1_440px]">{form}</div>}
       </div>
