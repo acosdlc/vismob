@@ -9,8 +9,8 @@ export interface TicketRow {
 export interface TicketProps {
   /** Title bar text, e.g. „FIȘĂ PROIECT” or „Fișă de configurare” (rendered uppercase). */
   title: string;
-  /** Right side of the title bar, e.g. „Nr. 0123” or the configuration code. */
-  number?: string;
+  /** Right side of the title bar, e.g. „Nr. 0123” or the configuration code (which may carry aria-live, DESIGN §7). */
+  number?: ReactNode;
   rows: TicketRow[];
   /** `sm`: 12px rows, gap 5px 16px (hero). `md`: 13px rows, gap 7px 18px (configurator). */
   size?: "sm" | "md";

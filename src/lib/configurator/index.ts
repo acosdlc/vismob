@@ -8,3 +8,4 @@ export * from "./geometry";
 export * from "./format";
 export * from "./pricing";
 export * from "./url";
+export * from "./scene";
