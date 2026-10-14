@@ -2,9 +2,14 @@ import "server-only";
 import { createElement } from "react";
 import { LeadConfirmation } from "@/emails/LeadConfirmation";
 import { LeadToWorkshop } from "@/emails/LeadToWorkshop";
+import { formatPrice, ticketRows } from "@/lib/configurator/format";
+import { resolve } from "@/lib/configurator/rules";
+import type { Config } from "@/lib/configurator/types";
+import { getCatalog } from "@/lib/data/catalog";
 import { getSettings } from "@/lib/data/settings";
 import { optionalEnv } from "@/lib/env";
 import { UPLOAD_LIMITS, type LeadRow } from "@/lib/leads/types";
+import { shareUrl } from "@/lib/site-url";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database.types";
 import { sendEmail, type SendEmailResult } from "./email";
@@ -46,6 +51,32 @@ async function signPhotoUrls(admin: AdminClient, paths: string[]): Promise<strin
   return signed.filter((url): url is string => typeof url === "string");
 }
 
+/** What both emails get for a configurator lead (DESIGN §5.6, ARHITECTURA §6.4); nothing for the others. */
+interface ConfigProps {
+  ticketRows?: { k: string; v: string }[];
+  shareUrl?: string;
+  priceLabel?: string;
+}
+
+/**
+ * The stored `config` resolved again against the catalog, so the rows and the
+ * link follow the same rules as the page. The price is the one stored at submit
+ * (recomputed on the server then, §5.7), formatted for the emails.
+ */
+async function configProps(lead: LeadRow): Promise<ConfigProps> {
+  if (lead.kind !== "configurator") return {};
+  if (!lead.config || typeof lead.config !== "object" || Array.isArray(lead.config)) {
+    console.error(`[notify] lead ${lead.id} is a configurator lead without a config.`);
+    return {};
+  }
+  const r = resolve(lead.config as unknown as Config, await getCatalog());
+  return {
+    ticketRows: ticketRows(r),
+    shareUrl: shareUrl(r.cfg),
+    priceLabel: lead.price_estimate_ron != null ? formatPrice(lead.price_estimate_ron) : undefined,
+  };
+}
+
 /** A `settings` address is usable only when it is not a `[...]` placeholder. */
 function realAddress(value: string): string | undefined {
   const trimmed = value.trim();
@@ -74,14 +105,16 @@ export async function dispatchLeadNotifications(leadId: string): Promise<void> {
     const settings = await getSettings();
     const photoUrls = await signPhotoUrls(admin, (files ?? []).map((f) => f.path));
     const notifyEmail = optionalEnv("NOTIFY_EMAIL");
+    const config = await configProps(lead);
 
-    await notifyWorkshop(admin, lead, notifyEmail, settings.workshop_name, photoUrls);
+    await notifyWorkshop(admin, lead, notifyEmail, settings.workshop_name, photoUrls, config);
     await confirmToClient(admin, lead, {
       workshopName: settings.workshop_name,
       responseTime: settings.response_time,
       phonePublic: settings.phone_public,
       emailPublic: settings.email_public,
       replyTo: realAddress(settings.email_public) ?? notifyEmail,
+      config,
     });
   } catch (cause) {
     // Before either send ran: leave both rows as failed so the retry cron (PR-6) finds them.
@@ -98,6 +131,7 @@ async function notifyWorkshop(
   notifyEmail: string | undefined,
   workshopName: string,
   photoUrls: string[],
+  config: ConfigProps,
 ) {
   try {
     if (!notifyEmail) {
@@ -108,7 +142,14 @@ async function notifyWorkshop(
     const result = await sendEmail({
       to: notifyEmail,
       subject: workshopSubject(lead),
-      react: createElement(LeadToWorkshop, { lead, workshopName, photoUrls }),
+      react: createElement(LeadToWorkshop, {
+        lead,
+        workshopName,
+        photoUrls,
+        ticketRows: config.ticketRows,
+        shareUrl: config.shareUrl,
+        priceLabel: config.priceLabel,
+      }),
       replyTo: lead.email,
     });
     if (!result.ok) console.error(`[notify] workshop email failed for ${lead.id}: ${result.error}`);
@@ -122,7 +163,14 @@ async function notifyWorkshop(
 async function confirmToClient(
   admin: AdminClient,
   lead: LeadRow,
-  input: { workshopName: string; responseTime: string; phonePublic: string; emailPublic: string; replyTo?: string },
+  input: {
+    workshopName: string;
+    responseTime: string;
+    phonePublic: string;
+    emailPublic: string;
+    replyTo?: string;
+    config: ConfigProps;
+  },
 ) {
   try {
     const result = await sendEmail({
@@ -134,6 +182,8 @@ async function confirmToClient(
         responseTime: input.responseTime,
         phonePublic: input.phonePublic,
         emailPublic: input.emailPublic,
+        ticketRows: input.config.ticketRows,
+        shareUrl: input.config.shareUrl,
       }),
       replyTo: input.replyTo,
     });

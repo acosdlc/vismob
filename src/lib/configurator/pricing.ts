@@ -40,3 +40,12 @@ export function estimatePrice(r: Resolved, p: Pricing, category: PriceCategory):
     (r.cfg.nightstands ? p.extras.nightstands : 0);
   return Math.round(total / p.roundTo) * p.roundTo;
 }
+
+/**
+ * The price of a resolved configuration, or null when there is no grid
+ * (show_prices off, PR-7 not yet in) or the model has no row. The colour's
+ * category comes from `materials.price_category`; "A" when the catalog has none.
+ */
+export function priceFor(r: Resolved, p: Pricing | null): number | null {
+  return p ? estimatePrice(r, p, r.color.priceCategory ?? "A") : null;
+}

@@ -2,7 +2,10 @@
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LeadRow } from "@/lib/leads/types";
+import { DEFAULT_CONFIG } from "@/lib/configurator/catalog.seed";
+import type { Config } from "@/lib/configurator/types";
 import { SEED_SETTINGS } from "@/lib/data/settings.seed";
+import type { Json } from "@/lib/supabase/database.types";
 
 vi.mock("server-only", () => ({}));
 
@@ -17,6 +20,9 @@ vi.mock("@/lib/data/settings", () => ({ getSettings: mocks.getSettings }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 
 import { dispatchLeadNotifications, PHOTO_LINK_SECONDS } from "./dispatch";
+
+/** Config is an interface (no index signature): the column type needs the cast, as in the action. */
+const asJson = (config: Config) => config as unknown as Json;
 
 const LEAD: LeadRow = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -148,6 +154,59 @@ describe("dispatchLeadNotifications", () => {
       { lead_id: LEAD.id, type: "email_workshop", ok: true, detail: { id: "re_1" } },
       { lead_id: LEAD.id, type: "email_client", ok: true, detail: { id: "re_1" } },
     ]);
+  });
+
+  it("gives both emails the ticket rows, the share link and the price of a configurator lead", async () => {
+    const config = { ...DEFAULT_CONFIG, base: "lada" as const, led: true };
+    mocks.admin = fakeAdmin({
+      lead: {
+        ...LEAD,
+        kind: "configurator",
+        mattress_size: null,
+        config: asJson(config),
+        config_code: "CAP-160x200-CT01-H120-LD-LED",
+        price_estimate_ron: 7450,
+      },
+    });
+
+    await dispatchLeadNotifications(LEAD.id);
+
+    const [workshop, client] = sent();
+    expect(workshop.subject).toBe("Cerere nouă · CAP-160x200-CT01-H120-LD-LED · Ștefan Țăranu, Timișoara");
+    const rows = workshop.react.props.ticketRows as { k: string; v: string }[];
+    expect(rows).toHaveLength(6);
+    expect(rows[0]).toEqual({ k: "Model", v: "Capitonat" });
+    expect(rows[5]).toEqual({ k: "Extra", v: "LED sub pat" });
+    expect(workshop.react.props.shareUrl).toContain("/configurator?m=capitonat");
+    expect(workshop.react.props.shareUrl).toContain("b=lada&led=1");
+    expect(workshop.react.props.priceLabel).toBe("7.450 lei");
+
+    expect(client.subject).toBe("Am primit cererea ta · CAP-160x200-CT01-H120-LD-LED");
+    expect(client.react.props.ticketRows).toEqual(rows);
+    expect(client.react.props.shareUrl).toBe(workshop.react.props.shareUrl);
+  });
+
+  it("leaves the price out when none was stored and the rows out of a contact lead", async () => {
+    mocks.admin = fakeAdmin({
+      lead: { ...LEAD, kind: "configurator", config: asJson(DEFAULT_CONFIG), config_code: "CAP-160x200-CT01-H120-PL" },
+    });
+    await dispatchLeadNotifications(LEAD.id);
+    expect(sent()[0].react.props.priceLabel).toBeUndefined();
+    expect(sent()[0].react.props.ticketRows).toHaveLength(6);
+
+    mocks.sendEmail.mockClear();
+    mocks.admin = fakeAdmin();
+    await dispatchLeadNotifications(LEAD.id);
+    expect(sent()[0].react.props.ticketRows).toBeUndefined();
+    expect(sent()[0].react.props.shareUrl).toBeUndefined();
+    expect(sent()[1].react.props.ticketRows).toBeUndefined();
+  });
+
+  it("still sends a configurator lead whose config is missing, without the rows", async () => {
+    mocks.admin = fakeAdmin({ lead: { ...LEAD, kind: "configurator", config: null, config_code: "CAP-160x200-CT01-H120-PL" } });
+    await dispatchLeadNotifications(LEAD.id);
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(2);
+    expect(sent()[0].react.props.ticketRows).toBeUndefined();
   });
 
   it("replies to the workshop's public address once it is a real one", async () => {

@@ -16,13 +16,13 @@ import { submitContact } from "@/actions/submit-contact";
 import { Button } from "@/components/site/Button";
 import { Eyebrow } from "@/components/site/Eyebrow";
 import { Checkbox, Field, FieldError, FormCard, Input, Label, Select, Textarea, formStackClasses } from "@/components/site/form";
+import { collectSource, focusFirstInvalid as focusFirstInvalidIn } from "@/components/site/form/helpers";
 import {
   CONSENT_TEXT,
   FORM_FIELDS,
   INITIAL_FORM_STATE,
   MATTRESS_SIZES,
   type FieldErrors,
-  type LeadSource,
 } from "@/lib/leads/types";
 import { contactSchema, parseLeadForm } from "@/lib/validation/schemas";
 import { FileUpload } from "./FileUpload";
@@ -44,36 +44,10 @@ const FIELD_ORDER = ["name", "phone", "email", "mattressSize", "message", FORM_F
 const CONSENT_LINK = "Politicii de confidențialitate";
 const [CONSENT_BEFORE, CONSENT_AFTER] = CONSENT_TEXT.split(CONSENT_LINK);
 
-/** What the hidden `source` input carries (ARHITECTURA §6.1; `environment` is added on the server). */
-export function collectSource(page: string, location?: Pick<Location, "search">, referrer?: string): Omit<LeadSource, "environment"> {
-  const source: Omit<LeadSource, "environment"> = { page };
-  if (referrer) source.referrer = referrer;
-  if (location) {
-    const utm: Record<string, string> = {};
-    for (const [key, value] of new URLSearchParams(location.search)) {
-      if (key.startsWith("utm_") && value) utm[key] = value;
-    }
-    if (Object.keys(utm).length > 0) source.utm = utm;
-  }
-  return source;
-}
-
-/**
- * Focuses the first control (in DESIGN order) that has an error; returns whether one was
- * found. A field whose named control is hidden (`uploads`) is found through `data-field`.
- */
+/** Shared with QuoteForm (src/components/site/form/helpers.ts); re-exported for the tests. */
+export { collectSource };
 export function focusFirstInvalid(form: HTMLFormElement, errors: FieldErrors): boolean {
-  for (const field of FIELD_ORDER) {
-    if (!errors[field]) continue;
-    const named = form.elements.namedItem(field);
-    const visible = named instanceof HTMLElement && !(named instanceof HTMLInputElement && named.type === "hidden");
-    const target = visible ? named : form.querySelector<HTMLElement>(`[data-field="${field}"]`);
-    if (target) {
-      target.focus();
-      return true;
-    }
-  }
-  return false;
+  return focusFirstInvalidIn(form, errors, FIELD_ORDER);
 }
 
 const subscribeNoop = () => () => undefined;
