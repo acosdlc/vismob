@@ -17,15 +17,15 @@ export function DimensionLine({
   background = "var(--color-paper)",
   className,
 }: DimensionLineProps) {
-  const text = "relative font-mono text-[12px] leading-4 text-ink";
+  const text = "relative font-mono text-[12px] leading-4";
 
   if (orientation === "vertical") {
     return (
       <div
         aria-hidden="true"
-        className={cx("relative flex w-4 flex-col items-center justify-center border-y-[1.5px] border-ink", className)}
+        className={cx("relative flex w-4 flex-col items-center justify-center border-y-[1.5px] border-current", className)}
       >
-        <span className="absolute inset-y-0 left-1/2 w-[1.5px] -translate-x-1/2 bg-ink" />
+        <span className="absolute inset-y-0 left-1/2 w-[1.5px] -translate-x-1/2 bg-current" />
         <span className={cx(text, "rotate-180 py-[10px] [writing-mode:vertical-rl]")} style={{ background }}>
           {label}
         </span>
@@ -36,9 +36,9 @@ export function DimensionLine({
   return (
     <div
       aria-hidden="true"
-      className={cx("relative flex h-4 items-center justify-center border-x-[1.5px] border-ink", className)}
+      className={cx("relative flex h-4 items-center justify-center border-x-[1.5px] border-current", className)}
     >
-      <span className="absolute inset-x-0 top-1/2 h-[1.5px] -translate-y-1/2 bg-ink" />
+      <span className="absolute inset-x-0 top-1/2 h-[1.5px] -translate-y-1/2 bg-current" />
       <span className={cx(text, "px-[10px]")} style={{ background }}>
         {label}
       </span>
