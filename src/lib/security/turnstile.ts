@@ -2,6 +2,7 @@ import "server-only";
 import { optionalEnv } from "@/lib/env";
 
 export const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+export const SITEVERIFY_TIMEOUT_MS = 5_000;
 
 /**
  * Cloudflare Turnstile siteverify (ARHITECTURA §6.1 step 3.2). Without
@@ -21,6 +22,8 @@ export async function verifyTurnstile(token: string | null, ip: string): Promise
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body,
+      // A hanging siteverify must not hold the Server Action; the catch below answers false.
+      signal: AbortSignal.timeout(SITEVERIFY_TIMEOUT_MS),
     });
     if (!response.ok) return false;
 

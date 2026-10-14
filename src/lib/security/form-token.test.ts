@@ -50,8 +50,9 @@ describe("form token", () => {
     expect(verifyFormToken(token, NOW + FORM_TOKEN_MAX_AGE_MS + 1)).toEqual({ ok: false });
   });
 
-  it("cannot mint without the secret", () => {
+  it("cannot mint or verify without the secret", () => {
     vi.stubEnv("FORM_HMAC_SECRET", "");
     expect(() => mintFormToken(NOW)).toThrow(/FORM_HMAC_SECRET/);
+    expect(() => verifyFormToken("", NOW)).toThrow(/FORM_HMAC_SECRET/);
   });
 });

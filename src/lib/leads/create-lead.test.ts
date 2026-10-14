@@ -210,6 +210,16 @@ describe("createLead", () => {
     expect(fake.inserts).toEqual([]);
   });
 
+  it("answers with the generic message, not „prea repede”, when FORM_HMAC_SECRET is missing", async () => {
+    const fake = fakeAdmin();
+    const formData = form(VALID, null);
+    formData.set(FORM_FIELDS.startedAt, ""); // what issueFormToken returns without the secret
+    vi.stubEnv("FORM_HMAC_SECRET", "");
+    expect(errorState(await run(formData, fake)).message).toBe(FORM_MESSAGES.generic);
+    expect(consoleError).toHaveBeenCalledWith("createLead(contact)", expect.objectContaining({ message: expect.stringContaining("FORM_HMAC_SECRET") }));
+    expect(fake.inserts).toEqual([]);
+  });
+
   it("answers with the generic message when the insert fails", async () => {
     const fake = fakeAdmin({ insertErrors: { leads: "permission denied" } });
     expect(errorState(await run(form(VALID), fake)).message).toBe(FORM_MESSAGES.generic);

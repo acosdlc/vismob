@@ -42,6 +42,7 @@ describe("verifyTurnstile", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(TURNSTILE_VERIFY_URL);
     expect(init.method).toBe("POST");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     const body = init.body as URLSearchParams;
     expect(body.get("secret")).toBe("secret");
     expect(body.get("response")).toBe("tok");

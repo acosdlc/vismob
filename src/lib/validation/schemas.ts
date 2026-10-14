@@ -69,7 +69,9 @@ const uploads = z.preprocess(
     }
   },
   z
-    .array(z.string().regex(PENDING_UPLOAD_PATH, FORM_MESSAGES.uploads), { error: FORM_MESSAGES.uploads })
+    .array(z.string({ error: FORM_MESSAGES.uploads }).regex(PENDING_UPLOAD_PATH, FORM_MESSAGES.uploads), {
+      error: FORM_MESSAGES.uploads,
+    })
     .max(UPLOAD_LIMITS.maxFiles, FORM_MESSAGES.uploads),
 );
 

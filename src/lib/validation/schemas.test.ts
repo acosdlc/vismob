@@ -157,6 +157,13 @@ describe("contactSchema", () => {
     if (!notJson.success) {
       expect(notJson.error.issues.find((i) => i.path[0] === "uploads")?.message).toBe(FORM_MESSAGES.uploads);
     }
+
+    // A crafted element that is not a string gets the same Romanian text, never Zod's default.
+    const notStrings = contactSchema.safeParse({ ...VALID, [FORM_FIELDS.uploads]: JSON.stringify([1]) });
+    expect(notStrings.success).toBe(false);
+    if (!notStrings.success) {
+      expect(notStrings.error.issues.find((i) => i.path[0] === "uploads")?.message).toBe(FORM_MESSAGES.uploads);
+    }
   });
 });
 

@@ -25,6 +25,9 @@ export type FormTokenResult = { ok: false } | { ok: true; ageSeconds: number };
 
 /** Valid when well formed, signed by us and at most 24 hours old; `ageSeconds` is how long ago it was minted. */
 export function verifyFormToken(token: string | null | undefined, now: number = Date.now()): FormTokenResult {
+  // Without the secret nothing can verify: throw (createLead logs it and answers the generic message)
+  // instead of telling the visitor to retry something that can never succeed.
+  requireEnv("FORM_HMAC_SECRET");
   if (typeof token !== "string") return { ok: false };
   const match = TOKEN_SHAPE.exec(token);
   if (!match) return { ok: false };
