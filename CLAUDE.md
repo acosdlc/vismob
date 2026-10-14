@@ -2,7 +2,7 @@
 
 - **Name:** VisMob
 - **What it is:** a presentation and contact site for a workshop that makes beds to order. It is not an online shop. It has a bed configurator with a drawing to scale, a library of material samples that visitors can ask to receive at home, and three request forms that reach the workshop by email.
-- **Domain:** _none yet_
+- **Domain:** `vismob.dev` on Vercel DNS, production at `https://www.vismob.dev` (the apex redirects there). A `.ro` domain on the workshop's company replaces it at launch (docs/PLAN.md, PR-8).
 - **UI language:** Romanian, with comma-below diacritics (ș ț Ș Ț), never cedilla (ş ţ)
 
 ## Project documents
