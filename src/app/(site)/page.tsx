@@ -30,7 +30,7 @@ export default async function Home() {
 
   return (
     <>
-      <Hero settings={settings} hero={hero} />
+      <Hero settings={settings} hero={hero} worksHref={featured.length > 0 ? "#lucrari" : "/lucrari"} />
       <div className="container-site">
         <Facts
           items={[

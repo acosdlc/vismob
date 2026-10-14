@@ -7,8 +7,17 @@ import type { Settings } from "@/lib/data/settings.seed";
 
 // DESIGN §4.1 Hero. The ticket and the dimension come from the project flagged
 // `hero`; without one, only the photo box shows. A row the workshop left empty
-// (no material, no delivery date) is dropped rather than shown blank.
-export function Hero({ settings, hero }: { settings: Settings; hero: Project | null }) {
+// (no material, no delivery date) is dropped rather than shown blank. „Vezi lucrări”
+// goes to #lucrari (DESIGN); when section 05 is hidden it goes to /lucrari instead.
+export function Hero({
+  settings,
+  hero,
+  worksHref = "#lucrari",
+}: {
+  settings: Settings;
+  hero: Project | null;
+  worksHref?: string;
+}) {
   const rows = hero
     ? [
         { k: "Model", v: hero.modelId.charAt(0).toUpperCase() + hero.modelId.slice(1) },
@@ -33,7 +42,7 @@ export function Hero({ settings, hero }: { settings: Settings; hero: Project | n
             <Button href="/configurator" variant="primary" arrow>
               Configurează-ți patul
             </Button>
-            <Button href="#lucrari" variant="secondary">
+            <Button href={worksHref} variant="secondary">
               Vezi lucrări
             </Button>
           </div>

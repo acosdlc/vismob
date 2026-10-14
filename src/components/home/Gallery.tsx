@@ -5,7 +5,10 @@ import { projectCaption, type Project } from "@/lib/data/projects";
 import { Section } from "./Section";
 
 // DESIGN §4.1, 05 — Lucrări: six featured projects as §3.12 tiles, linking to /lucrari.
+// Without a published project (the database is the truth once reachable) the whole
+// section hides, like the reviews, rather than showing a header over an empty grid.
 export function Gallery({ projects }: { projects: Project[] }) {
+  if (projects.length === 0) return null;
   return (
     <Section id="lucrari">
       <SectionHeader
