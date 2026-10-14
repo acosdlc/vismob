@@ -4,7 +4,16 @@ import { QUOTE_FIELDS } from "@/components/configurator/types";
 import { DEFAULT_CONFIG } from "@/lib/configurator/catalog.seed";
 import { paramsFromConfig } from "@/lib/configurator/url";
 import { FORM_FIELDS, FORM_MESSAGES, UPLOAD_LIMITS } from "@/lib/leads/types";
-import { contactSchema, formValues, leadBaseSchema, parseLeadForm, quoteSchema } from "./schemas";
+import { SAMPLES_FIELDS } from "@/components/materials/types";
+import {
+  contactSchema,
+  formValues,
+  leadBaseSchema,
+  parseLeadForm,
+  quoteSchema,
+  samplesLimitMessage,
+  samplesSchema,
+} from "./schemas";
 
 const UUID = "0b3a9a1e-1234-4abc-8def-0123456789ab";
 
@@ -246,6 +255,91 @@ describe("parseLeadForm", () => {
         email: FORM_MESSAGES.email,
         privacy: FORM_MESSAGES.privacy,
         mattressSize: FORM_MESSAGES.required,
+      });
+    }
+  });
+});
+
+describe("samplesSchema", () => {
+  const IDS = ["ct-verde", "ct-mustar", "bc-alb", "bc-nisip", "sf-gri", "pe-coniac", "lm-nuc"];
+  const schema = samplesSchema(5, IDS);
+  const SAMPLES = {
+    name: "Ana Pop",
+    phone: "0722 123 456",
+    email: "Ana.Pop@Example.com",
+    address: " Str. Lungă 1, Cluj ",
+    privacy: "on",
+  };
+  const withIds = (ids: unknown) => ({ ...SAMPLES, [SAMPLES_FIELDS.ids]: JSON.stringify(ids) });
+  const idsError = (result: ReturnType<typeof schema.safeParse>) =>
+    result.success ? undefined : result.error.issues.find((i) => i.path[0] === SAMPLES_FIELDS.ids)?.message;
+
+  it("round-trips a valid form: ids in box order, address trimmed, no measurement visit", () => {
+    const result = parseLeadForm(form(withIds(["bc-nisip", "ct-verde"])), schema);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual({
+        name: "Ana Pop",
+        phone: "+40722123456",
+        email: "ana.pop@example.com",
+        address: "Str. Lungă 1, Cluj",
+        privacy: "on",
+        wantsMeasurement: false,
+        [SAMPLES_FIELDS.ids]: ["bc-nisip", "ct-verde"],
+      });
+    }
+  });
+
+  it("drops unknown ids and duplicates before counting", () => {
+    const result = schema.safeParse(withIds(["ct-verde", "nope", "ct-verde", "lm-nuc", "", "lm-nuc"]));
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data[SAMPLES_FIELDS.ids]).toEqual(["ct-verde", "lm-nuc"]);
+  });
+
+  it("refuses an empty box with the samples message (missing, empty, unknown or broken input)", () => {
+    expect(idsError(schema.safeParse(SAMPLES))).toBe(FORM_MESSAGES.samples);
+    expect(idsError(schema.safeParse(withIds([])))).toBe(FORM_MESSAGES.samples);
+    expect(idsError(schema.safeParse(withIds(["nope", "nope2"])))).toBe(FORM_MESSAGES.samples);
+    expect(idsError(schema.safeParse({ ...SAMPLES, [SAMPLES_FIELDS.ids]: "not json" }))).toBe(FORM_MESSAGES.samples);
+    expect(idsError(schema.safeParse(withIds("ct-verde")))).toBe(FORM_MESSAGES.samples);
+    expect(idsError(schema.safeParse(withIds([1, 2])))).toBe(FORM_MESSAGES.samples);
+  });
+
+  it("refuses more than the limit with the limit message, but accepts the limit itself", () => {
+    expect(idsError(schema.safeParse(withIds(IDS.slice(0, 6))))).toBe("Poți alege cel mult 5 mostre.");
+    expect(samplesLimitMessage(5)).toBe("Poți alege cel mult 5 mostre.");
+    expect(schema.safeParse(withIds(IDS.slice(0, 5))).success).toBe(true);
+    // Six posted, one unknown: five remain and pass.
+    expect(schema.safeParse(withIds([...IDS.slice(0, 5), "nope"])).success).toBe(true);
+    expect(samplesSchema(2, IDS).safeParse(withIds(IDS.slice(0, 3))).success).toBe(false);
+  });
+
+  it("requires the address and bounds it to 500 characters", () => {
+    const result = parseLeadForm(form({ ...withIds(["ct-verde"]), address: "  " }), schema);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.fieldErrors).toEqual({ address: FORM_MESSAGES.required });
+
+    const noAddress = form(withIds(["ct-verde"]));
+    noAddress.delete("address");
+    const missing = parseLeadForm(noAddress, schema);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.fieldErrors).toEqual({ address: FORM_MESSAGES.required });
+
+    const long = schema.safeParse({ ...withIds(["ct-verde"]), address: "x".repeat(501) });
+    expect(long.success).toBe(false);
+    if (!long.success) {
+      expect(long.error.issues.find((i) => i.path[0] === "address")?.message).toBe(FORM_MESSAGES.tooLong);
+    }
+  });
+
+  it("keeps the base rules: phone, email and consent", () => {
+    const result = parseLeadForm(form({ ...withIds(["ct-verde"]), phone: "12", email: "x", privacy: "" }), schema);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors).toEqual({
+        phone: FORM_MESSAGES.phone,
+        email: FORM_MESSAGES.email,
+        privacy: FORM_MESSAGES.privacy,
       });
     }
   });

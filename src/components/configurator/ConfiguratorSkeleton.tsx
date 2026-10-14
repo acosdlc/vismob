@@ -18,12 +18,12 @@ export const STEPS = [
 export const BODY_CLASSES = "container-site flex flex-wrap items-start gap-[clamp(28px,4vw,56px)] pb-[clamp(32px,4vw,56px)]";
 
 /**
- * Left column (flex 1.4 1 600px, sticky top 16px, gap 20px) from 960px up. Below, it is
+ * Left column (flex 1.4 1 600px, sticky 16px under the 76px sticky header, gap 20px) from 960px up. Below, it is
  * `display: contents`, so the figure and the ticket become siblings of the steps and the
  * `order` utilities move the ticket after step 06 (§5.8) without rendering it twice.
  */
 export const LEFT_CLASSES =
-  "contents nav:sticky nav:top-4 nav:flex nav:min-w-0 nav:shrink nav:grow-[1.4] nav:basis-[600px] nav:flex-col nav:gap-5";
+  "contents nav:sticky nav:top-[92px] nav:flex nav:min-w-0 nav:shrink nav:grow-[1.4] nav:basis-[600px] nav:flex-col nav:gap-5";
 
 /** Right column: flex 1 1 400px. */
 export const RIGHT_CLASSES = "order-2 flex min-w-0 shrink grow basis-[400px] flex-col nav:order-none";
