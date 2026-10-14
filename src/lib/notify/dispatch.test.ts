@@ -19,7 +19,12 @@ vi.mock("./email", () => ({ sendEmail: mocks.sendEmail }));
 vi.mock("@/lib/data/settings", () => ({ getSettings: mocks.getSettings }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 
-import { dispatchLeadNotifications, PHOTO_LINK_SECONDS } from "./dispatch";
+import { SamplesConfirmation } from "@/emails/SamplesConfirmation";
+import { SamplesToWorkshop } from "@/emails/SamplesToWorkshop";
+import { LeadConfirmation } from "@/emails/LeadConfirmation";
+import { LeadToWorkshop } from "@/emails/LeadToWorkshop";
+import type { SampleItem } from "@/components/materials/types";
+import { dispatchLeadNotifications, PHOTO_LINK_SECONDS, sampleItemsFor } from "./dispatch";
 
 /** Config is an interface (no index signature): the column type needs the cast, as in the action. */
 const asJson = (config: Config) => config as unknown as Json;
@@ -273,6 +278,80 @@ describe("dispatchLeadNotifications", () => {
     });
     await expect(dispatchLeadNotifications(LEAD.id)).resolves.toBeUndefined();
     expect(mocks.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("sends SamplesToWorkshop and SamplesConfirmation for a samples lead, with the resolved items in order", async () => {
+    const lead: LeadRow = {
+      ...LEAD,
+      kind: "mostre",
+      mattress_size: null,
+      message: null,
+      wants_measurement: false,
+      address: "Str. Lungă 1, Cluj",
+      sample_material_ids: ["bc-nisip", "ct-verde", "lm-nuc"],
+    };
+    const admin = fakeAdmin({ lead });
+    mocks.admin = admin;
+
+    await dispatchLeadNotifications(lead.id);
+
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(2);
+    const [workshop, client] = sent();
+
+    expect(workshop.to).toBe("atelier-preview@example.com");
+    expect(workshop.replyTo).toBe("stefan@example.com");
+    expect(workshop.subject).toBe("Mostre de trimis · 3 buc. · Ștefan Țăranu, Timișoara");
+    expect(workshop.react.type).toBe(SamplesToWorkshop);
+    const items = workshop.react.props.items as SampleItem[];
+    expect(items.map((i) => i.code)).toEqual(["BC02", "CT01", "LM03"]);
+    expect(items[0]).toEqual({
+      id: "bc-nisip",
+      name: "Nisip",
+      code: "BC02",
+      hex: "#CDBFA6",
+      familyId: "boucle",
+      familyName: "Bouclé",
+      supplierCode: undefined,
+      photoSrc: undefined,
+    });
+    expect((workshop.react.props.lead as LeadRow).address).toBe("Str. Lungă 1, Cluj");
+    expect(workshop.react.props.workshopName).toBe(SEED_SETTINGS.workshop_name);
+
+    expect(client.to).toBe("stefan@example.com");
+    expect(client.replyTo).toBe("atelier-preview@example.com");
+    expect(client.subject).toBe("Pregătim mostrele tale");
+    expect(client.react.type).toBe(SamplesConfirmation);
+    expect(client.react.props.items).toEqual(items);
+    expect(client.react.props.samplesDelivery).toBe(SEED_SETTINGS.samples_delivery);
+    expect(client.react.props.samplesFree).toBe(SEED_SETTINGS.samples_free);
+    expect(client.react.props.phonePublic).toBe(SEED_SETTINGS.phone_public);
+    expect(client.react.props.emailPublic).toBe(SEED_SETTINGS.email_public);
+
+    expect(admin.events).toEqual([
+      { lead_id: LEAD.id, type: "email_workshop", ok: true, detail: { id: "re_1" } },
+      { lead_id: LEAD.id, type: "email_client", ok: true, detail: { id: "re_1" } },
+    ]);
+  });
+
+  it("skips sample ids the catalogue no longer knows, and still sends", async () => {
+    const lead: LeadRow = { ...LEAD, kind: "mostre", sample_material_ids: ["nope", "ct-verde", "gone"] };
+    mocks.admin = fakeAdmin({ lead });
+    await dispatchLeadNotifications(lead.id);
+    const [workshop, client] = sent();
+    expect((workshop.react.props.items as SampleItem[]).map((i) => i.id)).toEqual(["ct-verde"]);
+    expect((client.react.props.items as SampleItem[]).map((i) => i.id)).toEqual(["ct-verde"]);
+    // The subject counts what the workshop will actually find in the email.
+    expect(workshop.subject).toBe("Mostre de trimis · 1 buc. · Ștefan Țăranu, Timișoara");
+
+    expect(await sampleItemsFor({ ...lead, sample_material_ids: null })).toEqual([]);
+    expect(await sampleItemsFor(LEAD)).toEqual([]);
+  });
+
+  it("keeps the contact and configurator emails on their own components", async () => {
+    mocks.admin = fakeAdmin();
+    await dispatchLeadNotifications(LEAD.id);
+    expect(sent()[0].react.type).toBe(LeadToWorkshop);
+    expect(sent()[1].react.type).toBe(LeadConfirmation);
   });
 
   it("records both emails as failed when something breaks before they are sent", async () => {

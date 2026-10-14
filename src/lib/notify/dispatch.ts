@@ -1,12 +1,16 @@
 import "server-only";
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
+import type { SampleItem } from "@/components/materials/types";
 import { LeadConfirmation } from "@/emails/LeadConfirmation";
 import { LeadToWorkshop } from "@/emails/LeadToWorkshop";
+import { SamplesConfirmation } from "@/emails/SamplesConfirmation";
+import { SamplesToWorkshop } from "@/emails/SamplesToWorkshop";
 import { formatPrice, ticketRows } from "@/lib/configurator/format";
 import { resolve } from "@/lib/configurator/rules";
 import type { Config } from "@/lib/configurator/types";
 import { getCatalog } from "@/lib/data/catalog";
 import { getSettings } from "@/lib/data/settings";
+import { resolveSampleItems } from "@/lib/materials/samples";
 import { optionalEnv } from "@/lib/env";
 import { UPLOAD_LIMITS, type LeadRow } from "@/lib/leads/types";
 import { shareUrl } from "@/lib/site-url";
@@ -19,6 +23,8 @@ import { clientSubject, workshopSubject } from "./subjects";
 // workshop email, then the client's confirmation, and writes one `lead_events`
 // row per send so the retry cron (PR-6) can pick up failures. It never throws:
 // the request is already saved, a failed email must not surface as an error.
+// Contact and configurator leads get LeadToWorkshop / LeadConfirmation; a samples
+// lead (kind "mostre") gets SamplesToWorkshop / SamplesConfirmation (§6.3–6.4).
 
 /** Signed photo links stay valid this long (ARHITECTURA §6.4). */
 export const PHOTO_LINK_SECONDS = 7 * 24 * 60 * 60;
@@ -77,6 +83,22 @@ async function configProps(lead: LeadRow): Promise<ConfigProps> {
   };
 }
 
+/**
+ * The stored `sample_material_ids` resolved against the catalogue, in stored order.
+ * An id the catalogue no longer knows is skipped (and logged), never fatal.
+ */
+export async function sampleItemsFor(lead: LeadRow): Promise<SampleItem[]> {
+  if (lead.kind !== "mostre") return [];
+  const ids = lead.sample_material_ids ?? [];
+  if (ids.length === 0) {
+    console.error(`[notify] lead ${lead.id} is a samples lead without sample ids.`);
+    return [];
+  }
+  const { items, unknown } = resolveSampleItems(await getCatalog(), ids);
+  for (const id of unknown) console.error(`[notify] lead ${lead.id} names an unknown sample ${id}; skipped.`);
+  return items;
+}
+
 /** A `settings` address is usable only when it is not a `[...]` placeholder. */
 function realAddress(value: string): string | undefined {
   const trimmed = value.trim();
@@ -105,17 +127,48 @@ export async function dispatchLeadNotifications(leadId: string): Promise<void> {
     const settings = await getSettings();
     const photoUrls = await signPhotoUrls(admin, (files ?? []).map((f) => f.path));
     const notifyEmail = optionalEnv("NOTIFY_EMAIL");
-    const config = await configProps(lead);
+    const replyTo = realAddress(settings.email_public) ?? notifyEmail;
 
-    await notifyWorkshop(admin, lead, notifyEmail, settings.workshop_name, photoUrls, config);
-    await confirmToClient(admin, lead, {
-      workshopName: settings.workshop_name,
-      responseTime: settings.response_time,
-      phonePublic: settings.phone_public,
-      emailPublic: settings.email_public,
-      replyTo: realAddress(settings.email_public) ?? notifyEmail,
-      config,
-    });
+    let workshopEmail: ReactElement;
+    let clientEmail: ReactElement;
+    // The subject counts the samples; for a samples lead, the ones the catalogue still knows.
+    let subjectLead = lead;
+    if (lead.kind === "mostre") {
+      const items = await sampleItemsFor(lead);
+      subjectLead = { ...lead, sample_material_ids: items.map((item) => item.id) };
+      workshopEmail = createElement(SamplesToWorkshop, { lead, items, workshopName: settings.workshop_name });
+      clientEmail = createElement(SamplesConfirmation, {
+        lead,
+        items,
+        workshopName: settings.workshop_name,
+        samplesDelivery: settings.samples_delivery,
+        samplesFree: settings.samples_free,
+        phonePublic: settings.phone_public,
+        emailPublic: settings.email_public,
+      });
+    } else {
+      const config = await configProps(lead);
+      workshopEmail = createElement(LeadToWorkshop, {
+        lead,
+        workshopName: settings.workshop_name,
+        photoUrls,
+        ticketRows: config.ticketRows,
+        shareUrl: config.shareUrl,
+        priceLabel: config.priceLabel,
+      });
+      clientEmail = createElement(LeadConfirmation, {
+        lead,
+        workshopName: settings.workshop_name,
+        responseTime: settings.response_time,
+        phonePublic: settings.phone_public,
+        emailPublic: settings.email_public,
+        ticketRows: config.ticketRows,
+        shareUrl: config.shareUrl,
+      });
+    }
+
+    await notifyWorkshop(admin, subjectLead, notifyEmail, workshopEmail);
+    await confirmToClient(admin, lead, clientEmail, replyTo);
   } catch (cause) {
     // Before either send ran: leave both rows as failed so the retry cron (PR-6) finds them.
     console.error(`[notify] dispatch failed for lead ${leadId}:`, cause);
@@ -125,14 +178,8 @@ export async function dispatchLeadNotifications(leadId: string): Promise<void> {
   }
 }
 
-async function notifyWorkshop(
-  admin: AdminClient,
-  lead: LeadRow,
-  notifyEmail: string | undefined,
-  workshopName: string,
-  photoUrls: string[],
-  config: ConfigProps,
-) {
+/** To the workshop, reply-to the client (ARHITECTURA §6.4). */
+async function notifyWorkshop(admin: AdminClient, lead: LeadRow, notifyEmail: string | undefined, react: ReactElement) {
   try {
     if (!notifyEmail) {
       console.error("[notify] NOTIFY_EMAIL missing: the workshop email was not sent.");
@@ -142,14 +189,7 @@ async function notifyWorkshop(
     const result = await sendEmail({
       to: notifyEmail,
       subject: workshopSubject(lead),
-      react: createElement(LeadToWorkshop, {
-        lead,
-        workshopName,
-        photoUrls,
-        ticketRows: config.ticketRows,
-        shareUrl: config.shareUrl,
-        priceLabel: config.priceLabel,
-      }),
+      react,
       replyTo: lead.email,
     });
     if (!result.ok) console.error(`[notify] workshop email failed for ${lead.id}: ${result.error}`);
@@ -160,32 +200,14 @@ async function notifyWorkshop(
   }
 }
 
-async function confirmToClient(
-  admin: AdminClient,
-  lead: LeadRow,
-  input: {
-    workshopName: string;
-    responseTime: string;
-    phonePublic: string;
-    emailPublic: string;
-    replyTo?: string;
-    config: ConfigProps;
-  },
-) {
+/** To the client, reply-to the workshop's public address or NOTIFY_EMAIL (ARHITECTURA §6.4). */
+async function confirmToClient(admin: AdminClient, lead: LeadRow, react: ReactElement, replyTo: string | undefined) {
   try {
     const result = await sendEmail({
       to: lead.email,
       subject: clientSubject(lead),
-      react: createElement(LeadConfirmation, {
-        lead,
-        workshopName: input.workshopName,
-        responseTime: input.responseTime,
-        phonePublic: input.phonePublic,
-        emailPublic: input.emailPublic,
-        ticketRows: input.config.ticketRows,
-        shareUrl: input.config.shareUrl,
-      }),
-      replyTo: input.replyTo,
+      react,
+      replyTo,
     });
     if (!result.ok) console.error(`[notify] client email failed for ${lead.id}: ${result.error}`);
     await recordEvent(admin, lead.id, "email_client", result.ok, eventDetail(result));

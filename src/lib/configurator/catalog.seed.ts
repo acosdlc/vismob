@@ -17,6 +17,15 @@ export const SEED_CATALOG: Catalog = {
       name: "Catifea",
       code: "CT",
       tab: "textile",
+      description:
+        "Moale, cu un luciu discret. Culorile arată intens și se schimbă ușor după cum cade lumina.",
+      // DESIGN §4.3 spec table; the [___] placeholders stay literal (§8) until the workshop fills them.
+      specs: [
+        { k: "Compoziție", v: "[100% poliester]" },
+        { k: "Frecare", v: "[___] cicluri Martindale" },
+        { k: "Întreținere", v: "[aspirare, lavetă umedă]" },
+        { k: "Animale", v: "[potrivit / nepotrivit]" },
+      ],
       colors: [
         { id: "ct-verde", name: "Verde sticlă", hex: "#2F4B3C", code: "CT01", featured: true },
         { id: "ct-bleumarin", name: "Bleumarin", hex: "#1F2A44", code: "CT02" },
@@ -31,6 +40,15 @@ export const SEED_CATALOG: Catalog = {
       name: "Bouclé",
       code: "BC",
       tab: "textile",
+      description:
+        "Fir buclat, cu textură vizibilă de aproape. Arată cel mai bine pe forme rotunjite, cum e modelul Arcuit.",
+      // DESIGN §4.3 spec table; the [___] placeholders stay literal (§8) until the workshop fills them.
+      specs: [
+        { k: "Compoziție", v: "[___]" },
+        { k: "Frecare", v: "[___] cicluri Martindale" },
+        { k: "Întreținere", v: "[___]" },
+        { k: "Animale", v: "[nerecomandat: se agață ghearele]" },
+      ],
       colors: [
         { id: "bc-alb", name: "Alb lapte", hex: "#E7E2D8", code: "BC01", featured: true },
         { id: "bc-nisip", name: "Nisip", hex: "#CDBFA6", code: "BC02", featured: true },
@@ -43,6 +61,15 @@ export const SEED_CATALOG: Catalog = {
       name: "Stofă",
       code: "SF",
       tab: "textile",
+      description:
+        "Țesătură densă și mată. Alegerea practică pentru un pat folosit intens, în fiecare zi.",
+      // DESIGN §4.3 spec table; the [___] placeholders stay literal (§8) until the workshop fills them.
+      specs: [
+        { k: "Compoziție", v: "[___]" },
+        { k: "Frecare", v: "[___]" },
+        { k: "Întreținere", v: "[___]" },
+        { k: "Animale", v: "[___]" },
+      ],
       colors: [
         { id: "sf-gri", name: "Gri deschis", hex: "#B9BCBF", code: "SF01" },
         { id: "sf-melanj", name: "Gri melanj", hex: "#7B7E83", code: "SF02", featured: true },
@@ -56,6 +83,15 @@ export const SEED_CATALOG: Catalog = {
       name: "Piele ecologică",
       code: "PE",
       tab: "textile",
+      description:
+        "Se șterge ușor cu o lavetă umedă. Aspect curat, de hotel, potrivit pentru tăblii cu canale.",
+      // DESIGN §4.3 spec table; the [___] placeholders stay literal (§8) until the workshop fills them.
+      specs: [
+        { k: "Compoziție", v: "[___]" },
+        { k: "Grosime", v: "[___] mm" },
+        { k: "Întreținere", v: "[lavetă umedă, fără solvenți]" },
+        { k: "Animale", v: "[___]" },
+      ],
       colors: [
         { id: "pe-coniac", name: "Coniac", hex: "#8A5A35", code: "PE01", featured: true },
         { id: "pe-ciocolata", name: "Ciocolată", hex: "#4A3328", code: "PE02" },
@@ -68,6 +104,15 @@ export const SEED_CATALOG: Catalog = {
       name: "Lemn masiv",
       code: "LM",
       tab: "lemn",
+      description:
+        "Pentru modelul Lamele și pentru picioare. Lemn [uscat în cuptor], tăiat și finisat în atelier.",
+      // DESIGN §4.3 spec table; the [___] placeholders stay literal (§8) until the workshop fills them.
+      specs: [
+        { k: "Esențe", v: "stejar, nuc, frasin" },
+        { k: "Umiditate", v: "[sub 10%]" },
+        { k: "Finisaj", v: "ulei, lac mat sau baiț" },
+        { k: "Proveniență", v: "[___]" },
+      ],
       colors: [
         { id: "lm-stejar", name: "Stejar natur", hex: "#C9A574", code: "LM01", featured: true },
         { id: "lm-afumat", name: "Stejar afumat", hex: "#7A5A3C", code: "LM02" },

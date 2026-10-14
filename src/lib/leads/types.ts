@@ -89,6 +89,9 @@ export const FORM_MESSAGES = {
   privacy: "Bifează acordul pentru prelucrarea datelor.",
   tooLong: "Textul e prea lung.",
   uploads: "Poți adăuga cel mult 6 poze, fiecare de maximum 10 MB.",
+  /** The samples form (DESIGN §4.3); `{n}` is `settings.sample_limit`. */
+  samples: "Alege cel puțin o mostră.",
+  samplesLimit: "Poți alege cel mult {n} mostre.",
   generic: "Nu am putut trimite cererea. Încearcă din nou sau sună-ne.",
   tooFast: "Formularul a fost trimis prea repede. Încearcă din nou.",
   rateLimited: "Ai trimis deja mai multe cereri. Te rugăm să ne suni.",

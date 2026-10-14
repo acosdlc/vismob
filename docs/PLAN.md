@@ -98,7 +98,7 @@ Goal: `/materiale` per DESIGN §4.3: three tabs with counters, five family artic
 Goal: move settings, catalog, projects and reviews from TypeScript seeds into the live database with RLS, switch the readers to `'use cache'` + `cacheTag` + `cacheLife('days')` with the seed fallback, add the server-only pricing reader for „de la … lei”, and the revalidation route.
 
 - Migrations via `db-change`: `<ts>_content.sql` (the nine content tables from ARHITECTURA §5 plus `bases.photo_path`, `projects.ticket_no`; `pricing`; `public_read` policies; bucket `media`), `<ts>_seed_content.sql` (settings id=1 with the bracket seed, `show_prices=false`, `sample_limit=5`; the DESIGN §5.1 catalog).
-- `src/lib/supabase/public.ts` (cookie-less publishable client for cached reads; `server.ts` is never imported from `src/lib/data`); `src/lib/data/*.ts` reading rows → `Catalog`/`Settings`/projects/reviews; `src/lib/data/pricing.ts` (`server-only`, `getStartingPrices()`).
+- `src/lib/supabase/public.ts` (cookie-less publishable client for cached reads; `server.ts` is never imported from `src/lib/data`); `src/lib/data/*.ts` reading rows → `Catalog`/`Settings`/projects/reviews (the `public_read` policies read `using (active)`, so the catalogue, and with it the sample ids `submitSamples` accepts, holds only active rows: ARHITECTURA §6.3 „toate `active`” needs no filter in the action); `src/lib/data/pricing.ts` (`server-only`, `getStartingPrices()`).
 - `src/app/api/revalidate/route.ts` (`x-revalidate-secret`, Supabase payload → tag, `revalidateTag(tag, { expire: 0 })`); `images.remotePatterns` for the `media` bucket.
 - Tests: row mappers, settings merge-over-seed, revalidate route (401, table map).
 - Needs from the owner: `REVALIDATE_SECRET` on the Vercel env page.
