@@ -1,0 +1,609 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`bedGeometry > 90 has one pillow 1`] = `
+{
+  "dimHeight": {
+    "label": "120 cm",
+    "y1": 24,
+    "y2": 144,
+  },
+  "dimWidth": {
+    "label": "90 cm",
+    "x1": 115,
+    "x2": 205,
+  },
+  "frame": {
+    "h": 24,
+    "w": 100,
+    "x": 110,
+    "y": 36,
+  },
+  "headboard": {
+    "h": 120,
+    "w": 104,
+    "x": 108,
+    "y": 24,
+  },
+  "hidden": [],
+  "led": undefined,
+  "legs": [
+    {
+      "h": 12,
+      "w": 5,
+      "x": 117,
+      "y": 24,
+    },
+    {
+      "h": 12,
+      "w": 5,
+      "x": 198,
+      "y": 24,
+    },
+  ],
+  "mattress": {
+    "h": 18,
+    "w": 90,
+    "x": 115,
+    "y": 60,
+  },
+  "nightstands": [],
+  "pillows": [
+    {
+      "h": 16,
+      "w": 70,
+      "x": 125,
+      "y": 78,
+    },
+  ],
+  "plinth": undefined,
+  "world": {
+    "floor": 24,
+    "h": 180,
+    "w": 320,
+  },
+}
+`;
+
+exports[`bedGeometry > 160 capitonat on wooden legs (default) 1`] = `
+{
+  "dimHeight": {
+    "label": "120 cm",
+    "y1": 24,
+    "y2": 144,
+  },
+  "dimWidth": {
+    "label": "160 cm",
+    "x1": 80,
+    "x2": 240,
+  },
+  "frame": {
+    "h": 24,
+    "w": 170,
+    "x": 75,
+    "y": 36,
+  },
+  "headboard": {
+    "h": 120,
+    "w": 174,
+    "x": 73,
+    "y": 24,
+  },
+  "hidden": [],
+  "led": undefined,
+  "legs": [
+    {
+      "h": 12,
+      "w": 5,
+      "x": 82,
+      "y": 24,
+    },
+    {
+      "h": 12,
+      "w": 5,
+      "x": 233,
+      "y": 24,
+    },
+  ],
+  "mattress": {
+    "h": 18,
+    "w": 160,
+    "x": 80,
+    "y": 60,
+  },
+  "nightstands": [],
+  "pillows": [
+    {
+      "h": 16,
+      "w": 72,
+      "x": 86,
+      "y": 78,
+    },
+    {
+      "h": 16,
+      "w": 72,
+      "x": 162,
+      "y": 78,
+    },
+  ],
+  "plinth": undefined,
+  "world": {
+    "floor": 24,
+    "h": 180,
+    "w": 320,
+  },
+}
+`;
+
+exports[`bedGeometry > 200 with nightstands widens the world 1`] = `
+{
+  "dimHeight": {
+    "label": "120 cm",
+    "y1": 24,
+    "y2": 144,
+  },
+  "dimWidth": {
+    "label": "200 cm",
+    "x1": 63,
+    "x2": 263,
+  },
+  "frame": {
+    "h": 24,
+    "w": 210,
+    "x": 58,
+    "y": 36,
+  },
+  "headboard": {
+    "h": 120,
+    "w": 214,
+    "x": 56,
+    "y": 24,
+  },
+  "hidden": [],
+  "led": undefined,
+  "legs": [
+    {
+      "h": 12,
+      "w": 5,
+      "x": 65,
+      "y": 24,
+    },
+    {
+      "h": 12,
+      "w": 5,
+      "x": 256,
+      "y": 24,
+    },
+  ],
+  "mattress": {
+    "h": 18,
+    "w": 200,
+    "x": 63,
+    "y": 60,
+  },
+  "nightstands": [
+    {
+      "box": {
+        "h": 38,
+        "w": 44,
+        "x": 8,
+        "y": 32,
+      },
+      "legs": [
+        {
+          "h": 8,
+          "w": 3,
+          "x": 12,
+          "y": 24,
+        },
+        {
+          "h": 8,
+          "w": 3,
+          "x": 45,
+          "y": 24,
+        },
+      ],
+    },
+    {
+      "box": {
+        "h": 38,
+        "w": 44,
+        "x": 274,
+        "y": 32,
+      },
+      "legs": [
+        {
+          "h": 8,
+          "w": 3,
+          "x": 278,
+          "y": 24,
+        },
+        {
+          "h": 8,
+          "w": 3,
+          "x": 311,
+          "y": 24,
+        },
+      ],
+    },
+  ],
+  "pillows": [
+    {
+      "h": 16,
+      "w": 92,
+      "x": 69,
+      "y": 78,
+    },
+    {
+      "h": 16,
+      "w": 92,
+      "x": 165,
+      "y": 78,
+    },
+  ],
+  "plinth": undefined,
+  "world": {
+    "floor": 24,
+    "h": 180,
+    "w": 326,
+  },
+}
+`;
+
+exports[`bedGeometry > LED on legs sits under the frame 1`] = `
+{
+  "dimHeight": {
+    "label": "120 cm",
+    "y1": 24,
+    "y2": 144,
+  },
+  "dimWidth": {
+    "label": "160 cm",
+    "x1": 80,
+    "x2": 240,
+  },
+  "frame": {
+    "h": 24,
+    "w": 170,
+    "x": 75,
+    "y": 36,
+  },
+  "headboard": {
+    "h": 120,
+    "w": 174,
+    "x": 73,
+    "y": 24,
+  },
+  "hidden": [],
+  "led": {
+    "h": 1.2,
+    "w": 150,
+    "x": 85,
+    "y": 34,
+  },
+  "legs": [
+    {
+      "h": 12,
+      "w": 5,
+      "x": 82,
+      "y": 24,
+    },
+    {
+      "h": 12,
+      "w": 5,
+      "x": 233,
+      "y": 24,
+    },
+  ],
+  "mattress": {
+    "h": 18,
+    "w": 160,
+    "x": 80,
+    "y": 60,
+  },
+  "nightstands": [],
+  "pillows": [
+    {
+      "h": 16,
+      "w": 72,
+      "x": 86,
+      "y": 78,
+    },
+    {
+      "h": 16,
+      "w": 72,
+      "x": 162,
+      "y": 78,
+    },
+  ],
+  "plinth": undefined,
+  "world": {
+    "floor": 24,
+    "h": 180,
+    "w": 320,
+  },
+}
+`;
+
+exports[`bedGeometry > custom 220 arcuit with a 140 headboard 1`] = `
+{
+  "dimHeight": {
+    "label": "140 cm",
+    "y1": 24,
+    "y2": 164,
+  },
+  "dimWidth": {
+    "label": "220 cm",
+    "x1": 50,
+    "x2": 270,
+  },
+  "frame": {
+    "h": 24,
+    "w": 230,
+    "x": 45,
+    "y": 36,
+  },
+  "headboard": {
+    "h": 140,
+    "w": 234,
+    "x": 43,
+    "y": 24,
+  },
+  "hidden": [],
+  "led": undefined,
+  "legs": [
+    {
+      "h": 12,
+      "w": 5,
+      "x": 52,
+      "y": 24,
+    },
+    {
+      "h": 12,
+      "w": 5,
+      "x": 263,
+      "y": 24,
+    },
+  ],
+  "mattress": {
+    "h": 18,
+    "w": 220,
+    "x": 50,
+    "y": 60,
+  },
+  "nightstands": [],
+  "pillows": [
+    {
+      "h": 16,
+      "w": 102,
+      "x": 56,
+      "y": 78,
+    },
+    {
+      "h": 16,
+      "w": 102,
+      "x": 162,
+      "y": 78,
+    },
+  ],
+  "plinth": undefined,
+  "world": {
+    "floor": 24,
+    "h": 180,
+    "w": 320,
+  },
+}
+`;
+
+exports[`bedGeometry > ladă: no legs, a plinth and one hidden box 1`] = `
+{
+  "dimHeight": {
+    "label": "120 cm",
+    "y1": 24,
+    "y2": 144,
+  },
+  "dimWidth": {
+    "label": "160 cm",
+    "x1": 80,
+    "x2": 240,
+  },
+  "frame": {
+    "h": 34,
+    "w": 170,
+    "x": 75,
+    "y": 26,
+  },
+  "headboard": {
+    "h": 120,
+    "w": 174,
+    "x": 73,
+    "y": 24,
+  },
+  "hidden": [
+    {
+      "h": 26,
+      "w": 160,
+      "x": 80,
+      "y": 30,
+    },
+  ],
+  "led": undefined,
+  "legs": [],
+  "mattress": {
+    "h": 18,
+    "w": 160,
+    "x": 80,
+    "y": 60,
+  },
+  "nightstands": [],
+  "pillows": [
+    {
+      "h": 16,
+      "w": 72,
+      "x": 86,
+      "y": 78,
+    },
+    {
+      "h": 16,
+      "w": 72,
+      "x": 162,
+      "y": 78,
+    },
+  ],
+  "plinth": {
+    "h": 2,
+    "w": 162,
+    "x": 79,
+    "y": 24,
+  },
+  "world": {
+    "floor": 24,
+    "h": 180,
+    "w": 320,
+  },
+}
+`;
+
+exports[`bedGeometry > metal legs are thinner 1`] = `
+{
+  "dimHeight": {
+    "label": "120 cm",
+    "y1": 24,
+    "y2": 144,
+  },
+  "dimWidth": {
+    "label": "160 cm",
+    "x1": 80,
+    "x2": 240,
+  },
+  "frame": {
+    "h": 24,
+    "w": 170,
+    "x": 75,
+    "y": 36,
+  },
+  "headboard": {
+    "h": 120,
+    "w": 174,
+    "x": 73,
+    "y": 24,
+  },
+  "hidden": [],
+  "led": undefined,
+  "legs": [
+    {
+      "h": 12,
+      "w": 3.5,
+      "x": 82,
+      "y": 24,
+    },
+    {
+      "h": 12,
+      "w": 3.5,
+      "x": 234.5,
+      "y": 24,
+    },
+  ],
+  "mattress": {
+    "h": 18,
+    "w": 160,
+    "x": 80,
+    "y": 60,
+  },
+  "nightstands": [],
+  "pillows": [
+    {
+      "h": 16,
+      "w": 72,
+      "x": 86,
+      "y": 78,
+    },
+    {
+      "h": 16,
+      "w": 72,
+      "x": 162,
+      "y": 78,
+    },
+  ],
+  "plinth": undefined,
+  "world": {
+    "floor": 24,
+    "h": 180,
+    "w": 320,
+  },
+}
+`;
+
+exports[`bedGeometry > sertare: two hidden drawers 1`] = `
+{
+  "dimHeight": {
+    "label": "120 cm",
+    "y1": 24,
+    "y2": 144,
+  },
+  "dimWidth": {
+    "label": "160 cm",
+    "x1": 80,
+    "x2": 240,
+  },
+  "frame": {
+    "h": 34,
+    "w": 170,
+    "x": 75,
+    "y": 26,
+  },
+  "headboard": {
+    "h": 120,
+    "w": 174,
+    "x": 73,
+    "y": 24,
+  },
+  "hidden": [
+    {
+      "h": 24,
+      "w": 77,
+      "x": 80,
+      "y": 31,
+    },
+    {
+      "h": 24,
+      "w": 77,
+      "x": 163,
+      "y": 31,
+    },
+  ],
+  "led": undefined,
+  "legs": [],
+  "mattress": {
+    "h": 18,
+    "w": 160,
+    "x": 80,
+    "y": 60,
+  },
+  "nightstands": [],
+  "pillows": [
+    {
+      "h": 16,
+      "w": 72,
+      "x": 86,
+      "y": 78,
+    },
+    {
+      "h": 16,
+      "w": 72,
+      "x": 162,
+      "y": 78,
+    },
+  ],
+  "plinth": {
+    "h": 2,
+    "w": 162,
+    "x": 79,
+    "y": 24,
+  },
+  "world": {
+    "floor": 24,
+    "h": 180,
+    "w": 320,
+  },
+}
+`;

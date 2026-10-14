@@ -1,26 +1,228 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Design tokens: docs/DESIGN.md §2.7, plus `white`, `on-dark` and `error` which the
+   component specs use but the @theme block in the doc leaves out. */
+@theme {
+  --color-paper: #F3F3F0;
+  --color-paper-2: #E9E9E4;
+  --color-card: #F7F7F4;
+  --color-white: #FFFFFF;
+  --color-drafting: #FAFAF8;
+  --color-ink: #18191B;
+  --color-ink-2: #4A4D52;
+  --color-muted: #5F6268;
+  --color-rule: #CFD0CC;
+  --color-field: #8C8F94;
+  --color-placeholder: #DEDFD9;
+  --color-accent: #1E4D3B;
+  --color-accent-hover: #163A2C;
+  --color-on-dark: #F3F3F0;
+  --color-on-dark-2: #B9BBBF;
+  --color-on-dark-3: #9A9DA2;
+  --color-dark-rule: #3A3C40;
+  --color-led: #FFC46B;
+  --color-error: #9B2C2C;
+
+  --font-sans: var(--font-archivo), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, Menlo, monospace;
+
+  --breakpoint-nav: 60rem; /* 960px: full menu, ticket next to the drawing */
+  --radius-ui: 2px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+  body {
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.55;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  /* On accent and ink backgrounds the focus ring is white (DESIGN §2.6). */
+  .on-dark :focus-visible {
+    outline-color: var(--color-white);
+  }
+  a {
+    color: inherit;
+  }
+  [id] {
+    scroll-margin-top: 88px; /* sticky header (DESIGN §7) */
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation: none !important;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Shared roles, so the exact DESIGN §2 values live in one place. */
+@layer components {
+  .container-site {
+    max-width: 1240px;
+    margin-inline: auto;
+    padding-inline: clamp(16px, 4vw, 48px);
+  }
+  .section {
+    padding-block: clamp(64px, 8vw, 112px);
+  }
+
+  /* Typography (DESIGN §2.2) */
+  .h1-hero {
+    font-size: clamp(40px, 4.2vw, 60px);
+    line-height: 1.02;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  .h1-page {
+    font-size: clamp(36px, 3.9vw, 56px);
+    line-height: 1.04;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+  .h2-section {
+    font-size: clamp(30px, 3.3vw, 48px);
+    line-height: 1.08;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .h2-request {
+    font-size: clamp(28px, 3vw, 42px);
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .h2-family {
+    font-size: 26px;
+    line-height: 1.15;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+  .h3-card {
+    font-size: 20px;
+    line-height: 1.25;
+    font-weight: 600;
+  }
+  .h3-confirm {
+    font-size: 28px;
+    line-height: 1.15;
+    font-weight: 600;
+  }
+  .lead {
+    font-size: clamp(17px, 1.35vw, 19px);
+    line-height: 1.55;
+    color: var(--color-ink-2);
+    max-width: 520px;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+  }
+  .mono-12 {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .mono-13 {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .logo {
+    font-size: 21px;
+    line-height: 1.1;
+    font-weight: 700;
+    font-stretch: 112%;
+    letter-spacing: -0.01em;
+  }
+  .sub-logo {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.1;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-muted);
+  }
+
+  /* Textures (DESIGN §2.4) */
+  .photo-placeholder {
+    background-color: #DEDFD9;
+    background-image: repeating-linear-gradient(135deg, rgba(24, 25, 27, 0.07) 0 1px, transparent 1px 12px);
+  }
+  .drafting {
+    background-color: #FAFAF8;
+    background-image:
+      linear-gradient(rgba(24, 25, 27, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(24, 25, 27, 0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  /* Swatch fallbacks, layered over the colour, until the real photos arrive. */
+  .tex-catifea {
+    background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.18));
+  }
+  .tex-boucle {
+    background-image:
+      radial-gradient(circle, rgba(255, 255, 255, 0.55) 0 1.2px, transparent 1.7px),
+      radial-gradient(circle, rgba(0, 0, 0, 0.16) 0 1.2px, transparent 1.7px);
+    background-size: 6px 6px, 7px 7px;
+    background-position: 0 0, 3px 3px;
+  }
+  .tex-stofa {
+    background-image:
+      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.1) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 3px);
+  }
+  .tex-piele {
+    background-image:
+      radial-gradient(circle, rgba(0, 0, 0, 0.16) 0 0.8px, transparent 1.3px),
+      linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.14));
+    background-size: 5px 5px, 100% 100%;
+  }
+  .tex-lemn {
+    background-image: repeating-linear-gradient(93deg, rgba(60, 35, 10, 0.16) 0 1px, transparent 1px 6px, rgba(60, 35, 10, 0.08) 6px 7px, transparent 7px 13px);
+  }
+}
+
+/* Legal pages (DESIGN §4.6): plain text, H1 + H2 + 17px paragraphs, lists. [integrator] */
+@layer components {
+  .legal h1 {
+    font-size: clamp(36px, 3.9vw, 56px);
+    line-height: 1.04;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+  .legal h2 {
+    font-size: 26px;
+    line-height: 1.15;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    margin-top: 12px;
+  }
+  .legal p,
+  .legal li {
+    font-size: 17px;
+    color: var(--color-ink-2);
+  }
+  .legal ul {
+    list-style: disc;
+    padding-left: 24px;
+  }
+  .legal ol {
+    list-style: decimal;
+    padding-left: 24px;
+  }
 }

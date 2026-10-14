@@ -54,7 +54,7 @@ Goal: replace the scaffold with DESIGN §2 tokens and fonts, build every DESIGN 
 - `src/lib/site-url.ts`: `NEXT_PUBLIC_SITE_URL` ?? `VERCEL_PROJECT_PRODUCTION_URL` ?? `VERCEL_URL`.
 - Pages: `src/app/not-found.tsx`; `src/app/(site)/(legal)/layout.tsx` + `confidentialitate`, `cookies`, `termeni` stubs; `src/app/(site)/page.tsx` keeps the placeholder text inside the shell.
 - Cleanup: Next's sample SVGs and favicon out; `icon.svg` + `apple-icon` in; `react-hook-form`, `@hookform/resolvers` removed; `libphonenumber-js`, `server-only` added.
-- Harness: `@playwright/test@1.56.1`, `@axe-core/playwright`; `playwright.config.ts` (`tests/e2e`, projects desktop 1440×900 and mobile 390×844, `webServer: npm run start`); `tests/e2e/shell.spec.ts` (axe + screenshots of 404 and a legal page); `.gitignore` for test output.
+- Harness: `@playwright/test@1.56.1`, `@axe-core/playwright`; `playwright.config.ts` (`tests/e2e`, projects desktop 1440×900 and mobile 390×844, `webServer: npm run start`); `tests/e2e/home.spec.ts` (axe + screenshots of the home, a legal page and the 404); `.gitignore` for test output.
 - Done when: all four checks pass; axe zero on the shell pages at both widths; screenshots match §3.1/§3.17/§4.6/§4.7.
 
 ### PR-2 · Acasă, Lucrări, Contact and the contact request pipeline (~2–3 sessions)
@@ -114,7 +114,7 @@ Goal: move settings, catalog, projects and reviews from TypeScript seeds into th
 ### PR-7 · Real content: catalogue, prices, photos, settings, reviews, placeholder gate (~2 sessions)
 
 - `scripts/import-catalog.ts` (`exceljs` + `tsx`): reads `05-catalog.xlsx` and **emits SQL migrations** (`<ts>_catalog_from_excel.sql`, `<ts>_pricing.sql`) applied through `db-change`, so no secret is needed in the session. Material codes are assigned once and never reused.
-- Photos: the mechanism is decided before this PR (see the open question below); `project_photos`, `materials.photo_path/macro_path`, `bases.photo_path` rows written by SQL with real dimensions.
+- Photos: uploaded by the owner in Supabase Studio (see below); `project_photos`, `materials.photo_path/macro_path`, `bases.photo_path` rows written by SQL with real dimensions.
 - `<ts>_settings_values.sql`, `<ts>_projects_reviews.sql` with the workshop's values and consents; `show_prices` set per the workshop's decision.
 - `tests/e2e/no-placeholders.spec.ts`: every route at both widths fails on any visible `[`.
 - Owner creates the Supabase Database Webhooks (Database → Webhooks) on the nine content tables with header `x-revalidate-secret`, pointing at the production `/api/revalidate`.
@@ -151,9 +151,9 @@ Goal: move settings, catalog, projects and reviews from TypeScript seeds into th
 
 The three Supabase variables come from the Vercel integration. Vercel Pro and Supabase Pro are confirmed.
 
-## Open question for PR-7: how photos get into the `media` bucket
+## Photos (PR-7)
 
-Cloud sessions hold no secrets and the Supabase connector cannot upload Storage objects. Options: (a) the owner drags the prepared photos into the bucket in Supabase Studio and the session writes the rows by SQL; (b) a manual-dispatch GitHub Actions workflow with `SUPABASE_SECRET_KEY` as a repository secret runs `scripts/upload-media.ts` against a `content/` folder committed to a branch. Decide before PR-7.
+Cloud sessions hold no secrets and the Supabase connector cannot upload Storage objects, so the owner drags the prepared photos into the `media` bucket in Supabase Studio and the session writes the database rows by SQL. `scripts/upload-media.ts` is reduced to a local helper that resizes and names the files (sharp, 2400px, WebP/JPEG) and prints the rows; it never needs the secret key.
 
 ## Risks
 
