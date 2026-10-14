@@ -117,7 +117,7 @@ Goal: move settings, catalog, projects and reviews from TypeScript seeds into th
 - Photos: uploaded by the owner in Supabase Studio (see below); `project_photos`, `materials.photo_path/macro_path`, `bases.photo_path` rows written by SQL with real dimensions.
 - `<ts>_settings_values.sql`, `<ts>_projects_reviews.sql` with the workshop's values and consents; `show_prices` set per the workshop's decision.
 - `tests/e2e/no-placeholders.spec.ts`: every route at both widths fails on any visible `[`.
-- Owner creates the Supabase Database Webhooks (Database → Webhooks) on the nine content tables with header `x-revalidate-secret`, pointing at the production `/api/revalidate`.
+- Owner creates the Supabase Database Webhooks (Database → Webhooks) on the ten content tables (the nine of ARHITECTURA §5 plus `pricing`) with header `x-revalidate-secret`, pointing at the production `/api/revalidate`.
 - Needs: everything in `docs/LISTA-ATELIER.md` §1–§9.
 
 ### PR-8 · Launch: domain, Resend sending domain, legal texts, JSON-LD, analytics events (~1.5 sessions)

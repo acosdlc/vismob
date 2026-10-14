@@ -11,7 +11,7 @@ export function ProjectGrid({ projects }: { projects: Project[] }) {
         <li key={project.slug}>
           <Photo
             src={project.photo?.src}
-            alt={project.title}
+            alt={project.photo?.alt ?? project.title}
             ratio="4:3"
             sizes="(min-width: 960px) 33vw, 100vw"
             label={project.photo?.label}

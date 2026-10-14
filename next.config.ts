@@ -21,6 +21,11 @@ const csp = [
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  // Photos come from the public `media` bucket (ARHITECTURA §5, PLAN PR-5); the CSP
+  // img-src above already allows the host.
+  images: {
+    remotePatterns: [new URL(`${SUPABASE_HOST}/storage/v1/object/public/media/**`)],
+  },
   partialPrefetching: true,
   // Vercel restores .next/cache between builds and, with the Turbopack build
   // cache on (the 16.3 default), the Tailwind loader served a stale compiled

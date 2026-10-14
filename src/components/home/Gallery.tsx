@@ -19,7 +19,7 @@ export function Gallery({ projects }: { projects: Project[] }) {
             <Link href={`/lucrari?model=${p.modelId}`} className="flex flex-col gap-[10px] no-underline">
               <Photo
                 src={p.photo?.src}
-                alt={p.title}
+                alt={p.photo?.alt ?? p.title}
                 ratio="4:3"
                 sizes="(min-width: 960px) 33vw, 100vw"
                 label={p.photo?.label}

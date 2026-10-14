@@ -9,6 +9,8 @@ import type { BaseId, ModelId } from "@/lib/configurator/types";
 export interface ProjectPhoto {
   /** Absent while the workshop has not delivered the photo: the FOTO box shows instead. */
   src?: string;
+  /** The photo's own alt text (`project_photos.alt`); the project's title is the fallback. */
+  alt?: string;
   /** „FOTO NN” label in the placeholder box (DESIGN §3.4). */
   label: string;
   /** The frame description from DESIGN §8. */
@@ -66,9 +68,12 @@ function modelName(id: ModelId): string {
   return model.name;
 }
 
-/** The DESIGN §3.4 caption: „[Model] · [160 × 200] · [material, culoare] · [oraș]”. */
+/**
+ * The DESIGN §3.4 caption: „[Model] · [160 × 200] · [material, culoare] · [oraș]”.
+ * A part the workshop left empty (no material, no city) is dropped, not shown as „ ·  · ”.
+ */
 export function projectCaption(p: Pick<Project, "modelId" | "widthCm" | "lengthCm" | "materialLabel" | "city">): string {
-  return `${modelName(p.modelId)} · ${p.widthCm} × ${p.lengthCm} · ${p.materialLabel} · ${p.city}`;
+  return [modelName(p.modelId), `${p.widthCm} × ${p.lengthCm}`, p.materialLabel, p.city].filter(Boolean).join(" · ");
 }
 
 interface PlaceholderInput {

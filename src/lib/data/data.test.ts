@@ -1,10 +1,22 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SEED_CATALOG } from "@/lib/configurator/catalog.seed";
 import { getCatalog } from "./catalog";
 import { getHeroProject, getProjects, projectCaption } from "./projects";
 import { SEED_PROJECTS } from "./projects.seed";
 import { getReviews } from "./reviews";
+
+// No environment variables here, so every reader takes the seed fallback. The
+// cache directives throw outside a Next.js render, hence the mock.
+vi.mock("next/cache", () => ({ cacheTag: vi.fn(), cacheLife: vi.fn(), revalidateTag: vi.fn() }));
+
+beforeEach(() => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("getCatalog", () => {
   it("returns the seed with the eight featured swatches of Acasă 03, in order", async () => {
