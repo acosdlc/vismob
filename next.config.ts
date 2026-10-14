@@ -22,6 +22,12 @@ const csp = [
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  // Vercel restores .next/cache between builds and, with the Turbopack build
+  // cache on (the 16.3 default), the Tailwind loader served a stale compiled
+  // globals.css in production. Cold builds cost seconds; stale CSS cost the site.
+  experimental: {
+    turbopackFileSystemCacheForBuild: false,
+  },
   turbopack: {
     rules: {
       "*.css": {
