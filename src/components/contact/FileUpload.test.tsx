@@ -8,8 +8,13 @@ const createClient = vi.fn(() => ({ storage: { from: () => ({ uploadToSignedUrl 
 
 vi.mock("@/actions/create-upload-urls", () => ({ createUploadUrls: (count: number) => createUploadUrls(count) }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => createClient() }));
-// jsdom has no canvas: compression is the identity here.
-vi.mock("browser-image-compression", () => ({ default: async (file: File) => file }));
+// jsdom has no canvas: compression is the identity here, and a file named "broken.*" cannot be decoded.
+vi.mock("browser-image-compression", () => ({
+  default: async (file: File) => {
+    if (file.name.startsWith("broken.")) throw new Error("cannot decode");
+    return file;
+  },
+}));
 
 import { FileUpload, uploadLimitError } from "./FileUpload";
 
@@ -117,6 +122,29 @@ describe("FileUpload", () => {
     expect(screen.getByText("Eroare")).toBeInTheDocument();
     expect(hidden(container)).toHaveValue("[]");
     errorSpy.mockRestore();
+  });
+
+  it("refuses a photo the browser cannot re-encode as JPEG and uploads the rest", async () => {
+    createUploadUrls.mockResolvedValue({ ok: true, uploads: [{ path: "pending/x/1.jpg", token: "t" }] });
+    uploadToSignedUrl.mockResolvedValue({ data: { path: "x", fullPath: "y" }, error: null });
+    const { container } = render(<FileUpload />);
+    const broken = new File([new Uint8Array(10)], "broken.png", { type: "image/png" });
+
+    fireEvent.change(screen.getByLabelText(LABEL), { target: { files: [broken, jpeg("ok.jpg")] } });
+
+    await waitFor(() => expect(screen.getByText("Încărcată")).toBeInTheDocument());
+    expect(screen.getByText("Eroare")).toBeInTheDocument();
+    expect(screen.getByText(FORM_MESSAGES.uploads)).toBeInTheDocument();
+    expect(createUploadUrls).toHaveBeenCalledWith(1);
+    expect(uploadToSignedUrl).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(hidden(container).value)).toEqual(["pending/x/1.jpg"]);
+
+    // A JPEG the library cannot process is still sent as it is.
+    createUploadUrls.mockResolvedValue({ ok: true, uploads: [{ path: "pending/y/1.jpg", token: "t2" }] });
+    const brokenJpeg = new File([new Uint8Array(10)], "broken.jpg", { type: "image/jpeg" });
+    fireEvent.change(screen.getByLabelText(LABEL), { target: { files: [brokenJpeg] } });
+    await waitFor(() => expect(uploadToSignedUrl).toHaveBeenCalledTimes(2));
+    expect(uploadToSignedUrl).toHaveBeenLastCalledWith("pending/y/1.jpg", "t2", brokenJpeg, { contentType: "image/jpeg" });
   });
 
   it("shows the server's field error for `uploads`", () => {

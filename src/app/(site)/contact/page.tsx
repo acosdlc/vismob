@@ -14,7 +14,7 @@ export default async function ContactPage() {
       settings={settings}
       headingLevel={1}
       mapHeight={400}
-      form={<ContactForm responseTime={settings.response_time} page="/contact" />}
+      form={<ContactForm responseTime={settings.response_time} page="/contact" confirmHeadingLevel={2} />}
     />
   );
 }

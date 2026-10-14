@@ -344,7 +344,7 @@ create policy "admin_all_storage" on storage.objects for all to authenticated
 1. **Clientul alege opțiunile.** Starea stă în URL (DESIGN §5.3). Desenul, codul și prețul orientativ se calculează local, cu `lib/configurator`.
 2. **Pozele (opțional).** `FileUpload` comprimă imaginile în browser (latura maximă 2000px, JPEG ~0,8, cu `browser-image-compression`), cere de la Server Action-ul `createUploadUrls` câte un URL semnat pentru `lead-uploads/pending/<uuid>/<n>.jpg` și urcă direct în Storage (`uploadToSignedUrl`). Limite: 6 fișiere de maximum 10 MB și maximum 20 de URL-uri pe IP pe oră. `accept="image/jpeg,image/png,image/webp"`, ca iPhone-ul să convertească de regulă HEIC în JPEG.
 3. **Trimiterea**, în Server Action-ul `submitQuote(formData)`, în ordinea:
-   1. **Honeypot**: câmpul ascuns `company` trebuie să fie gol. **Timp minim**: au trecut cel puțin 3 secunde de la încărcarea formularului (timestamp semnat HMAC).
+   1. **Honeypot**: câmpul ascuns `website` trebuie să fie gol (nu `company`: Chrome îl completează automat cu organizația din profil). **Timp minim**: au trecut cel puțin 3 secunde de la încărcarea formularului (timestamp semnat HMAC).
    2. **Turnstile**: verifică tokenul la `https://challenges.cloudflare.com/turnstile/v0/siteverify`.
    3. **Validarea zod** (tabelul de mai jos). Telefonul se normalizează la E.164 (`libphonenumber-js`, implicit `RO`), apoi se re-validează.
    4. **Rate limit**: maximum 5 cereri pe `ip_hash` în ultima oră (`select count(*) from leads where ip_hash = $1 and created_at > now() - interval '1 hour'`). IP-ul vine din `x-forwarded-for` (Vercel); `ip_hash = sha256(ip + IP_HASH_SALT)`.
@@ -365,7 +365,7 @@ create policy "admin_all_storage" on storage.objects for all to authenticated
 | `privacy` | obligatoriu bifat (vezi §9 despre temeiul legal) |
 | `config` | query string ≤ 2000, parsat cu `configFromParams` |
 | `uploads` | ≤ 6 căi, toate cu prefixul `pending/` |
-| `turnstileToken`, `startedAt`, `company` | anti-spam |
+| `turnstileToken`, `startedAt`, `website` | anti-spam |
 
 ### 6.2 Cererea de contact (`submitContact`)
 
