@@ -1,29 +1,36 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Archivo, DM_Mono } from "next/font/google";
+import { getSettings } from "@/lib/data/settings";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+// DESIGN §2.2: Archivo variable with the width axis, DM Mono 400/500, both with
+// latin-ext for ș and ț.
+const archivo = Archivo({
+  subsets: ["latin", "latin-ext"],
+  axes: ["wdth"],
+  variable: "--font-archivo",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const dmMono = DM_Mono({
+  weight: ["400", "500"],
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-dm-mono",
+  display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "VisMob",
-  description: "Paturi la comandă, făcute în atelier.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { workshop_name } = await getSettings();
+  return {
+    title: { default: `${workshop_name} · Paturi la comandă`, template: `%s · ${workshop_name}` },
+    description: "Paturi construite pe măsura camerei tale, în atelier.",
+  };
+}
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="ro"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="ro" className={`${archivo.variable} ${dmMono.variable} h-full antialiased`}>
+      <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );
 }
