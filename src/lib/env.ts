@@ -2,17 +2,15 @@ import "server-only";
 
 // Server-side configuration, read at call time so the app builds with nothing
 // set (CLAUDE.md). Secrets never leave this module's callers on the server.
-const NAMES = [
-  "SUPABASE_SECRET_KEY",
-  "RESEND_API_KEY",
-  "EMAIL_FROM",
-  "NOTIFY_EMAIL",
-  "NOTIFY_DRY_RUN",
-  "TURNSTILE_SECRET_KEY",
-  "IP_HASH_SALT",
-  "FORM_HMAC_SECRET",
-] as const;
-export type ServerEnvName = (typeof NAMES)[number];
+export type ServerEnvName =
+  | "SUPABASE_SECRET_KEY"
+  | "RESEND_API_KEY"
+  | "EMAIL_FROM"
+  | "NOTIFY_EMAIL"
+  | "NOTIFY_DRY_RUN"
+  | "TURNSTILE_SECRET_KEY"
+  | "IP_HASH_SALT"
+  | "FORM_HMAC_SECRET";
 
 /** The variable's value, or an Error naming it (the Vercel env page is where it is set). */
 export function requireEnv(name: ServerEnvName): string {
