@@ -24,6 +24,7 @@ export function resolve(input: Config, cat: Catalog): Resolved {
   if (!model) {
     throw new Error("Configurator catalog has no models.");
   }
+  if (!model.families.length) throw new Error(`Configurator catalog: model "${model.id}" allows no family.`);
   const familyId = model.families.includes(input.family) ? input.family : model.families[0];
   const family = cat.families.find((f) => f.id === familyId);
   if (!family) {

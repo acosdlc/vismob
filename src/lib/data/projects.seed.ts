@@ -4,7 +4,7 @@
 // placeholders and captions built from the §3.4 template
 // „[Model] · [160 × 200] · [material, culoare] · [oraș]”. Nothing is invented.
 import { SEED_CATALOG } from "@/lib/configurator/catalog.seed";
-import type { ModelId } from "@/lib/configurator/types";
+import type { BaseId, ModelId } from "@/lib/configurator/types";
 
 export interface ProjectPhoto {
   /** Absent while the workshop has not delivered the photo: the FOTO box shows instead. */
@@ -52,8 +52,13 @@ const TICKET_NO = "[___]";
 const MATERIAL = "[material, culoare]";
 const DELIVERED = "[Oraș, lună an]";
 
-const BASE_LEGS = SEED_CATALOG.bases[0].name; // „Picioare din lemn” (DEFAULT_CONFIG.base)
-const BASE_LADA = SEED_CATALOG.bases[2].name; // „Ladă de depozitare”
+function baseName(id: BaseId): string {
+  const base = SEED_CATALOG.bases.find((b) => b.id === id);
+  if (!base) throw new Error(`projects.seed: unknown base "${id}".`);
+  return base.name;
+}
+const BASE_LEGS = baseName("lemn"); // „Picioare din lemn” (DEFAULT_CONFIG.base)
+const BASE_LADA = baseName("lada"); // „Ladă de depozitare”
 
 function modelName(id: ModelId): string {
   const model = SEED_CATALOG.models.find((m) => m.id === id);
