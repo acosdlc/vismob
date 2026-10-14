@@ -1,28 +1,26 @@
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { expectNoAxeViolations, screenshotPath, waitForFonts } from "./axe";
 
-// Acceptance for PR-1: zero axe violations and a full-page screenshot at 1440 and 390
-// for the home page, a legal stub and the 404 page (CLAUDE.md "Done means").
-const ROUTES: Array<{ path: string; name: string; status?: number }> = [
-  { path: "/", name: "acasa" },
-  { path: "/confidentialitate", name: "confidentialitate" },
-  { path: "/pagina-inexistenta", name: "404", status: 404 },
-];
+// Acceptance for PR-1 (CLAUDE.md "Done means"): every route opens, has no axe
+// violations and is captured full-page at 1440×900 and 390×844 (playwright.config.ts).
+const ROUTES = [
+  { path: "/", status: 200 },
+  { path: "/confidentialitate", status: 200 },
+  { path: "/pagina-inexistenta", status: 404 },
+] as const;
 
 for (const route of ROUTES) {
-  test(`${route.path}: accessible and rendered`, async ({ page }, testInfo) => {
+  test(`${route.path}: accessible and captured`, async ({ page }, testInfo) => {
     const response = await page.goto(route.path);
-    expect(response?.status()).toBe(route.status ?? 200);
-    await page.waitForLoadState("networkidle");
+    expect(response, `no response for ${route.path}`).not.toBeNull();
+    expect(response!.status()).toBe(route.status);
 
-    // @axe-core/playwright bundles a newer playwright-core whose Page type differs
-    // from @playwright/test 1.56.1 (pinned to the container's Chromium); same runtime API.
-    const results = await new AxeBuilder({ page: page as unknown as ConstructorParameters<typeof AxeBuilder>[0]["page"] })
-      .withTags(["wcag2a", "wcag2aa"])
-      .analyze();
-    expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+    await expect(page.locator("html")).toHaveAttribute("lang", "ro");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
-    await page.screenshot({ path: `screenshots/${route.name}-${testInfo.project.name}.png`, fullPage: true });
+    await waitForFonts(page);
+    await expectNoAxeViolations(page);
+    await page.screenshot({ path: screenshotPath(route.path, testInfo.project.name), fullPage: true });
   });
 }
 

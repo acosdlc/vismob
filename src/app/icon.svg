@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Mark derived from the capitonat line-art bed (docs/DESIGN.md §3.9): headboard with buttons,
+       frame and legs on the floor line, in ink (#18191B) on drafting paper (#FAFAF8). -->
+  <rect width="32" height="32" fill="#FAFAF8"/>
+  <path d="M3 27H29" fill="none" stroke="#18191B" stroke-width="1.5"/>
+  <g fill="#F7F7F4" stroke="#18191B" stroke-width="1.5">
+    <path d="M8 27V7.5A1.5 1.5 0 0 1 9.5 6H22.5A1.5 1.5 0 0 1 24 7.5V27"/>
+    <rect x="7.5" y="25" width="2" height="2"/>
+    <rect x="22.5" y="25" width="2" height="2"/>
+    <rect x="5.5" y="19.5" width="21" height="5.5"/>
+  </g>
+  <g fill="#18191B">
+    <circle cx="12.5" cy="10" r="1"/>
+    <circle cx="19.5" cy="10" r="1"/>
+    <circle cx="16" cy="13.5" r="1"/>
+    <circle cx="12.5" cy="17" r="1"/>
+    <circle cx="19.5" cy="17" r="1"/>
+  </g>
+</svg>
