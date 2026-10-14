@@ -1,11 +1,33 @@
 # Project
 
-<!-- The setup-project skill fills this section in. -->
-
-- **Name:** _not set up yet_
-- **What it is:** _one or two sentences_
+- **Name:** VisMob
+- **What it is:** a presentation and contact site for a workshop that makes beds to order. It is not an online shop. It has a bed configurator with a drawing to scale, a library of material samples that visitors can ask to receive at home, and three request forms that reach the workshop by email.
 - **Domain:** _none yet_
-- **UI language:** _not decided_
+- **UI language:** Romanian, with comma-below diacritics (ș ț Ș Ț), never cedilla (ş ţ)
+
+## Project documents
+
+Read these before any task:
+
+- `docs/DESIGN.md`: the full design (tokens, components, every page with its exact text, the configurator's data, rules, geometry and code)
+- `docs/ARHITECTURA.md`: data model, flows, security, environments and the plan in phases (§13)
+- `docs/ARHITECTURA-NOTE.md`: where this repository differs from those two documents (npm, `src/`, one database, email only). It wins over them.
+- `docs/LISTA-ATELIER.md`: what the workshop still has to provide (photos, catalogue, prices, texts)
+
+## Project rules
+
+1. **Design**: implement the values in `docs/DESIGN.md` exactly. Do not invent colours, sizes or components. If something is missing, ask.
+2. **Text**: Romanian, comma-below diacritics. `[...]` placeholders come from `settings` or the database. Never invent data, reviews, figures or prices.
+3. **Client components** only for the mobile menu, the configurator, the sample box, forms and uploads. Everything else is a Server Component.
+4. **Forms** are Server Actions validated with Zod. Everything from the client is validated again on the server; the configuration code and the price are recalculated on the server. The client's **email is required** in every form.
+5. **Notifications** go by email only, through Resend (to the workshop and to the client). No SMS, no Twilio.
+6. **Secrets** live only in modules with `import 'server-only'`. Only `NEXT_PUBLIC_*` variables reach the browser.
+7. **Database**: every new table has row level security and explicit policies; schema changes only through `supabase/migrations` and the `db-change` skill.
+8. **Accessibility**: real elements (`button`, `a`, `input` + `label`), `aria-pressed` on selectable options, visible focus, targets of at least 44px.
+9. **Configurator**: the logic lives in `src/lib/configurator`, pure and tested. Components only display it.
+10. **One branch and one pull request per phase** (ARHITECTURA §13). Each gets a Vercel preview.
+
+Done means: lint, type-check, tests and build pass. From phase 1 on, the pages are also checked at 1440px and 390px against `docs/DESIGN.md`, with no axe errors. From phase 4 on, no `[...]` placeholder is visible.
 
 The project's identity (GitHub repository, Vercel project, Supabase project) is pinned in `.claude/project.json`. Read that file before any Supabase or Vercel call.
 

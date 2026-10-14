@@ -1,36 +1,19 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VisMob
 
-## Getting Started
+The website of a workshop that makes beds to order. It presents the workshop and its finished work, and it has a bed configurator with a drawing to scale, a material sample library (samples sent home on request) and request forms. It is not an online shop: every request reaches the workshop by email. The interface is in Romanian.
 
-First, run the development server:
+**Stack:** Next.js (App Router, TypeScript) · Tailwind CSS · Supabase · Resend · Vercel · Vitest, with npm.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Documents
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- [`docs/DESIGN.md`](docs/DESIGN.md): design, pages and the configurator
+- [`docs/ARHITECTURA.md`](docs/ARHITECTURA.md): architecture and the plan in phases
+- [`docs/ARHITECTURA-NOTE.md`](docs/ARHITECTURA-NOTE.md): how those documents map onto this repository
+- [`docs/LISTA-ATELIER.md`](docs/LISTA-ATELIER.md): what the workshop has to provide
+- [`docs/stack.md`](docs/stack.md): the standard stack and its rules
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## How changes ship
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Work happens in Claude Code cloud sessions. Each change goes on a branch and gets a pull request, and Vercel builds a preview for it. Merging into `main` deploys to production.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Before a pull request: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`.
