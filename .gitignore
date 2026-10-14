@@ -1,0 +1,9 @@
+# secrets never live in the repository
+.env*
+!.env.example
+
+# local state
+.vercel
+.claude/settings.local.json
+.claude/worktrees/
+node_modules/

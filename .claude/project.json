@@ -1,0 +1,28 @@
+{
+  "template": "acosdlc/project-starter",
+  "name": "",
+  "description": "",
+  "owner": {
+    "github": "acosdlc",
+    "vercel_team_id": "team_pG7LQeHgVAh9v213HUy3MQ5R",
+    "vercel_team_slug": "alex-sdlcsoftwars-projects",
+    "supabase_organization_id": "vercel_icfg_eTDxra4CTlBRhXSwvnhAO2aT"
+  },
+  "github": {
+    "repo": ""
+  },
+  "vercel": {
+    "project_id": "",
+    "project_name": ""
+  },
+  "supabase": {
+    "enabled": true,
+    "project_ref": "",
+    "region": "eu-central-1"
+  },
+  "connectors": {
+    "supabase": [],
+    "vercel": [],
+    "ignore": []
+  }
+}
