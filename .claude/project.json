@@ -17,7 +17,7 @@
   },
   "supabase": {
     "enabled": true,
-    "project_ref": "",
+    "project_ref": "ckzhsfxbpepaletjhsnt",
     "region": "eu-central-1"
   },
   "connectors": {
