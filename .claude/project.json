@@ -1,7 +1,7 @@
 {
   "template": "acosdlc/project-starter",
-  "name": "",
-  "description": "",
+  "name": "VisMob",
+  "description": "Presentation and contact site for a workshop that makes beds to order, with a bed configurator and a material sample library. Romanian UI. Not an online shop.",
   "owner": {
     "github": "acosdlc",
     "vercel_team_id": "team_pG7LQeHgVAh9v213HUy3MQ5R",
@@ -9,20 +9,20 @@
     "supabase_organization_id": "vercel_icfg_eTDxra4CTlBRhXSwvnhAO2aT"
   },
   "github": {
-    "repo": ""
+    "repo": "acosdlc/vismob"
   },
   "vercel": {
-    "project_id": "",
-    "project_name": ""
+    "project_id": "prj_hIJGEynDBh0WeFBuGlXzIvjk6sgs",
+    "project_name": "vismob"
   },
   "supabase": {
     "enabled": true,
-    "project_ref": "",
+    "project_ref": "ckzhsfxbpepaletjhsnt",
     "region": "eu-central-1"
   },
   "connectors": {
-    "supabase": [],
-    "vercel": [],
+    "supabase": ["Supabase"],
+    "vercel": ["Vercel"],
     "ignore": []
   }
 }
