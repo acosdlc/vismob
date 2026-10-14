@@ -6,8 +6,18 @@ import type { Project } from "@/lib/data/projects";
 import type { Settings } from "@/lib/data/settings.seed";
 
 // DESIGN §4.1 Hero. The ticket and the dimension come from the project flagged
-// `hero`; without one, only the photo box shows.
-export function Hero({ settings, hero }: { settings: Settings; hero: Project | null }) {
+// `hero`; without one, only the photo box shows. A row the workshop left empty
+// (no material, no delivery date) is dropped rather than shown blank. „Vezi lucrări”
+// goes to #lucrari (DESIGN); when section 05 is hidden it goes to /lucrari instead.
+export function Hero({
+  settings,
+  hero,
+  worksHref = "#lucrari",
+}: {
+  settings: Settings;
+  hero: Project | null;
+  worksHref?: string;
+}) {
   const rows = hero
     ? [
         { k: "Model", v: hero.modelId.charAt(0).toUpperCase() + hero.modelId.slice(1) },
@@ -15,7 +25,7 @@ export function Hero({ settings, hero }: { settings: Settings; hero: Project | n
         { k: "Material", v: hero.materialLabel },
         { k: "Bază", v: hero.baseLabel },
         { k: "Livrat", v: hero.deliveredLabel },
-      ]
+      ].filter((row) => row.v !== "")
     : [];
 
   return (
@@ -32,7 +42,7 @@ export function Hero({ settings, hero }: { settings: Settings; hero: Project | n
             <Button href="/configurator" variant="primary" arrow>
               Configurează-ți patul
             </Button>
-            <Button href="#lucrari" variant="secondary">
+            <Button href={worksHref} variant="secondary">
               Vezi lucrări
             </Button>
           </div>
@@ -48,7 +58,7 @@ export function Hero({ settings, hero }: { settings: Settings; hero: Project | n
           <div className="pt-[34px]">
             <Photo
               src={hero?.photo?.src}
-              alt={hero ? hero.title : "Pat finalizat, în dormitorul unui client"}
+              alt={hero ? (hero.photo?.alt ?? hero.title) : "Pat finalizat, în dormitorul unui client"}
               ratio="5:4"
               sizes="(min-width: 960px) 45vw, 100vw"
               priority
@@ -58,7 +68,12 @@ export function Hero({ settings, hero }: { settings: Settings; hero: Project | n
           </div>
           {hero && (
             <div className="absolute bottom-4 left-4 w-[min(310px,calc(100%-32px))]">
-              <Ticket title="FIȘĂ PROIECT" number={hero.ticketNo} rows={rows} size="sm" />
+              <Ticket
+                title="FIȘĂ PROIECT"
+                number={hero.ticketNo ? `Nr. ${hero.ticketNo}` : undefined}
+                rows={rows}
+                size="sm"
+              />
             </div>
           )}
         </div>

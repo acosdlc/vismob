@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, SEED_CATALOG } from "./catalog.seed";
-import { estimatePrice, priceFor, type Pricing } from "./pricing";
+import { estimatePrice, priceFor, startingPrices, type Pricing } from "./pricing";
 import { resolve } from "./rules";
 import type { Config } from "./types";
 
@@ -98,5 +98,52 @@ describe("priceFor", () => {
     expect(priceFor(r, PRICING)).toBe(3000);
     const catB = { ...r, color: { ...r.color, priceCategory: "B" as const } };
     expect(priceFor(catB, PRICING)).toBe(3300);
+  });
+});
+
+describe("startingPrices", () => {
+  it("is the cheapest 160 × 200 in category A, no extras, over every base and headboard height", () => {
+    // capitonat 3000 × 1.00 + 0 (H100, picioare din lemn); arcuit 3200; canale 3300; lamele has no row
+    expect(startingPrices(SEED_CATALOG, PRICING)).toEqual({ capitonat: 3000, arcuit: 3200, canale: 3300 });
+  });
+
+  it("takes the minimum over bases and heights, not the default configuration", () => {
+    // lemn is no longer free, so metal (100) wins; 120 becomes the cheapest height
+    const p: Pricing = {
+      ...PRICING,
+      base: { lemn: 500, metal: 100, lada: 800, sertare: 600 },
+      hbPct: { "100": 10, "120": 0, "140": 5 },
+    };
+    expect(startingPrices(SEED_CATALOG, p).capitonat).toBe(3100);
+    expect(estimatePrice(res({ hb: 120, base: "metal" }), p, "A")).toBe(3100);
+    expect(estimatePrice(res(), p, "A")).toBe(3500);
+  });
+
+  it("uses category A whatever the category of the first colour", () => {
+    const catC = {
+      ...SEED_CATALOG,
+      families: SEED_CATALOG.families.map((f) => ({
+        ...f,
+        colors: f.colors.map((c) => ({ ...c, priceCategory: "C" as const })),
+      })),
+    };
+    expect(startingPrices(catC, PRICING)).toEqual({ capitonat: 3000, arcuit: 3200, canale: 3300 });
+  });
+
+  it("rounds like the ticket", () => {
+    // 3000 × 1.00 + 0 = 3000 stays; with a 30 lei base every base costs → 3030 → 3050
+    const p: Pricing = { ...PRICING, base: { lemn: 30, metal: 30, lada: 30, sertare: 30 } };
+    expect(startingPrices(SEED_CATALOG, p).capitonat).toBe(3050);
+  });
+
+  it("leaves out what cannot be priced: no grid row, no colours in the first family, no bases", () => {
+    expect(startingPrices(SEED_CATALOG, PRICING).lamele).toBeUndefined();
+    // catifea is the first family of the three upholstered models
+    const noColors = {
+      ...SEED_CATALOG,
+      families: SEED_CATALOG.families.map((f) => (f.id === "catifea" ? { ...f, colors: [] } : f)),
+    };
+    expect(startingPrices(noColors, PRICING)).toEqual({});
+    expect(startingPrices({ ...SEED_CATALOG, bases: [] }, PRICING)).toEqual({});
   });
 });
