@@ -24,7 +24,7 @@ export function FaqSection({ settings, startingPrice }: { settings: Settings; st
     },
     {
       q: "Pot vedea materialele înainte?",
-      a: `Da, în atelier, ${settings.visits_note}. Sau îți trimitem acasă până la ${settings.sample_limit} mostre, ${settings.samples_free}.`,
+      a: `Da, în atelier, ${settings.visits_note}.`,
     },
     { q: "Livrați și în afara orașului?", a: settings.delivery_note },
     {

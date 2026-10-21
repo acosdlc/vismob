@@ -33,20 +33,6 @@ describe("workshopSubject", () => {
     expect(clientSubject({ kind: "configurator", config_code: "CAP-160\nX" })).toBe("Am primit cererea ta · CAP-160 X");
   });
 
-  it("uses the samples wording, with the count when the ids are known", () => {
-    expect(
-      workshopSubject({
-        kind: "mostre",
-        name: "Ioana Mărgărit",
-        city: "Brașov",
-        config_code: null,
-        sample_material_ids: ["a", "b", "c"],
-      }),
-    ).toBe("Mostre de trimis · 3 buc. · Ioana Mărgărit, Brașov");
-    expect(workshopSubject({ kind: "mostre", name: "Ioana Mărgărit", city: null, config_code: null })).toBe(
-      "Mostre de trimis · Ioana Mărgărit",
-    );
-  });
 });
 
 describe("clientSubject", () => {
@@ -57,7 +43,4 @@ describe("clientSubject", () => {
     expect(clientSubject({ kind: "contact", config_code: null })).toBe("Am primit cererea ta");
   });
 
-  it("has its own line for samples", () => {
-    expect(clientSubject({ kind: "mostre", config_code: null })).toBe("Pregătim mostrele tale");
-  });
 });

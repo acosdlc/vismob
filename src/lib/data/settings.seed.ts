@@ -46,11 +46,6 @@ export interface Settings {
   /** FAQ answer to „Vindeți și saltele?”. */
   mattresses_note: string;
 
-  // Samples
-  sample_limit: number;
-  samples_free: string;
-  samples_delivery: string;
-
   // Prices
   show_prices: boolean;
 
@@ -98,10 +93,6 @@ export const SEED_SETTINGS: Settings = {
   installation_note: "[inclus în zona X]",
   deposit_pct: "[X]",
   mattresses_note: "[Da / nu. Dacă da: ce tipuri și de la ce producători.]",
-
-  sample_limit: 5,
-  samples_free: "[gratuit]",
-  samples_delivery: "[2–3 zile lucrătoare]",
 
   show_prices: false,
 

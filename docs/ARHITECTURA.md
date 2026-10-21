@@ -11,10 +11,10 @@
 
 - **Next.js 16 (App Router)** pe **Vercel Pro**, cu codul pe **GitHub**: fiecare PR are un preview, iar `main` merge în producție.
 - **Paginile sunt statice și se regenerează la editarea conținutului.** Catalogul, lucrările, recenziile și setările se citesc din **Supabase** la build/revalidare, deci site-ul e rapid și bun pentru SEO.
-- **Trei formulare** (cerere de ofertă, configurator, mostre) scriu prin **Server Actions** în Supabase. După răspuns, `after()` trimite emailurile prin **Resend** (către atelier și către client). Cererea e salvată înainte de orice notificare, așa că nu se pierde dacă un serviciu cade.
+- **Două formulare** (cerere de ofertă, configurator) scriu prin **Server Actions** în Supabase. După răspuns, `after()` trimite emailurile prin **Resend** (către atelier și către client). Cererea e salvată înainte de orice notificare, așa că nu se pierde dacă un serviciu cade.
 - **Pozele clienților** urcă direct din browser în Supabase Storage (bucket privat), cu URL-uri semnate, ocolind limita de body a funcțiilor.
 - **Desenul configurației** se generează și ca PNG pe server și pleacă atașat în emailul către atelier.
-- **v1 nu are panou de admin**: atelierul primește un email la fiecare cerere, iar tu editezi catalogul în Supabase Studio. **v2** adaugă `/admin` pentru atelier (cereri, catalog, prețuri, lucrări).
+- **Panoul de admin** (`/admin`, §8) se construiește înainte de lansare (PLAN PR-7…PR-9): atelierul primește un email la fiecare cerere și editează catalogul, prețurile, lucrările, recenziile și setările din admin. Mențiunile „v2” de mai jos sunt istorice; `docs/PLAN.md` are prioritate.
 
 ```
                     ┌──────────────── Vercel (Next.js 16, regiunea fra1) ────────────────┐
@@ -97,7 +97,7 @@ atelier-paturi/
 │  │               Gallery, Atelier, Reviews, Faq, ContactSection
 │  ├─ drawings/    BedDrawing (SVG la scară), BedLineArt (carduri de model), patterns
 │  ├─ configurator/ Configurator (client), steps/*, TicketPanel, QuoteForm, MobileBar
-│  └─ materials/   MaterialsBrowser (client), SwatchTile, SampleBox
+│  └─ materials/   MaterialsBrowser (client), SwatchTile
 ├─ lib/
 │  ├─ configurator/ types · catalog.seed · rules · geometry · format · pricing · url  (DESIGN §5)
 │  ├─ data/        catalog.ts, settings.ts, projects.ts, reviews.ts   # 'use cache' + cacheTag
@@ -105,8 +105,8 @@ atelier-paturi/
 │  ├─ notify/      email.ts (Resend), drawing-png.ts (resvg), dispatch.ts
 │  ├─ security/    turnstile.ts, rate-limit.ts, ip.ts
 │  └─ validation/  schemas.ts (zod, comune client/server)
-├─ actions/        submit-quote.ts, submit-contact.ts, submit-samples.ts, create-upload-urls.ts
-├─ emails/         LeadToWorkshop.tsx, LeadConfirmation.tsx, SamplesToWorkshop.tsx, SamplesConfirmation.tsx
+├─ actions/        submit-quote.ts, submit-contact.ts, create-upload-urls.ts
+├─ emails/         LeadToWorkshop.tsx, LeadConfirmation.tsx
 ├─ supabase/       config.toml · migrations/0001_init.sql · seed.sql
 ├─ scripts/        import-catalog.ts (Excel atelier → Supabase), upload-media.ts (sharp → bucketul media)
 ├─ assets/fonts/   DMMono-Regular.ttf (pentru textul din PNG-ul generat de resvg)
@@ -123,14 +123,14 @@ atelier-paturi/
 |---|---|---|---|
 | `/` | statică | catalog (modele, mostre featured), lucrări featured, recenzii, setări | tag-uri `catalog`, `projects`, `reviews`, `settings` |
 | `/configurator` | shell static + client component | catalogul și, dacă `show_prices`, grila de prețuri, ca props | starea în query string (DESIGN §5.3), `useSearchParams` în `<Suspense>` |
-| `/materiale` | statică + client component pentru cutia de mostre | familii, materiale, setări | cutia în `localStorage` |
+| `/materiale` | statică + client component pentru tab-uri | familii, materiale, baze, setări | — |
 | `/lucrari` | statică | lucrări publicate + poze | filtrul pe model în `?model=` |
 | `/contact`, pagini legale | statice | setări | |
 | `/admin/*` | dinamică, autentificată | tot | v2 |
 | `POST /api/revalidate` | route handler | — | header `x-revalidate-secret`, body `{ tags: [...] }` |
 | `GET /api/cron/:job` | route handler | — | `Authorization: Bearer ${CRON_SECRET}` |
 
-**Server Actions:** `submitQuote`, `submitContact`, `submitSamples`, `createUploadUrls`.
+**Server Actions:** `submitQuote`, `submitContact`, `createUploadUrls`.
 
 ---
 
@@ -238,7 +238,7 @@ create table public.settings (
 );
 
 -- ───────────── Cereri ─────────────
-create type public.lead_kind as enum ('contact', 'configurator', 'mostre');
+create type public.lead_kind as enum ('contact', 'configurator', 'mostre'); -- 'mostre' nefolosit: atelierul nu trimite mostre; se elimină într-o migrare viitoare
 create type public.lead_status as enum ('nou', 'contactat', 'ofertat', 'castigat', 'pierdut', 'spam');
 
 create table public.leads (
@@ -250,14 +250,14 @@ create table public.leads (
   phone text not null check (char_length(phone) between 8 and 20),   -- E.164
   email text not null check (char_length(email) <= 254),                 -- obligatoriu: notificările sunt doar pe email
   city text check (city is null or char_length(city) <= 120),
-  address text check (address is null or char_length(address) <= 500),  -- doar la mostre
+  address text check (address is null or char_length(address) <= 500),  -- nefolosit: atelierul nu trimite mostre; se elimină într-o migrare viitoare
   message text check (message is null or char_length(message) <= 4000),
   mattress_size text,                          -- formularul de contact
   wants_measurement boolean not null default false,
   config jsonb,                                -- configurația normalizată de server
   config_code text,                            -- CAP-160x200-CT01-H120-LD
   price_estimate_ron int,
-  sample_material_ids text[],
+  sample_material_ids text[],                  -- nefolosit: atelierul nu trimite mostre; se elimină într-o migrare viitoare
   consent_text text not null,                  -- textul exact pe care l-a bifat
   consent_at timestamptz not null default now(),
   source jsonb,                                -- pagina, utm_*, referrer
@@ -330,8 +330,10 @@ create policy "admin_all_storage" on storage.objects for all to authenticated
 -- Citirea se face doar cu URL-uri semnate (createSignedUrl), tot de pe server.
 ```
 
+Valoarea de enum `'mostre'` și coloanele `leads.address` și `leads.sample_material_ids` nu mai sunt folosite din PR-6 (atelierul nu trimite mostre). Rămân deocamdată în baza de date: eliminarea lor e o migrare destructivă, pe care proprietarul nu a aprobat-o încă.
+
 **Cheile din `settings.data`** (toate placeholderele din DESIGN §8):
-`workshop_name, legal_name, cui, reg_com, registered_office, address, city, phone_public, whatsapp_number, email_public, hours, visits_note, response_time, lead_time, warranty_structure_years, warranty_upholstery_years, delivery_zone, delivery_note, measurement_note, offer_days, deposit_pct, custom_size_range, sells_mattresses, sample_limit, samples_free, samples_delivery, google_rating, google_reviews_count, google_profile_url, instagram_url, facebook_url, show_prices, notify_email, structure_text, slats_text, foam_text, fabrics_text, founded_year, team_size, story_text`.
+`workshop_name, legal_name, cui, reg_com, registered_office, address, city, phone_public, whatsapp_number, email_public, hours, visits_note, response_time, lead_time, warranty_structure_years, warranty_upholstery_years, delivery_zone, delivery_note, measurement_note, offer_days, deposit_pct, custom_size_range, sells_mattresses, google_rating, google_reviews_count, google_profile_url, instagram_url, facebook_url, show_prices, notify_email, structure_text, slats_text, foam_text, fabrics_text, founded_year, team_size, story_text`.
 
 `notify_email` poate sta și în variabila de mediu `NOTIFY_EMAIL` (§11). Când ambele surse sunt setate, câștigă variabilele de mediu: în Preview trimiți așa doar către tine.
 
@@ -371,9 +373,9 @@ create policy "admin_all_storage" on storage.objects for all to authenticated
 
 La fel ca 6.1, fără configurație. Are în plus `mattress_size` (selectul) și pozele opționale.
 
-### 6.3 Cererea de mostre (`submitSamples`)
+### 6.3 Cererea de mostre
 
-`sample_material_ids` (1 … `settings.sample_limit`, toate `active`), plus nume, telefon, email și adresa de livrare (toate obligatorii). Emailul către atelier conține lista de coduri (CT01, BC02…) cu numele furnizorului, gata de pus în plic.
+Eliminat: atelierul nu trimite mostre. Formularul, acțiunea și emailurile au fost scoase în PR-6.
 
 ### 6.4 Textele notificărilor
 
@@ -385,15 +387,13 @@ Nu se trimit SMS-uri. Toate notificările sunt emailuri.
 |---|---|---|---|
 | LeadToWorkshop | `NOTIFY_EMAIL`, reply-to = clientul | `Cerere nouă · {cod} · {Nume}, {Oraș}` | fișa (rândurile din DESIGN §5.6), prețul estimat, contactul (link `tel:` și buton WhatsApp spre client), mesajul, măsurători da/nu, linkul „Deschide configurația” (URL-ul de share), pozele (linkuri semnate, valabile 7 zile) și **PNG-ul desenului atașat** |
 | LeadConfirmation | clientul, reply-to = emailul atelierului | `Am primit cererea ta · {cod}` | mulțumirea, cei 3 pași care urmează, fișa, PNG-ul desenului, linkul configurației, contactul atelierului |
-| SamplesToWorkshop | atelierul | `Mostre de trimis · {n} buc. · {Nume}, {Oraș}` | lista de coduri, adresa, telefonul |
-| SamplesConfirmation | clientul | `Pregătim mostrele tale` | lista de mostre, termenul de livrare |
 
 **PNG-ul desenului:** `renderToStaticMarkup(<BedDrawing resolved={r} mode="export" />)` produce un SVG; în modul export, cotele sunt `<text>` SVG, nu HTML. `@resvg/resvg-js` îl randează la 1600px lățime, cu `fontFiles: ['assets/fonts/DMMono-Regular.ttf']`, pe runtime-ul Node (nu Edge).
 
 ### 6.5 Actualizarea conținutului
 
-- **v1**: editezi în Supabase Studio. Un **Database Webhook** pe tabelele de conținut face `POST /api/revalidate` cu header-ul secret și tag-ul tabelei (`catalog`, `projects`, `reviews`, `settings`), iar paginile se regenerează în câteva secunde.
-- **v2**: fiecare salvare din `/admin` invalidează tag-ul direct, din Server Action.
+- Fiecare salvare din `/admin` invalidează tag-ul direct, din Server Action (`updateTag`), iar paginile se regenerează în câteva secunde (§8).
+- `POST /api/revalidate` (header `x-revalidate-secret`, tag-ul tabelei: `catalog`, `pricing`, `projects`, `reviews`, `settings`) există pentru editări făcute direct în Supabase Studio; nu se creează Database Webhooks.
 - Pozele noi (lucrări, mostre) se pregătesc cu `scripts/upload-media.ts`: `sharp` le redimensionează la 2400px, le convertește în WebP/JPEG, le urcă în bucketul `media`, iar `width`/`height` se scriu în DB pentru `next/image`.
 
 ---
@@ -469,16 +469,24 @@ export function paramsFromConfig(c: Config): URLSearchParams {
 
 ---
 
-## 8. Panoul de admin (v2)
+## 8. Panoul de admin
 
-- **Autentificare**: Supabase Auth cu magic link pe email. Accesul îl au doar utilizatorii cu `app_metadata.role = 'admin'` (setat din dashboard sau SQL). Sesiunea se verifică **în layout-ul server `/admin`**, plus RLS pe date; nu te baza doar pe un proxy/middleware.
+Se construiește în PR-7 … PR-9 din `docs/PLAN.md`, înainte de conținutul real (PR-11) și de lansare (PR-12).
+
+- **Autentificare**: Supabase Auth cu email și parolă. Magic link mai târziu, când trimiterea de emailuri din Supabase e mutată pe Resend. Rolul `admin` stă în `app_metadata` și se acordă prin SQL. Sesiunea și rolul se verifică **în layout-ul server `/admin`**, plus RLS pe date (`public.is_admin()`, §5); nu te baza doar pe proxy/middleware. Primul utilizator îl creează proprietarul în dashboardul Supabase (Authentication → Users → Add user).
+- **Acces la date**: fiecare citire și scriere din admin trece prin clientul cu cookie al utilizatorului autentificat (`src/lib/supabase/server.ts`), niciodată prin cheia secretă. Politica `admin_all` din §5 face restul.
+- **Poze**: urcă din browser direct în bucketul `media`, după redimensionare pe client, sub politica `admin_all_storage` din §5.
+- **Revalidare**: fiecare salvare apelează `updateTag` pentru tag-ul ei (`settings`, `catalog`, `pricing`, `projects`, `reviews`), deci Database Webhooks-urile din §6.5 nu mai sunt necesare.
 - **Ecranele**:
-  - **Cereri**: listă cu filtre (tip, status, perioadă) și detaliul cererii (fișa, desenul, pozele prin linkuri semnate, butoane Sună / WhatsApp, schimbarea statusului, note). Export CSV.
-  - **Catalog**: modele, familii, materiale (CRUD + upload poză + `featured`/`active`), baze, regulile model ↔ familie.
+  - **Dashboard**: numărul cererilor noi.
+  - **Cereri**: listă cu filtre (tip, status, perioadă) și căutare; detaliul cererii cu fișa, codul configurației, pozele prin URL-uri semnate, butoane `tel:` și WhatsApp, selectul de status (nou / contactat / ofertat / câștigat / pierdut / spam), note, ștergere.
+  - **Catalog**: materiale (CRUD, upload de poză, furnizor, cod furnizor, categorie de preț, `featured`, `active`, ordine); modele, familii și baze (nume, note, descrieri, specificații, poze, `active`) și regulile model ↔ familie.
   - **Prețuri**: formular peste `pricing.data`, cu o previzualizare a prețului pentru 3 configurații-tip.
-  - **Lucrări**: CRUD, upload de poze, bifa de acord al clientului, `featured`/`hero`.
-  - **Recenzii** și **Setări**.
-- Fiecare salvare invalidează tag-ul paginilor afectate.
+  - **Lucrări**: CRUD cu poze (upload, ordine, ștergere, alt), acordul clientului, `published`, `featured`, `hero` (un singur proiect).
+  - **Recenzii**: CRUD cu acord, `published`, ordine.
+  - **Setări**: un formular peste toate cheile din `settings`, cu comutatorul `show_prices`.
+- **Două limite**: modelele, familiile și bazele noi nu se adaugă din admin (fiecare are desene și reguli în cod); ștergerea unui material sau a unei baze la care încă face referire un proiect e refuzată (se dezactivează în loc).
+- Server Actions validate cu zod, care re-verifică rolul. `/admin` are `noindex`.
 
 ---
 
@@ -498,7 +506,7 @@ export function paramsFromConfig(c: Config): URLSearchParams {
 **GDPR** (de validat cu un jurist)
 - **Temeiul legal** pentru a răspunde la o cerere de ofertă e art. 6(1)(b) (demersuri făcute la cererea persoanei înainte de un contract), nu consimțământul. Bifa din design poate deveni o simplă informare („Folosim datele doar ca să-ți răspundem. Detalii în Politica de confidențialitate.”). O bifă separată, neobligatorie, e necesară doar pentru marketing. În `consent_text` se salvează versiunea textului afișat.
 - **Locația datelor**: Supabase în Frankfurt (`eu-central-1`), funcțiile Vercel în `fra1`, Resend pe regiunea UE dacă e disponibilă pe cont. Pentru Vercel, Supabase, Resend și Cloudflare: semnezi DPA-urile (acordurile de prelucrare a datelor) și îi treci ca persoane împuternicite în politica de confidențialitate.
-- **Retenția** (propunere, decide atelierul), aplicată de cron-ul `retention`: cererile fără comandă se șterg după 24 de luni, pozele din cereri după 12 luni, adresele de la mostre după 6 luni, spam-ul după 30 de zile, iar `pending/` după 24 de ore.
+- **Retenția** (propunere, decide atelierul), aplicată de cron-ul `retention`: cererile fără comandă se șterg după 24 de luni, pozele din cereri după 12 luni, spam-ul după 30 de zile, iar `pending/` după 24 de ore.
 - **Cookies**: Vercel Analytics nu pune cookies, Turnstile e strict necesar, iar harta se încarcă doar la click. Deci **nu trebuie banner** în v1, dar trebuie politica de cookies. Dacă se adaugă Meta Pixel sau Google Ads, e nevoie de banner cu consimțământ.
 - **Datele firmei** apar în footer: denumire, CUI, Registrul Comerțului, sediu.
 
@@ -511,8 +519,8 @@ export function paramsFromConfig(c: Config): URLSearchParams {
 - **Google Business Profile** e pârghia principală pentru căutările locale: link spre site, poze, recenzii, categoria potrivită.
 - **După lansare**: pagini pe model (`/modele/capitonat` …) pentru căutări ca „pat tapițat la comandă”, „pat capitonat”, „pat cu ladă de depozitare la comandă” + oraș.
 - **Alt text** generat din fișa proiectului: „Pat capitonat 160 × 200 din catifea verde, cu ladă de depozitare, livrat în Cluj”.
-- **Performanță**: `next/image` cu `priority` doar pe FOTO 01, fonturi prin `next/font` (fără layout shift), client components doar pentru meniu, configurator, cutia de mostre și formulare. Ținte pe mobil: LCP < 2,5 s, CLS < 0,05, Lighthouse ≥ 95 la Performance, Accessibility, Best Practices și SEO.
-- **Evenimente** (Vercel Web Analytics, Pro): `config_start`, `config_step` (pasul), `quote_submit`, `contact_submit`, `samples_add`, `samples_submit`, `whatsapp_click`, `phone_click`. UTM-urile și referrer-ul se salvează în `leads.source`, ca să știi de unde vin cererile.
+- **Performanță**: `next/image` cu `priority` doar pe FOTO 01, fonturi prin `next/font` (fără layout shift), client components doar pentru meniu, configurator, tab-urile din Materiale și formulare. Ținte pe mobil: LCP < 2,5 s, CLS < 0,05, Lighthouse ≥ 95 la Performance, Accessibility, Best Practices și SEO.
+- **Evenimente** (Vercel Web Analytics, Pro): `config_start`, `config_step` (pasul), `quote_submit`, `contact_submit`, `whatsapp_click`, `phone_click`. UTM-urile și referrer-ul se salvează în `leads.source`, ca să știi de unde vin cererile.
 
 ---
 
@@ -559,7 +567,7 @@ export function paramsFromConfig(c: Config): URLSearchParams {
 - **Playwright + `@axe-core/playwright`**:
   - Acasă se încarcă fără erori de accesibilitate
   - configuratorul: alegi opțiuni, URL-ul și codul se schimbă, trimiți (Turnstile cu cheile de test, `NOTIFY_DRY_RUN=1`) și vezi confirmarea cu codul
-  - Materiale: 5 mostre, a șasea e blocată, trimiți
+  - Materiale: tab-urile, tile-ul duce la configurator cu familia și culoarea preselectate
   - meniul mobil la 390px
 - **Vizual**: capturi Playwright la 1440 și la 390 pentru fiecare pagină, comparate cu canvasul.
 - **CI** (GitHub Actions): `pnpm lint`, `pnpm typecheck`, `pnpm test`, Playwright pe URL-ul de preview.

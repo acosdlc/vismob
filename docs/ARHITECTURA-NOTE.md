@@ -11,7 +11,8 @@
 | Local development | `supabase start` with Docker, `NOTIFY_DRY_RUN=1` | there is no local machine: work happens in Claude Code cloud sessions, and a change is seen on its pull request's Vercel preview. `NOTIFY_DRY_RUN` stays as a switch for tests. |
 | Migrations | `supabase migration new` + `supabase db push` | one SQL file per change in `supabase/migrations/`, applied through the `db-change` skill. |
 | UI components | own components, no UI library | shadcn/ui (Base UI) is part of the starter, but DESIGN.md wins: use a shadcn primitive only where it matches a DESIGN.md component exactly, restyled to its tokens. Do not add components DESIGN.md does not describe. |
-| Notifications | Resend email + Twilio SMS | **email only, through Resend.** No Twilio, no SMS. The client's email is **required** in all three forms (contact, configurator, samples) because every confirmation goes by email. ARHITECTURA.md and DESIGN.md have already been edited to match. |
+| Notifications | Resend email + Twilio SMS | **email only, through Resend.** No Twilio, no SMS. The client's email is **required** in both forms (contact, configurator) because every confirmation goes by email. ARHITECTURA.md and DESIGN.md have already been edited to match. |
+| Admin | `/admin` in v2, after launch; v1 edits content in Supabase Studio behind Database Webhooks | **`/admin` is built before launch** (PLAN PR-7…PR-9): email and password login, the admin role in `app_metadata`, every save expires its cache tag itself, and the real content is entered through it (PR-11). No Database Webhooks are created. This supersedes the v1/v2 split in ARHITECTURA §0, §1, §3, §4, §6.5, §13 and §14. |
 | Next.js | 16.x | `create-next-app` installed Next.js 16.4 with `cacheComponents` on. Read `node_modules/next/dist/docs/` before writing framework code (see `AGENTS.md`). |
 
 ## Not set up yet

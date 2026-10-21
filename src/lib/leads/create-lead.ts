@@ -48,7 +48,7 @@ export interface CreateLeadInput<T extends LeadBaseData> {
   formData: FormData;
   headers: Headers;
   parse: (formData: FormData) => ParseResult<T>;
-  /** The form-specific columns (e.g. `mattress_size`, `config`, `sample_material_ids`). */
+  /** The form-specific columns (e.g. `mattress_size`, `config`). */
   toRow: (data: T, ctx: CreateLeadContext) => Partial<LeadInsert>;
 }
 

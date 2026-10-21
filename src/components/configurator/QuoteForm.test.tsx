@@ -146,12 +146,8 @@ describe("QuoteForm", () => {
     const heading = screen.getByRole("heading", { level: 3, name: "Mulțumim! Te sunăm în 24 de ore." });
     expect(heading.className).toContain("h3-confirm");
     expect(document.activeElement).toBe(heading);
-    expect(
-      screen.getByText(
-        "Am primit desenul și alegerile tale. Dacă vrei să vezi materialele înainte, cere mostrele acum și le primești odată cu oferta.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Cere mostre" })).toHaveAttribute("href", "/materiale");
+    expect(screen.getByText("Am primit desenul și alegerile tale.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Cere mostre" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Trimite configurația" })).toBeNull();
   });
 

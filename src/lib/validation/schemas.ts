@@ -1,7 +1,6 @@
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { z } from "zod";
 import { QUOTE_FIELDS } from "@/components/configurator/types";
-import { SAMPLES_FIELDS } from "@/components/materials/types";
 import { configFromParams } from "@/lib/configurator/url";
 import { FORM_FIELDS, FORM_MESSAGES, MATTRESS_SIZES, UPLOAD_LIMITS, type FieldErrors } from "@/lib/leads/types";
 
@@ -108,60 +107,9 @@ export const quoteSchema = leadBaseSchema.extend({
   [QUOTE_FIELDS.config]: config,
 });
 
-/** The samples form's limit message with the number filled in (FORM_MESSAGES.samplesLimit). */
-export function samplesLimitMessage(limit: number): string {
-  return FORM_MESSAGES.samplesLimit.replace("{n}", String(limit));
-}
-
-/**
- * The samples form (ARHITECTURA §6.3, DESIGN §4.3): name, phone, email and the
- * delivery address are required, plus the consent; the hidden `sampleIds` input
- * carries a JSON array of Color.ids. The limit and the catalogue come from the
- * server (settings.sample_limit, getCatalog()), so the schema is a factory. Ids
- * unknown to the catalogue are dropped and duplicates collapse, before the count
- * is checked: 1 … limit. The result also satisfies LeadBaseData (no message,
- * no measurement visit).
- */
-export function samplesSchema(limit: number, validIds: readonly string[]) {
-  const known = new Set(validIds);
-  const sampleIds = z.preprocess(
-    (value) => {
-      if (value === undefined || value === "") return [];
-      if (typeof value !== "string") return value;
-      try {
-        return JSON.parse(value) as unknown;
-      } catch {
-        return [];
-      }
-    },
-    z
-      .array(z.unknown(), { error: FORM_MESSAGES.samples })
-      // Anything that is not a known Color.id (a number, a stale id) is dropped, not refused.
-      .transform((ids) => Array.from(new Set(ids.filter((id): id is string => typeof id === "string" && known.has(id)))))
-      .pipe(
-        z
-          .array(z.string())
-          .min(1, FORM_MESSAGES.samples)
-          .max(limit, samplesLimitMessage(limit)),
-      ),
-  );
-
-  return z
-    .object({
-      name: requiredText(FORM_MESSAGES.name, 2, 120),
-      phone,
-      email,
-      address: requiredText(FORM_MESSAGES.tooLong, 1, 500),
-      privacy: z.literal("on", { error: FORM_MESSAGES.privacy }),
-      [SAMPLES_FIELDS.ids]: sampleIds,
-    })
-    .transform((data) => ({ ...data, wantsMeasurement: false as const }));
-}
-
 export type LeadBaseInput = z.output<typeof leadBaseSchema>;
 export type ContactInput = z.output<typeof contactSchema>;
 export type QuoteInput = z.output<typeof quoteSchema>;
-export type SamplesInput = z.output<ReturnType<typeof samplesSchema>>;
 
 /** The form's string fields, first value per name; files and React's `$ACTION_*` entries are skipped. */
 export function formValues(formData: FormData): Record<string, string> {

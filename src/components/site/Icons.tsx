@@ -58,21 +58,3 @@ export function CloseIcon(props: IconProps) {
     </svg>
   );
 }
-
-export function CheckIcon(props: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 12 10"
-      width={12}
-      height={10}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      aria-hidden="true"
-      focusable="false"
-      {...props}
-    >
-      <path d="M1 5l3.5 3.5L11 1" />
-    </svg>
-  );
-}

@@ -16,14 +16,11 @@ export function MaterialsTeaser({ catalog, settings }: { catalog: Catalog; setti
         <SectionHeader
           eyebrow="03 — Materiale"
           title="Atingi materialele înainte să alegi."
-          aside={`Catifea, bouclé, stofă, piele ecologică sau lemn masiv. Le vezi în atelier sau îți trimitem acasă până la ${settings.sample_limit} mostre, ${settings.samples_free}.`}
+          aside={`Catifea, bouclé, stofă, piele ecologică sau lemn masiv. Le vezi în atelier, ${settings.visits_note}.`}
         />
         <div className="flex flex-wrap gap-3">
           <Button href="/materiale" variant="primary">
             Toate materialele
-          </Button>
-          <Button href="/materiale" variant="secondary">
-            Cere mostre
           </Button>
         </div>
       </div>

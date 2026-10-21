@@ -1,8 +1,8 @@
 # Project
 
 - **Name:** VisMob
-- **What it is:** a presentation and contact site for a workshop that makes beds to order. It is not an online shop. It has a bed configurator with a drawing to scale, a library of material samples that visitors can ask to receive at home, and three request forms that reach the workshop by email.
-- **Domain:** `vismob.dev` on Vercel DNS, production at `https://www.vismob.dev` (the apex redirects there). A `.ro` domain on the workshop's company replaces it at launch (docs/PLAN.md, PR-8).
+- **What it is:** a presentation and contact site for a workshop that makes beds to order. It is not an online shop. It has a bed configurator with a drawing to scale, a material library whose swatches open the configurator, and two request forms that reach the workshop by email.
+- **Domain:** `vismob.dev` on Vercel DNS, production at `https://www.vismob.dev` (the apex redirects there). A `.ro` domain on the workshop's company replaces it at launch (docs/PLAN.md, PR-12).
 - **UI language:** Romanian, with comma-below diacritics (ș ț Ș Ț), never cedilla (ş ţ)
 
 ## Project documents
@@ -19,7 +19,7 @@ Read these before any task:
 
 1. **Design**: implement the values in `docs/DESIGN.md` exactly. Do not invent colours, sizes or components. If something is missing, ask.
 2. **Text**: Romanian, comma-below diacritics. `[...]` placeholders come from `settings` or the database. Never invent data, reviews, figures or prices.
-3. **Client components** only for the mobile menu, the configurator, the sample box, forms and uploads, and the click-to-load map. Everything else is a Server Component.
+3. **Client components** only for the mobile menu, the configurator, the tabs on `/materiale`, forms and uploads, and the click-to-load map. Everything else is a Server Component.
 4. **Forms** are Server Actions validated with Zod. Everything from the client is validated again on the server; the configuration code and the price are recalculated on the server. The client's **email is required** in every form.
 5. **Notifications** go by email only, through Resend (to the workshop and to the client). No SMS, no Twilio.
 6. **Secrets** live only in modules with `import 'server-only'`. Only `NEXT_PUBLIC_*` variables reach the browser.

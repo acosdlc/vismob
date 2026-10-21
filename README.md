@@ -1,6 +1,6 @@
 # VisMob
 
-The website of a workshop that makes beds to order. It presents the workshop and its finished work, and it has a bed configurator with a drawing to scale, a material sample library (samples sent home on request) and request forms. It is not an online shop: every request reaches the workshop by email. The interface is in Romanian.
+The website of a workshop that makes beds to order. It presents the workshop and its finished work, and it has a bed configurator with a drawing to scale, a material library whose swatches open the configurator, and request forms. It is not an online shop: every request reaches the workshop by email. The interface is in Romanian.
 
 **Stack:** Next.js (App Router, TypeScript) · Tailwind CSS · Supabase · Resend · Vercel · Vitest, with npm.
 

@@ -37,7 +37,6 @@ Pozele se trimit **originale**, din telefon sau aparat, nu prin WhatsApp (WhatsA
 ## 2. Decizii de luat (le scriem pe site exact așa)
 
 - [ ] **Prețuri pe site**: afișăm „de la X lei” și un preț orientativ în configurator? *(Recomandarea noastră: da. Aduce clienți mai potriviți și mai puține telefoane degeaba.)*
-- [ ] **Mostre acasă**: le trimiteți? Câte maximum (propunem 5)? Gratuit sau cu cost? Prin ce curier și în câte zile?
 - [ ] **Măsurători la domiciliu**: le faceți? Gratuit sau cu cost? În ce zonă?
 - [ ] **Livrare și montaj**: în ce zone? Montajul e inclus? Cât costă transportul în afara zonei?
 - [ ] **Timpul de răspuns** pe care îl promitem (de ex. „vă sunăm în 24 de ore”). Trebuie să-l puteți respecta.
@@ -137,7 +136,7 @@ Prețurile pot fi aproximative. Pe site apar ca „preț orientativ”, iar pre�
 
 - [ ] Domeniul (de ex. numeatelier.ro): îl aveți? Pe ce firmă e înregistrat? Trebuie să fie pe firma voastră.
 - [ ] Email pe domeniu (contact@…): îl folosiți deja sau îl facem?
-- [ ] Textele legale: politica de confidențialitate (formularul colectează nume, telefon, adresă, poze), politica de cookies și termenii și condițiile (avans, plată, livrare, garanție, retur). Le scrie un jurist sau pornim de la un model pe care îl validează juristul. La produsele făcute după specificațiile clientului nu se aplică dreptul de retragere de 14 zile (OUG 34/2014), dar asta trebuie scris explicit în termeni.
+- [ ] Textele legale: politica de confidențialitate (formularele colectează nume, telefon, email, localitate, mesaj, poze), politica de cookies și termenii și condițiile (avans, plată, livrare, garanție, retur). Le scrie un jurist sau pornim de la un model pe care îl validează juristul. La produsele făcute după specificațiile clientului nu se aplică dreptul de retragere de 14 zile (OUG 34/2014), dar asta trebuie scris explicit în termeni.
 
 ---
 

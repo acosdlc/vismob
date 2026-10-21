@@ -74,7 +74,7 @@ export function StepMaterial({ model, families, resolved, onFamilyChange, onColo
       </p>
 
       <Button variant="link" href="/materiale" className="self-start">
-        Vezi materialele și cere mostre
+        Vezi toate materialele
       </Button>
     </div>
   );
