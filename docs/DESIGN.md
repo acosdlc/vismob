@@ -513,6 +513,17 @@ Text simplu, `max-width: 720px`, H1 + H2 + paragrafe de 17px, liste. Conținutul
 
 H1 „Pagina nu există.”, un paragraf scurt și două butoane: „Acasă” / „Configurator”.
 
+### 4.8 Admin (`/admin`)
+
+Panoul atelierului (ARHITECTURA.md §8), construit în PR-7 … PR-9 din `docs/PLAN.md`. Nu e desenat în canvas și nu primește nimic nou: aceleași tokenuri (§2), aceleași roluri tipografice și aceleași componente (§3). Ce se adaugă e doar compunerea lor, în `src/components/admin/ui.tsx`:
+
+- **Layout**: header lipicios ca §3.1 (logo cu numele atelierului, sub-logo „Admin”, linkurile Panou / Cereri / Setări / „Vezi site-ul” și butonul secundar „Ieși” la mărimea header), conținutul în `.container-site`, fără footer. Pagina de login e o singură fișă (§3.16 FormCard) centrată, max 420px.
+- **Titluri**: H1 de ecran cu rolul `h2-request`, secțiuni cu `h3-card`, antete de tabel cu `eyebrow`, metadate cu `mono-13`.
+- **Fișe**: cardul alb cu bordură 1.5px ink din §3.16; fișa cererii e `Ticket` (§3.6) la mărimea `md`.
+- **Formulare**: exact §3.16 (Field, Label, Input, Select, Textarea, Checkbox, FieldError), câmpurile în grila `minmax(min(220px, 100%), 1fr)`; butonul primar „Salvează”, mesajele într-un `Notice` cu bordură 1px (accent pentru succes, `error` pentru eroare, `rule` pentru informare), anunțat prin `role="status"` / `role="alert"`.
+- **Tabele**: `<table>` nativ, 15px, rânduri despărțite cu 1px `rule`, derulare orizontală pe mobil. Statusul cererii e o etichetă mono 12px uppercase cu bordură 1px: `nou` în accent, `câștigat` pe fundal accent, `pierdut` și `spam` în `muted`.
+- Textele sunt ale atelierului, scurte, cu diacritice cu virgulă; nicio cifră care nu vine din baza de date. `/admin` e `noindex` și, din PR-10, blocat în `robots.txt`.
+
 ---
 
 ## 5. Configuratorul: date, reguli, geometrie

@@ -1,13 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import type { Database } from "./database.types";
 import { supabasePublishableKey, supabaseUrl } from "./env";
 
 // Server client for Server Components, Server Actions and Route Handlers.
 // Create a new one per request; it reads the session from the request cookies.
+// Row level security applies: signed in as the admin it sees everything the
+// admin_all policies allow; anonymous it sees only the public_read rows. The
+// admin (src/app/admin, src/actions/admin) reads and writes only through it.
 export async function createClient() {
   const cookieStore = await cookies();
 
-  return createServerClient(supabaseUrl(), supabasePublishableKey(), {
+  return createServerClient<Database>(supabaseUrl(), supabasePublishableKey(), {
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -25,3 +29,5 @@ export async function createClient() {
     },
   });
 }
+
+export type ServerClient = Awaited<ReturnType<typeof createClient>>;
