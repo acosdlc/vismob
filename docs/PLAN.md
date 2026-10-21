@@ -139,7 +139,7 @@ Goal: the workshop maintains its materials, the texts and photos of models, fami
 - Saves → `updateTag("catalog")` / `updateTag("pricing")`.
 - Tests: schemas and actions, including the refused delete and the rule edits.
 
-### PR-9 · Admin lucrări and recenzii (~1.5 sessions)
+### PR-9 · Admin lucrări and recenzii (~1.5 sessions) — merged
 
 Goal: the workshop publishes its projects and reviews itself, with the consents recorded.
 
