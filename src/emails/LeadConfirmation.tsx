@@ -3,6 +3,7 @@ import type { LeadRow } from "@/lib/leads/types";
 import { clientSubject } from "@/lib/notify/subjects";
 import {
   colors,
+  DRAWING_ATTACHED_NOTE,
   EmailShell,
   Eyebrow,
   isReal,
@@ -22,6 +23,8 @@ export interface LeadConfirmationProps {
   shareUrl?: string;
   phonePublic: string;
   emailPublic: string;
+  /** True when the drawing PNG travels with this email (PR-10), so the body says so. */
+  drawingAttached?: boolean;
 }
 
 /** DESIGN §4.2, the three steps after a request. */
@@ -44,6 +47,7 @@ export function LeadConfirmation({
   shareUrl,
   phonePublic,
   emailPublic,
+  drawingAttached,
 }: LeadConfirmationProps) {
   const kindLabel = KIND_LABELS[lead.kind];
   const eyebrow = lead.config_code ? `Configurație trimisă · ${lead.config_code}` : "Cerere trimisă";
@@ -103,6 +107,7 @@ export function LeadConfirmation({
 
       <TicketCard title={kindLabel} number={lead.config_code} rows={leadTicketRows(lead)} />
       {ticketRows ? <TicketCard title="Fișă de configurare" number={lead.config_code} rows={ticketRows} /> : null}
+      {drawingAttached ? <Text style={styles.mono}>{DRAWING_ATTACHED_NOTE}</Text> : null}
 
       {shareUrl ? (
         <Text style={styles.paragraph}>
