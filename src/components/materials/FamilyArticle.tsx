@@ -1,9 +1,8 @@
-"use client";
-
 import { Fragment } from "react";
 import type { Family } from "@/lib/configurator/types";
+import { configuratorHref } from "@/lib/materials/swatches";
 import { SwatchTile } from "./SwatchTile";
-import type { SampleItem, SwatchTileState } from "./types";
+import type { SwatchItem } from "./types";
 
 // DESIGN §4.3 „Familia”: an <article> with padding-block 32px and a rule below, in two
 // wrapping columns: the info (flex 1 1 260px: H2 26px, the description 16px ink-2, the specs
@@ -13,13 +12,11 @@ import type { SampleItem, SwatchTileState } from "./types";
 
 export interface FamilyArticleProps {
   family: Family;
-  /** The family's colours as sample items, in catalogue order. */
-  items: SampleItem[];
-  stateOf: (id: string) => SwatchTileState;
-  onToggle: (id: string) => void;
+  /** The family's colours as swatch items, in catalogue order. */
+  items: SwatchItem[];
 }
 
-export function FamilyArticle({ family, items, stateOf, onToggle }: FamilyArticleProps) {
+export function FamilyArticle({ family, items }: FamilyArticleProps) {
   const headingId = `familie-${family.id}`;
   return (
     <article aria-labelledby={headingId} className="flex flex-wrap gap-[clamp(24px,3vw,40px)] border-b border-rule py-8" data-family={family.id}>
@@ -42,7 +39,7 @@ export function FamilyArticle({ family, items, stateOf, onToggle }: FamilyArticl
       <ul className="grid flex-[2_1_420px] list-none grid-cols-[repeat(auto-fill,minmax(min(118px,100%),1fr))] content-start gap-x-3 gap-y-4 p-0">
         {items.map((item) => (
           <li key={item.id}>
-            <SwatchTile item={item} state={stateOf(item.id)} onToggle={onToggle} />
+            <SwatchTile item={item} href={configuratorHref(item)} />
           </li>
         ))}
       </ul>

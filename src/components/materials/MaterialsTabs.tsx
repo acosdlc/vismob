@@ -23,13 +23,15 @@ export interface MaterialsTabsProps {
   onChange: (id: MaterialsTabId) => void;
   /** The content of the active panel. */
   children: ReactNode;
+  /** Whether the active panel holds focusable content (links); such a panel stays out of the tab order. */
+  focusablePanel?: boolean;
   className?: string;
 }
 
 const tabId = (id: MaterialsTabId) => `tab-${id}`;
 const panelId = (id: MaterialsTabId) => `panel-${id}`;
 
-export function MaterialsTabs({ tabs, active, onChange, children, className }: MaterialsTabsProps) {
+export function MaterialsTabs({ tabs, active, onChange, children, focusablePanel = false, className }: MaterialsTabsProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -81,7 +83,8 @@ export function MaterialsTabs({ tabs, active, onChange, children, className }: M
           );
         })}
       </div>
-      <div role="tabpanel" id={panelId(active)} aria-labelledby={tabId(active)} tabIndex={0}>
+      {/* In the tab order only when the panel holds nothing focusable (the cards tab); the swatch panels have links. */}
+      <div role="tabpanel" id={panelId(active)} aria-labelledby={tabId(active)} tabIndex={focusablePanel ? undefined : 0}>
         {children}
       </div>
     </div>

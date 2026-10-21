@@ -115,6 +115,7 @@ export const PLAIN_TEXT_OPTIONS = {
 export const KIND_LABELS: Record<LeadKind, string> = {
   contact: "Cerere de ofertă",
   configurator: "Configurator",
+  // The enum still carries this value (samples are no longer requested since PR-6); no lead gets it.
   mostre: "Mostre",
 };
 

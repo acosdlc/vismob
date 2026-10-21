@@ -128,14 +128,8 @@ function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionP
           <h3 ref={confirmHeadingRef} tabIndex={-1} className="h3-confirm outline-none">
             Mulțumim! Te sunăm în {responseTime}.
           </h3>
-          <p className="text-ink-2">
-            Am primit desenul și alegerile tale. Dacă vrei să vezi materialele înainte, cere mostrele acum și le
-            primești odată cu oferta.
-          </p>
+          <p className="text-ink-2">Am primit desenul și alegerile tale.</p>
           <div className="flex flex-wrap gap-3 pt-2">
-            <Button href="/materiale" variant="primary">
-              Cere mostre
-            </Button>
             <Button variant="secondary" onClick={onReset}>
               Modifică configurația
             </Button>

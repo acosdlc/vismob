@@ -224,6 +224,6 @@ describe("Configurator", () => {
   it("the headboard note and the materials link are present", () => {
     renderConfigurator();
     expect(screen.getByText("Măsurată de la podea. Peste 120 cm arată bine în camere cu tavan înalt.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Vezi materialele și cere mostre" })).toHaveAttribute("href", "/materiale");
+    expect(screen.getByRole("link", { name: "Vezi toate materialele" })).toHaveAttribute("href", "/materiale");
   });
 });

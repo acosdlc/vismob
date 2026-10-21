@@ -18,9 +18,9 @@ How VisMob gets built after setup (phase 0, pull request #1). It replaces the ph
 |---|---|
 | Forms | Server Actions + `useActionState` + shared Zod v4 schemas in `src/lib/validation/schemas.ts`, with a thin client pre-pass of the same schema for focus-to-first-error and `aria-busy`. `react-hook-form` and `@hookform/resolvers` are removed in PR-1. |
 | shadcn/ui | Not used in v1 (no DESIGN §3 component maps to a primitive). `ui.shadcn.com` stays blocked. Revisit only for `/admin`. |
-| Consent | The DESIGN checkbox „Sunt de acord cu prelucrarea datelor conform Politicii de confidențialitate.” on all three forms (the samples form too); its exact text is stored in `leads.consent_text`. Revisited after the lawyer's review (PR-8). |
-| Prices | `settings.show_prices = false` until the workshop's price sheet arrives (PR-7). The ticket shows only „Prețul final îl confirmăm în scris…”, model cards drop the price row, the FAQ item „Cât costă un pat la comandă?” is hidden. `estimatePrice()` is tested with a fixture that is never rendered. |
-| Samples | Built as designed with `sample_limit = 5` and bracket strings for cost and delivery, pending the workshop's answer (needed before PR-4 merges). |
+| Consent | The DESIGN checkbox „Sunt de acord cu prelucrarea datelor conform Politicii de confidențialitate.” on both forms; its exact text is stored in `leads.consent_text`. Revisited after the lawyer's review (PR-12). |
+| Prices | `settings.show_prices = false` until the workshop's price sheet arrives (PR-11). The ticket shows only „Prețul final îl confirmăm în scris…”, model cards drop the price row, the FAQ item „Cât costă un pat la comandă?” is hidden. `estimatePrice()` is tested with a fixture that is never rendered. |
+| Samples | Removed in PR-6 (2026-10-21): the workshop does not send samples; `/materiale` is a library whose swatches open the configurator. |
 | Reviews and projects before real content | Placeholder cards built only from the DESIGN templates („[Prenume], [Oraș]”, „[Recenzie]”, FOTO NN boxes) so the 1440/390 checks match the canvas. In production, section 07 hides when there are no published reviews and the hero ticket hides when no project is flagged `hero`. |
 | WhatsApp | Buttons hidden while `settings.whatsapp_number` is empty or invalid; the number is normalised with `libphonenumber-js`. |
 | Settings keys | ARHITECTURA §5 list minus `notify_email` (env only; `settings` is publicly readable) and minus `custom_size_range` (built from `CUSTOM_W`/`CUSTOM_L`), plus `installation_note`, `leg_height_cm`, `oil_refresh_interval`. `visits_note` is rendered wherever DESIGN hardcodes „cu programare”. |
@@ -30,7 +30,7 @@ How VisMob gets built after setup (phase 0, pull request #1). It replaces the ph
 | Texts DESIGN leaves blank | 404: „Linkul e greșit sau pagina a fost mutată.” Legal stubs: „[Textul va fi furnizat de atelier și validat de jurist.]” Step 06 cards: „LED sub pat” / „Bandă de lumină discretă, sub cadru.” and „2 noptiere” / „Asortate cu patul, în același material.” `/contact` map: 400px. |
 | Tokens | DESIGN §2.7 `@theme` verbatim plus `--color-on-dark: #F3F3F0` and `--color-error: #9B2C2C`. Ranges pinned once: buttons 52px (header 46px), H3 20px process / 19px model card, mono 12px (13px in the ticket). |
 | Preview emails | Preview sends real emails to the developer (`NOTIFY_EMAIL`); `NOTIFY_DRY_RUN` unset. E2E submissions use `delivered@resend.dev` as the client address. |
-| Revalidation | `/api/revalidate` accepts the Supabase Database Webhook payload and maps table → tag. The owner creates the webhooks in the Supabase dashboard at PR-7 (no secret in SQL). |
+| Revalidation | `/api/revalidate` (PR-5) accepts the Supabase Database Webhook payload and maps table → tag. No Database Webhooks are created: from PR-7 on, every admin save expires its own tag with `updateTag` (see PR-11). |
 | Crons | Vercel Pro confirmed: `retry-notifications` every 15 min, `purge-pending` daily, `retention` weekly, in `vercel.json` with `"regions": ["fra1"]`. |
 | CI | None in v1. The `ship` skill's checks plus the Vercel build gate every PR. |
 | Playwright | `@playwright/test` pinned to **1.56.1** (the container's Chromium 1194; `cdn.playwright.dev` is blocked), `@axe-core/playwright`, run in-session against `next start`. Screenshots are read by Claude and sent to the owner, never committed. |
@@ -41,7 +41,7 @@ How VisMob gets built after setup (phase 0, pull request #1). It replaces the ph
 
 Each PR is one branch with a Vercel preview, finished in one or two cloud sessions. Order matters: each builds on the previous.
 
-### PR-1 · Design system, site shell, configurator library, test harness (~2 sessions)
+### PR-1 · Design system, site shell, configurator library, test harness (~2 sessions) — merged
 
 Goal: replace the scaffold with DESIGN §2 tokens and fonts, build every DESIGN §3 component, land `src/lib/configurator` with full tests, set up Playwright + axe, ship the pages that need no backend. Preview: styled shell, placeholder home inside it, 404, legal stubs.
 
@@ -57,7 +57,7 @@ Goal: replace the scaffold with DESIGN §2 tokens and fonts, build every DESIGN 
 - Harness: `@playwright/test@1.56.1`, `@axe-core/playwright`; `playwright.config.ts` (`tests/e2e`, projects desktop 1440×900 and mobile 390×844, `webServer: npm run start`); `tests/e2e/home.spec.ts` (axe + screenshots of the home, a legal page and the 404); `.gitignore` for test output.
 - Done when: all four checks pass; axe zero on the shell pages at both widths; screenshots match §3.1/§3.17/§4.6/§4.7.
 
-### PR-2 · Acasă, Lucrări, Contact and the contact request pipeline (~2–3 sessions)
+### PR-2 · Acasă, Lucrări, Contact and the contact request pipeline (~2–3 sessions) — merged
 
 Goal: the full home page and `/lucrari`, `/contact`, on seeds; the „Cerere de ofertă” form really submits: validated, protected, stored in `leads` with photos, both emails sent through Resend. After this PR the workshop has a site to show and requests arrive by email.
 
@@ -65,7 +65,7 @@ Goal: the full home page and `/lucrari`, `/contact`, on seeds; the „Cerere de 
 - `src/lib/supabase/admin.ts` (`import 'server-only'`, `SUPABASE_SECRET_KEY` read at call time); `src/lib/env.ts` for the other secrets.
 - `src/lib/validation/schemas.ts`: `leadBaseSchema` (name 2–120, phone → E.164 default RO, **email required**, message ≤ 4000, consent), `contactSchema` (mattress size enum, ≤ 6 uploads with `pending/` prefix).
 - `src/lib/security/`: `ip.ts` (`sha256(ip + IP_HASH_SALT)`), `form-token.ts` (HMAC-signed `startedAt`, minted by a Server Action on first interaction because pages are static), `turnstile.ts` (siteverify; off without site key), `rate-limit.ts` (5 leads per `ip_hash` per hour).
-- `src/lib/leads/create-lead.ts`: the shared pipeline for all three forms (honeypot → token age → Turnstile → Zod → rate limit → insert → move uploads → `lead_files`).
+- `src/lib/leads/create-lead.ts`: the shared pipeline for every form (honeypot → token age → Turnstile → Zod → rate limit → insert → move uploads → `lead_files`).
 - `src/actions/`: `issue-form-token.ts`, `create-upload-urls.ts` (signed upload URLs, 6 per call, 20 per IP per hour), `submit-contact.ts` with `after()` → `dispatchLeadNotifications`.
 - `src/lib/notify/`: `email.ts` (Resend; `EMAIL_FROM`, `NOTIFY_EMAIL` env wins; `NOTIFY_DRY_RUN`), `subjects.ts`, `dispatch.ts` (writes `lead_events`); `src/emails/LeadToWorkshop.tsx`, `LeadConfirmation.tsx` (React Email, hook-free; `serverExternalPackages: ['@react-email/render', '@react-email/components']`).
 - `next.config.ts` `headers()`: the ARHITECTURA §9 CSP with the project host, `Referrer-Policy`, `Permissions-Policy`, `X-Content-Type-Options`.
@@ -74,9 +74,9 @@ Goal: the full home page and `/lucrari`, `/contact`, on seeds; the „Cerere de 
 - Tests: schemas, security helpers, subjects, the pipeline (honeypot, token age, rate limit, prefix check, consent text); `tests/e2e/home.spec.ts`, `contact.spec.ts`, `lucrari.spec.ts` (axe, screenshots, anchor offsets, FAQ toggles).
 - Needs from the owner before merge: `RESEND_API_KEY`, `NOTIFY_EMAIL` (your address for Preview), `IP_HASH_SALT`, `FORM_HMAC_SECRET` on the Vercel env page; optional Turnstile keys (Cloudflare test pair in Preview). A real test request on the preview that arrives in your inbox.
 
-### PR-3 · Configurator and the quote request (~2 sessions)
+### PR-3 · Configurator and the quote request (~2 sessions) — merged
 
-Goal: `/configurator` complete per DESIGN §4.2 and §5: six steps, the SVG drawing at scale with HTML dimension overlays, the ticket, the mobile bar, state in the URL, the WhatsApp link, and „Trimite configurația” storing the lead with code and price recomputed on the server and emailing the configurator variants (PNG attachment comes in PR-6).
+Goal: `/configurator` complete per DESIGN §4.2 and §5: six steps, the SVG drawing at scale with HTML dimension overlays, the ticket, the mobile bar, state in the URL, the WhatsApp link, and „Trimite configurația” storing the lead with code and price recomputed on the server and emailing the configurator variants (PNG attachment comes in PR-10).
 
 - `src/lib/configurator/scene.ts` (`drawingScene(resolved, { mode })` → primitive nodes; `svgString()` serialiser); `src/components/drawings/BedDrawing.tsx` (scene → JSX, `aria-hidden`), `DrawingFigure`, `DimensionOverlay`.
 - `src/components/configurator/`: `Configurator` (client root; config in state, URL via `history.replaceState`, `useSearchParams` in `<Suspense>`), `steps/StepModel|Size|Material|Headboard|Base|Extras`, `TicketPanel`, `QuoteForm`, `MobileBar`, `HeadboardIcon`.
@@ -84,7 +84,7 @@ Goal: `/configurator` complete per DESIGN §4.2 and §5: six steps, the SVG draw
 - Tests: `Configurator.test.tsx` (aria-pressed per step, resets on model/family change, code updates), `submit-quote.test.ts`; `tests/e2e/configurator.spec.ts` (options → URL and code change, custom size, submit with Turnstile test keys, confirmation with the code).
 - Needs from the owner before merge: the workshop's yes/no on the closed sets (models Capitonat/Arcuit/Canale/Lamele, heights 100/120/140, bases lemn/metal/ladă/sertare, extras LED + 2 noptiere, families catifea/bouclé/stofă/piele ecologică/lemn masiv).
 
-### PR-4 · Materiale and the samples request (~1.5 sessions)
+### PR-4 · Materiale and the samples request (~1.5 sessions) — merged, the samples request undone in PR-6
 
 Goal: `/materiale` per DESIGN §4.3: three tabs with counters, five family articles with specs, wood finishes and bases cards, swatch tiles filling the sticky sample box (`localStorage` `mostre:v1`, read after mount), and the box's form storing the lead and emailing the code list to the workshop.
 
@@ -93,52 +93,101 @@ Goal: `/materiale` per DESIGN §4.3: three tabs with counters, five family artic
 - Tests: `SwatchTile`, `SampleBox` (limit, sixth blocked, remove, storage round trip); `tests/e2e/materiale.spec.ts`.
 - Needs from the owner before merge: the workshop's answer on samples (yes/no, limit, free or paid, courier days).
 
-### PR-5 · Content in the database, cached readers, revalidation (~1.5 sessions)
+### PR-5 · Content in the database, cached readers, revalidation (~1.5 sessions) — merged
 
 Goal: move settings, catalog, projects and reviews from TypeScript seeds into the live database with RLS, switch the readers to `'use cache'` + `cacheTag` + `cacheLife('days')` with the seed fallback, add the server-only pricing reader for „de la … lei”, and the revalidation route.
 
 - Migrations via `db-change`: `<ts>_content.sql` (the nine content tables from ARHITECTURA §5 plus `bases.photo_path`, `projects.ticket_no`; `pricing`; `public_read` policies; bucket `media`), `<ts>_seed_content.sql` (settings id=1 with the bracket seed, `show_prices=false`, `sample_limit=5`; the DESIGN §5.1 catalog).
-- `src/lib/supabase/public.ts` (cookie-less publishable client for cached reads; `server.ts` is never imported from `src/lib/data`); `src/lib/data/*.ts` reading rows → `Catalog`/`Settings`/projects/reviews (the `public_read` policies read `using (active)`, so the catalogue, and with it the sample ids `submitSamples` accepts, holds only active rows: ARHITECTURA §6.3 „toate `active`” needs no filter in the action); `src/lib/data/pricing.ts` (`server-only`, `getStartingPrices()`).
+- `src/lib/supabase/public.ts` (cookie-less publishable client for cached reads; `server.ts` is never imported from `src/lib/data`); `src/lib/data/*.ts` reading rows → `Catalog`/`Settings`/projects/reviews (the `public_read` policies read `using (active)`, so the catalogue holds only active rows); `src/lib/data/pricing.ts` (`server-only`, `getStartingPrices()`).
 - `src/app/api/revalidate/route.ts` (`x-revalidate-secret`, Supabase payload → tag, `revalidateTag(tag, { expire: 0 })`); `images.remotePatterns` for the `media` bucket.
 - Tests: row mappers, settings merge-over-seed, revalidate route (401, table map).
 - Needs from the owner: `REVALIDATE_SECRET` on the Vercel env page.
 
-### PR-6 · Drawing PNG in emails, OG image, crons, analytics, sitemap, robots (~1.5 sessions)
+### PR-6 · Remove samples (~1 session)
+
+Goal: act on the owner's decision of 2026-10-21: the workshop does not send material samples, of any kind. `/materiale` stays a library whose swatches open the configurator, and everything about the sample box goes from the code, the texts, the tests and the documents.
+
+- Code out: `SampleBox`, `SamplesForm`, `samplesSchema`, `src/actions/submit-samples.ts`, `src/emails/SamplesToWorkshop.tsx` and `SamplesConfirmation.tsx`, the `mostre` lead kind in the pipeline and the subjects, the fixed „Cutia ({n})” button, the `localStorage` key `mostre:v1`, and the settings keys `sample_limit`, `samples_free`, `samples_delivery` in the `Settings` type and `settings.seed.ts`.
+- `/materiale` per the new DESIGN §4.3: the content on the full width (no aside), the three tabs with counters (`MaterialsBrowser` stays a client component only for them), the five family articles with description and specs, the wood finishes block and the bases cards. `SwatchTile` becomes a link to `/configurator?f=<family>&c=<color>` (`m=lamele` for the wood family, the default model otherwise) with the colour's name (14px 600) and its code (DM Mono 12px, muted) under it.
+- Texts per DESIGN: §4.1 section 03 (paragraph, one button), the FAQ „Pot vedea materialele înainte?”, §4.2 step 03 link „Vezi toate materialele” and the confirmation (text, one button), §4.3 lead. The home teaser and the configurator step 03 keep their swatches.
+- Migration via `db-change`: a narrow `update` of `settings.data` (id = 1) that removes the three keys. The enum value `'mostre'` and the columns `leads.address` and `leads.sample_material_ids` stay until the owner approves dropping them (a destructive migration).
+- Tests: the `SampleBox` / `SamplesForm` / `samplesSchema` tests go; `tests/e2e/materiale.spec.ts` checks the tabs and that a tile opens the configurator with family and colour preselected; unit tests that referenced the three settings keys or the `mostre` kind are updated.
+- Documents: DESIGN, ARHITECTURA, ARHITECTURA-NOTE, PLAN, LISTA-ATELIER, CLAUDE.md and README updated in the same PR.
+
+### PR-7 · Admin shell: login, guard, dashboard, Setări, Cereri (~2 sessions)
+
+Goal: `/admin` exists and the workshop can sign in, read and work its requests and edit every setting without Supabase Studio. Everything in the admin reads and writes through the signed-in user's cookie client, under RLS; the secret key is never used there.
+
+- `/admin/login`: email + password through Supabase Auth. The browser client (`src/lib/supabase/client.ts`) signs in; the cookie client (`src/lib/supabase/server.ts`) reads the session server-side. Magic link comes later, once Supabase email sending is pointed at Resend.
+- `/admin` layout guard: session + `app_metadata.role = 'admin'` (granted by SQL; `is_admin()` checks the same claim in RLS), redirect to `/admin/login` otherwise; sign-out. `noindex` on `/admin`.
+- Dashboard: the count of new requests (status `nou`).
+- Setări: one form over every `Settings` key, grouped as in `settings.seed.ts`, with the `show_prices` switch; save → `updateTag("settings")`.
+- Cereri: list with filters tip / status / perioadă and search; detail with the ticket, the configuration code, photos through signed URLs, `tel:` and WhatsApp buttons, the status select nou / contactat / ofertat / câștigat / pierdut / spam, notes, delete.
+- Server Actions validated with Zod, each re-checking the role before touching data.
+- Tests: schemas, actions, the guard; e2e: an unauthenticated visit to `/admin` redirects to `/admin/login`.
+- Needs from the owner: the first user created in the Supabase dashboard (Authentication → Users → Add user) and that user's email, so the role can be granted.
+
+### PR-8 · Admin catalogue and prices (~2 sessions)
+
+Goal: the workshop maintains its materials, the texts and photos of models, families and bases, the model ↔ family rules and the price grid itself.
+
+- Materiale: CRUD with photo upload (resized in the browser, uploaded to the `media` bucket), supplier, supplier code, price category A/B/C, `featured`, `active`, sort.
+- Modele, familii, baze: edit of names, notes, descriptions, specs, photos and `active`, plus the model ↔ family rules. No new models, families or bases from the admin: each has drawings and rules in code.
+- Deleting a material or a base still referenced by a project is refused; the admin deactivates it instead.
+- Prețuri: a form over `pricing.data` with a preview of the price for three typical configurations.
+- Saves → `updateTag("catalog")` / `updateTag("pricing")`.
+- Tests: schemas and actions, including the refused delete and the rule edits.
+
+### PR-9 · Admin lucrări and recenzii (~1.5 sessions)
+
+Goal: the workshop publishes its projects and reviews itself, with the consents recorded.
+
+- Lucrări: CRUD with photos (upload, order, delete, alt text), client consent, `published`, `featured`, `hero` (only one project at a time).
+- Recenzii: CRUD with consent, `published`, order.
+- Saves → `updateTag("projects")` / `updateTag("reviews")`.
+- Tests: schemas and actions, including the single `hero`.
+
+### PR-10 · Drawing PNG in emails, OG image, crons, analytics, sitemap, robots (~1.5 sessions)
+
+Goal: the content of the old PR-6, unchanged except `robots.ts` disallowing `/admin`: the configurator emails carry the drawing as a PNG, the site gets its OG image, the three crons, analytics, a sitemap and robots.
 
 - `assets/fonts/DMMono-Regular.ttf` + OFL, embedded as base64 in `src/lib/notify/dm-mono.ts`; `src/lib/notify/drawing-png.ts` (`svgString()` → `@resvg/resvg-js` at 1600px with `fontBuffers`; `serverExternalPackages: ['@resvg/resvg-js']`); attachment on `LeadToWorkshop` and `LeadConfirmation` for configurator leads.
-- `src/app/opengraph-image.tsx` from the same scene; `src/app/sitemap.ts`, `robots.ts`.
+- `src/app/opengraph-image.tsx` from the same scene; `src/app/sitemap.ts`, `robots.ts` (`/admin` disallowed).
 - `src/app/api/cron/[job]/route.ts` (`Authorization: Bearer CRON_SECRET`): `retry-notifications` (≤ 3 attempts, then alert email), `purge-pending` (24 h), `retention` (24/12/6 months, spam 30 days); `vercel.json` with `fra1` and the three schedules.
 - `@vercel/analytics` + `@vercel/speed-insights` in the layout.
 - Needs from the owner: `CRON_SECRET` on the Vercel env page.
 
-### PR-7 · Real content: catalogue, prices, photos, settings, reviews, placeholder gate (~2 sessions)
+### PR-11 · Real content: catalogue, prices, photos, settings, projects, reviews, placeholder gate (~2 sessions)
 
-- `scripts/import-catalog.ts` (`exceljs` + `tsx`): reads `05-catalog.xlsx` and **emits SQL migrations** (`<ts>_catalog_from_excel.sql`, `<ts>_pricing.sql`) applied through `db-change`, so no secret is needed in the session. Material codes are assigned once and never reused.
-- Photos: uploaded by the owner in Supabase Studio (see below); `project_photos`, `materials.photo_path/macro_path`, `bases.photo_path` rows written by SQL with real dimensions.
-- `<ts>_settings_values.sql`, `<ts>_projects_reviews.sql` with the workshop's values and consents; `show_prices` set per the workshop's decision.
+Goal: the site shows only real data. The workshop enters its catalogue, prices, photos, settings, projects and reviews through `/admin` (PR-7 … PR-9); the session's job is the gate that proves no placeholder is left.
+
+- Content entry through the admin: materials with photos, supplier codes and price categories (codes assigned once, never reused), the price grid, every settings key (`show_prices` per the workshop's decision), projects with photos and consent, reviews with consent.
+- `scripts/import-catalog.ts` (`exceljs` + `tsx`) becomes optional: only if the workshop prefers to deliver `05-catalog.xlsx`, it emits SQL migrations (`<ts>_catalog_from_excel.sql`, `<ts>_pricing.sql`) applied through `db-change`.
 - `tests/e2e/no-placeholders.spec.ts`: every route at both widths fails on any visible `[`.
-- Owner creates the Supabase Database Webhooks (Database → Webhooks) on the ten content tables (the nine of ARHITECTURA §5 plus `pricing`) with header `x-revalidate-secret`, pointing at the production `/api/revalidate`.
+- No Database Webhooks step: the admin expires its tags itself on every save (`updateTag`), so `/api/revalidate` is not wired to Supabase.
 - Needs: everything in `docs/LISTA-ATELIER.md` §1–§9.
 
-### PR-8 · Launch: domain, Resend sending domain, legal texts, JSON-LD, analytics events (~1.5 sessions)
+### PR-12 · Launch: domain, Resend sending domain, legal texts, JSON-LD, analytics events (~1.5 sessions)
+
+Goal: the content of the old PR-8, unchanged except the event count (six) and the dropped webhook item.
 
 - Lawyer-validated texts on the three legal pages; final consent wording.
-- `JsonLd` (`FurnitureStore`), per-page metadata with `metadataBase` on the real domain, the eight `track()` events.
-- Owner checklist in the PR: `.ro` domain on the workshop's company → Vercel; DNS; Resend domain verified (SPF, DKIM, `_dmarc p=none`); `NEXT_PUBLIC_SITE_URL`, `EMAIL_FROM`, Production `NOTIFY_EMAIL` = the workshop; Turnstile hostname; webhook re-pointed; DPAs signed; Google Business Profile link.
+- `JsonLd` (`FurnitureStore`), per-page metadata with `metadataBase` on the real domain, the six `track()` events of ARHITECTURA §10.
+- Owner checklist in the PR: `.ro` domain on the workshop's company → Vercel; DNS; Resend domain verified (SPF, DKIM, `_dmarc p=none`); `NEXT_PUBLIC_SITE_URL`, `EMAIL_FROM`, Production `NOTIFY_EMAIL` = the workshop; Turnstile hostname; DPAs signed; Google Business Profile link.
 - Done when: Playwright suite green against production, Lighthouse ≥ 95 on mobile, and a real request from a phone reaches the workshop.
 
 ### Deferred (after launch, ARHITECTURA §13 phase 6)
 
-`/admin` (Supabase Auth magic link, `is_admin()`), `/modele/[model]` SEO pages, the Lucrări lightbox and „Vreau unul asemănător”, CI if wanted.
+`/modele/[model]` SEO pages, the Lucrări lightbox and „Vreau unul asemănător”, CI if wanted. Also: magic-link sign-in for `/admin` (once Supabase email sending goes through Resend), and dropping the unused enum value `'mostre'` and the columns `leads.address`, `leads.sample_material_ids` (destructive; needs the owner's approval).
 
 ## What the workshop must provide, and when
 
 | Needed before | What (see `docs/LISTA-ATELIER.md`) |
 |---|---|
 | PR-3 merges | Confirmation of the configurator sets (models, heights, bases, extras, families) |
-| PR-4 merges | Samples at home: yes/no, limit, free or paid, courier and days |
-| PR-7 starts | `05-catalog.xlsx` (all sheets, price category A/B/C per colour), photos (FOTO 01–08, projects, swatches, legs, atelier), company data (§1), decisions (§2: prices public, measurements, delivery, response time, deposit), texts from the 30-minute talk (§3), 3–6 reviews with written consent |
-| PR-8 starts | Domain on the workshop's company, a mailbox on it, lawyer-validated legal texts, Google Business Profile link and manager access, vector logo if any |
+| PR-7 preview | The first admin user, created in the Supabase dashboard (Authentication → Users → Add user), and that user's email, so the role can be granted |
+| PR-11 starts | `05-catalog.xlsx` (all sheets, price category A/B/C per colour) or the same data entered through the admin, photos (FOTO 01–08, projects, swatches, legs, atelier), company data (§1), decisions (§2: prices public, measurements, delivery, response time, deposit), texts from the 30-minute talk (§3), 3–6 reviews with written consent |
+| PR-12 starts | Domain on the workshop's company, a mailbox on it, lawyer-validated legal texts, Google Business Profile link and manager access, vector logo if any |
 
 ## Owner setup checklist (Vercel → Project → Settings → Environment Variables; values never in chat)
 
@@ -146,14 +195,14 @@ Goal: move settings, catalog, projects and reviews from TypeScript seeds into th
 |---|---|
 | PR-2 | `RESEND_API_KEY` (Resend account, EU region if offered), `NOTIFY_EMAIL` (your address, Preview + Development), `IP_HASH_SALT`, `FORM_HMAC_SECRET` (random, `openssl rand -base64 32`); optional `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` (Cloudflare; the public test pair in Preview) |
 | PR-5 | `REVALIDATE_SECRET` |
-| PR-6 | `CRON_SECRET` (exactly that name) |
-| PR-8 | `NEXT_PUBLIC_SITE_URL`, `EMAIL_FROM`, Production `NOTIFY_EMAIL`, Production Turnstile keys |
+| PR-10 | `CRON_SECRET` (exactly that name) |
+| PR-12 | `NEXT_PUBLIC_SITE_URL`, `EMAIL_FROM`, Production `NOTIFY_EMAIL`, Production Turnstile keys |
 
 The three Supabase variables come from the Vercel integration. Vercel Pro and Supabase Pro are confirmed.
 
-## Photos (PR-7)
+## Photos (PR-11)
 
-Cloud sessions hold no secrets and the Supabase connector cannot upload Storage objects, so the owner drags the prepared photos into the `media` bucket in Supabase Studio and the session writes the database rows by SQL. `scripts/upload-media.ts` is reduced to a local helper that resizes and names the files (sharp, 2400px, WebP/JPEG) and prints the rows; it never needs the secret key.
+Photos go in through the admin (PR-8, PR-9): the browser resizes them and uploads them to the `media` bucket, and the admin's Server Actions write the rows. Cloud sessions hold no secrets and the Supabase connector cannot upload Storage objects, so the fallback stays: the owner drags prepared photos into the `media` bucket in Supabase Studio and the session writes the rows by SQL. `scripts/upload-media.ts` stays a local helper that resizes and names the files (sharp, 2400px, WebP/JPEG) and prints the rows; it never needs the secret key.
 
 ## Risks
 
@@ -162,4 +211,4 @@ Cloud sessions hold no secrets and the Supabase connector cannot upload Storage 
 - Builds have no env in the session: one reader without the seed fallback breaks `npm run build` for every later PR.
 - Previews write to the live database: additive migrations only; test leads are tagged with `source.environment` and purged as spam by the retention job.
 - The container cannot reach Turnstile, Google Maps, Resend or Supabase: submission flows are verified on the Vercel preview by the owner.
-- The workshop's deliverables are the critical path for PR-7 and PR-8; photos most of all.
+- The workshop's deliverables are the critical path for PR-11 and PR-12; photos most of all.

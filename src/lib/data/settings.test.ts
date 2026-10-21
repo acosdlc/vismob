@@ -49,22 +49,14 @@ afterEach(() => {
 
 describe("settingsFromData", () => {
   it("merges a partial object over the seed", () => {
-    const s = settingsFromData({ workshop_name: "Atelierul X", sample_limit: 3, show_prices: true });
-    expect(s).toEqual({ ...SEED_SETTINGS, workshop_name: "Atelierul X", sample_limit: 3, show_prices: true });
+    const s = settingsFromData({ workshop_name: "Atelierul X", offer_days: "3", show_prices: true });
+    expect(s).toEqual({ ...SEED_SETTINGS, workshop_name: "Atelierul X", offer_days: "3", show_prices: true });
   });
 
   it("keeps the seed for a value of the wrong type and ignores unknown keys", () => {
-    const s = settingsFromData({ sample_limit: "5", show_prices: "da", city: 12, unknown_key: "x", phone_public: null });
+    const s = settingsFromData({ offer_days: 5, show_prices: "da", city: 12, unknown_key: "x", phone_public: null });
     expect(s).toEqual(SEED_SETTINGS);
     expect("unknown_key" in s).toBe(false);
-  });
-
-  it("takes sample_limit only as a whole number of at least 1", () => {
-    expect(settingsFromData({ sample_limit: 0 }).sample_limit).toBe(SEED_SETTINGS.sample_limit);
-    expect(settingsFromData({ sample_limit: -2 }).sample_limit).toBe(SEED_SETTINGS.sample_limit);
-    expect(settingsFromData({ sample_limit: 2.5 }).sample_limit).toBe(SEED_SETTINGS.sample_limit);
-    expect(settingsFromData({ sample_limit: 1 }).sample_limit).toBe(1);
-    expect(settingsFromData({ sample_limit: 8 }).sample_limit).toBe(8);
   });
 
   it("returns the seed for null, a string or an array", () => {

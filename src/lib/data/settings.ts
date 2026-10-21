@@ -9,8 +9,7 @@ export type { Settings } from "./settings.seed";
  * `settings.data` (jsonb) merged over the seed: a key is taken only when it is one
  * of the seed's keys and its JSON type matches the seed value's (string, number or
  * boolean). Unknown keys are ignored, missing keys keep the seed, so a half-filled
- * or mistyped row can never break a page. `sample_limit` must be a whole number of
- * at least 1: the samples form allows 1 … sample_limit ids, so 0 would refuse every request.
+ * or mistyped row can never break a page.
  */
 export function settingsFromData(data: unknown): Settings {
   const merged: Settings = { ...SEED_SETTINGS };
@@ -19,8 +18,7 @@ export function settingsFromData(data: unknown): Settings {
   const target = merged as unknown as Record<string, unknown>;
   for (const key of Object.keys(SEED_SETTINGS) as (keyof Settings)[]) {
     const value = source[key];
-    const ok = key === "sample_limit" ? Number.isInteger(value) && (value as number) >= 1 : typeof value === typeof SEED_SETTINGS[key];
-    if (ok) target[key] = value;
+    if (typeof value === typeof SEED_SETTINGS[key]) target[key] = value;
   }
   return merged;
 }

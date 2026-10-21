@@ -187,7 +187,7 @@ SVG inline cu contur (`stroke: currentColor; stroke-width: 1.6; fill: none`), f�
 - **Logo** (link spre `/`): două rânduri, „[Nume atelier]” (stilul Logo) și „Paturi la comandă” (stilul Sub-logo), cu 2px între ele.
 - **≥ 960px**: navigația are 6 linkuri (15px, `padding: 12px 0`, `gap: 4px 26px`): Lucrări, Modele, Materiale, Configurator, Atelierul, Contact. Pagina curentă: `aria-current="page"`, `font-weight: 600`, sublinie de 2px în `accent` (`box-shadow: inset 0 -2px 0 #1E4D3B`). În dreapta: telefonul `[07xx xxx xxx]` (DM Mono 14px, `tel:`) și butonul principal „Cere ofertă” (46px, 15px).
 - **< 960px**: logo + butonul „Meniu” (secundar, 46px, iconiță de meniu, `aria-expanded`, `aria-controls="meniu-mobil"`). Deschis, devine „Închide”, iar sub antet apare `nav#meniu-mobil`: linkuri de 18px, câte un rând de 52px cu bordură jos `rule`, apoi două butoane pe un rând (`flex: 1 1 140px`): „Cere ofertă” (principal) și „Sună acum” (secundar). Un click pe link închide meniul.
-- Pe Configurator și Materiale, butonul „Cere ofertă” din header lipsește (pagina are propriul CTA). Pe mobil, pe Materiale, în locul meniului e un buton secundar „Configurator”. În producție se poate folosi peste tot meniul standard.
+- Pe Configurator și Materiale, butonul „Cere ofertă” din header lipsește (Configurator are propriul CTA; pe Materiale, mostrele trimit spre configurator). Pe mobil, pe Materiale, în locul meniului e un buton secundar „Configurator”. În producție se poate folosi peste tot meniul standard.
 
 ### 3.2 Butoane
 
@@ -267,9 +267,9 @@ Ordinea desenării: podea, tăblie, picioare, cadru, saltea, perne. Toate contur
 
 ### 3.10 Mostra (swatch)
 
-- **În grilă (Acasă, Materiale)**: pătrat 1:1, `border: 1px solid rgba(24,25,27,.25)`, cu poza mostrei sau, ca fallback, culoarea plus textura familiei (2.4). Sub ea: numele (14px, 600) și familia sau codul (DM Mono 11px, `muted`).
+- **În grilă (Acasă, Materiale)**: pătrat 1:1, `border: 1px solid rgba(24,25,27,.25)`, cu poza mostrei sau, ca fallback, culoarea plus textura familiei (2.4). Sub ea: numele (14px, 600) și familia (Acasă) sau codul (Materiale) (DM Mono 12px, `muted`).
 - **În configurator**: buton 48×48 cu `aria-label` = numele culorii și `aria-pressed`. Selectat: `outline: 2px solid ink; outline-offset: 3px`.
-- **În Materiale**: tot tile-ul e un `<button aria-pressed>`. Selectat: outline ca mai sus și o bulină neagră de 26px cu bifă albă în colțul dreapta-jos (6px). Starea, în mono sub nume: „+ adaugă mostra” / „în cutie · CT01” / „cutia e plină”.
+- **În Materiale**: tot tile-ul e un link (`<a>`) spre configurator, cu familia și culoarea preselectate: `/configurator?f=<familie>&c=<culoare>`. Pentru familia Lemn masiv se adaugă `m=lamele`; pentru celelalte familii modelul rămâne cel implicit. Sub mostră: numele culorii (14px, 600) și codul (DM Mono 12px, `muted`).
 
 ### 3.11 Banda configuratorului
 
@@ -300,7 +300,7 @@ Fundal `accent`, text alb, full-bleed. Două coloane: text (`flex: 1 1 420px`) �
 - Containerul formularului: fundal alb, `border: 1.5px solid ink`, `padding: clamp(20px, 3vw, 32–36px)`, `gap: 18px`.
 - Erori (nu existau în prototip): text de 14px în `#9B2C2C` sub câmp, `aria-describedby`, `aria-invalid="true"` și bordura câmpului în aceeași culoare. Pe trimitere, focusul merge la primul câmp cu eroare.
 - Butonul de trimitere, în timpul trimiterii: `aria-busy`, textul „Se trimite…”, dezactivat.
-- **Emailul e obligatoriu în toate cele trei formulare** (cerere de ofertă, configurator, mostre): notificările se trimit doar pe email, nu prin SMS. Câmpul are `type="email"`, `autocomplete="email"`, `required`.
+- **Emailul e obligatoriu în ambele formulare** (cerere de ofertă, configurator): notificările se trimit doar pe email, nu prin SMS. Câmpul are `type="email"`, `autocomplete="email"`, `required`.
 
 ### 3.17 Footer
 
@@ -362,8 +362,8 @@ Fiecare card: „de la [___] lei · 160 × 200” și linkul „Configurează”
 
 #### 03 — Materiale (`#materiale`)
 - H2: **Atingi materialele înainte să alegi.**
-- Paragraf: **Catifea, bouclé, stofă, piele ecologică sau lemn masiv. Le vezi în atelier sau îți trimitem acasă până la [5] mostre, [gratuit].**
-- Butoane (dreapta): principal „Toate materialele” → `/materiale`, secundar „Cere mostre” → `/materiale`.
+- Paragraf: **Catifea, bouclé, stofă, piele ecologică sau lemn masiv. Le vezi în atelier, [cu programare].**
+- Buton (dreapta): doar cel principal, „Toate materialele” → `/materiale`.
 - Grilă de 8 mostre `auto-fit, minmax(min(100px,100%),1fr)`, `gap: 12px` (8 pe un rând pe desktop, 3 pe rând pe mobil): Verde sticlă (Catifea), Muștar (Catifea), Alb lapte (Bouclé), Nisip (Bouclé), Gri melanj (Stofă), Coniac (Piele ecologică), Stejar natur (Lemn masiv), Nuc (Lemn masiv). În producție: materialele marcate `featured`.
 
 #### 04 — Configurator (bandă pe fundal `accent`)
@@ -390,7 +390,7 @@ Două coloane: poza FOTO 08 (4:5, `max-height: 640px`, `flex: 1 1 420px`) și te
 | Somieră | [Lamele de fag curbate, cu reglaj / fixă] |
 | Burete | [Densitate, tip] |
 | Stofe | [Furnizori, colecții] |
-| Vizite | În atelier, cu programare |
+| Vizite | În atelier, [cu programare] |
 
 #### 07 — Clienți (`#recenzii`, fundal `paper-2`)
 - H2: **Ce spun clienții**. În dreapta, DM Mono 13px: „Google: [4,9] din [___] recenzii” (din `settings`, doar dacă e completat).
@@ -405,7 +405,7 @@ Două coloane: titlul (`flex: 1 1 300px`) și lista (`flex: 2 1 520px`).
 | Cât costă un pat la comandă? | Depinde de model, dimensiune și material. Un pat de 160 × 200 cm pornește de la [___] lei. Prețul final îl primești în scris, după ce stabilim toate detaliile. |
 | Cât durează? | [4–6] săptămâni de la confirmarea comenzii și plata avansului de [X]%. |
 | Faceți și dimensiuni nestandard? | Da. Construim pe orice dimensiune de saltea, [între 80 și 220 cm lățime]. |
-| Pot vedea materialele înainte? | Da, în atelier, cu programare. Sau îți trimitem acasă până la [5] mostre, [gratuit]. |
+| Pot vedea materialele înainte? | Da, în atelier, [cu programare]. |
 | Livrați și în afara orașului? | [Zonele în care livrați și montați, și cât costă transportul.] |
 | Ce garanție are patul? | [X] ani pentru structură și [Y] ani pentru tapițerie. |
 | Vindeți și saltele? | [Da / nu. Dacă da: ce tipuri și de la ce producători.] |
@@ -414,7 +414,7 @@ Două coloane: titlul (`flex: 1 1 300px`) și lista (`flex: 2 1 520px`).
 Două coloane: informațiile (`flex: 1 1 380px`, `gap: 22px`) și formularul (`flex: 1 1 440px`).
 - H2: **Spune-ne ce pat îți dorești.**
 - Paragraf: **O poză cu camera și dimensiunea saltelei sunt suficiente ca să începem.**
-- Lista de contact (3.13): Telefon `[07xx xxx xxx]` (tel:), Email `[contact@domeniu.ro]` (mailto:), Atelier „[Strada, nr., Localitate] · vizite cu programare”, Program „[Luni–Vineri, 9:00–18:00]”.
+- Lista de contact (3.13): Telefon `[07xx xxx xxx]` (tel:), Email `[contact@domeniu.ro]` (mailto:), Atelier „[Strada, nr., Localitate] · vizite [cu programare]”, Program „[Luni–Vineri, 9:00–18:00]”.
 - Butoane: „Scrie-ne pe WhatsApp” (principal, `https://wa.me/<număr>`) și „Sună acum” (secundar).
 - Harta: 220px înălțime. Embed Google Maps încărcat doar după un click („Arată harta”), ca să nu seteze cookies fără consimțământ. Altfel, o imagine statică cu link spre Google Maps.
 - **Formularul** „Cerere de ofertă”. Bara de sus (DM Mono 12px uppercase, bordură jos `rule`): „Cerere de ofertă” · „Răspuns în [24h]”. Câmpurile:
@@ -453,7 +453,7 @@ Două coloane: informațiile (`flex: 1 1 380px`, `gap: 22px`) și formularul (`f
 |---|---|---|
 | 01 | Model | 4 butoane-card (`aria-pressed`), grilă `minmax(min(150px,100%),1fr)`, `gap: 10px`. Fiecare: iconița tăbliei (64×40), numele (16px, 600) și nota (13px). Selectat: `border: 2px solid accent`, fundal alb. Neselectat: `1px rule`, fundal `card`. |
 | 02 | Dimensiunea saltelei | „Pastile” (DM Mono 14px, `min-height: 44px`, `border: 1.5px ink`, rază 2px): „90 × 200” … „200 × 200”, „Altă dimensiune”. Selectată: fundal `ink`, text alb. „Altă dimensiune” deschide două `input[type=number]`: „Lățime saltea (cm)” (80–220) și „Lungime saltea (cm)” (180–220). |
-| 03 | Material și culoare | Tab-uri de familie (15px, cea activă 600 cu sublinie `inset 0 -2px 0 accent`, `min-height: 44px`), filtrate după model (5.2). Dedesubt, mostrele 48×48 (`gap: 10px`). Apoi rândul „**{Familie}** · {Culoare} `[cod furnizor]`” și linkul „Vezi materialele și cere mostre” → `/materiale`. |
+| 03 | Material și culoare | Tab-uri de familie (15px, cea activă 600 cu sublinie `inset 0 -2px 0 accent`, `min-height: 44px`), filtrate după model (5.2). Dedesubt, mostrele 48×48 (`gap: 10px`). Apoi rândul „**{Familie}** · {Culoare} `[cod furnizor]`” și linkul „Vezi toate materialele” → `/materiale`. |
 | 04 | Înălțimea tăbliei | Control segmentat (`border: 1.5px ink`) cu 3 butoane egale: „100 cm” / „120 cm” / „140 cm”. Selectat: fundal `ink`. Nota (14px `ink-2`): „Măsurată de la podea. Peste 120 cm arată bine în camere cu tavan înalt.” |
 | 05 | Baza patului | 4 butoane-card ca la pasul 01, fără iconiță: titlu + notă. |
 | 06 | Extra | 2 checkbox-uri tip card (`padding: 14px`, `border: 1px rule`, fundal `card`): titlu (16px, 600) + notă (13px). |
@@ -471,17 +471,18 @@ Două coloane: informațiile (`flex: 1 1 380px`, `gap: 22px`) și formularul (`f
   - ☐ Vreau să veniți la măsurători
   - ☐ Sunt de acord cu prelucrarea datelor conform Politicii de confidențialitate.
   - butonul „Trimite configurația”
-- Confirmarea: eyebrow „Configurație trimisă · {cod}”, H3 „Mulțumim! Te sunăm în [24 de ore].”, textul „Am primit desenul și alegerile tale. Dacă vrei să vezi materialele înainte, cere mostrele acum și le primești odată cu oferta.” și butoanele „Cere mostre” (`/materiale`) / „Modifică configurația” (revine la formular cu aceeași configurație).
+- Confirmarea: eyebrow „Configurație trimisă · {cod}”, H3 „Mulțumim! Te sunăm în [24 de ore].”, textul „Am primit desenul și alegerile tale.” și butonul „Modifică configurația” (revine la formular cu aceeași configurație).
 
 ### 4.3 Materiale (`/materiale`)
 
-**Antetul**: breadcrumb „Acasă / Materiale”, H1 **Materiale** și paragraful: **Tot ce vezi aici se poate alege în configurator. Apasă pe o mostră ca s-o adaugi în cutia ta: îți trimitem acasă până la [5] bucăți, [gratuit], sau le vezi în atelier, cu programare.**
+**Antetul**: breadcrumb „Acasă / Materiale”, H1 **Materiale** și paragraful: **Tot ce vezi aici se poate alege în configurator. Apasă pe o mostră ca s-o vezi pe patul tău, sau vino să le vezi în atelier, [cu programare].**
 
-**Corpul**: conținutul (`flex: 3 1 640px`) și „Cutia cu mostre” (`aside`, `flex: 1 1 300px`, sticky la ≥ 960px, sub conținut pe mobil).
+**Corpul**: conținutul pe toată lățimea containerului, fără `aside` și fără cutie sticky: tab-urile, articolele de familie, blocul „Finisaje pentru lemn” și cardurile „Picioare și baze”. Pagina e o bibliotecă: nu are formular și nu reține nimic în browser.
 
 - **Tab-uri** (bordură jos `1px ink`, 17px, `min-height: 48px`, cel activ 600 cu sublinie de 3px `accent`), fiecare cu un contor mono: „Textile 4 familii” · „Lemn masiv 5 esențe” · „Picioare și baze 3”.
 - **Familia** (`article`, `padding-block: 32px`, bordură jos `rule`). Două coloane: info (`flex: 1 1 260px`) și grila de mostre (`flex: 2 1 420px`, `auto-fill, minmax(min(118px,100%),1fr)`, `gap: 16px 12px`).
   - info: H2 (26px), descrierea (16px, `ink-2`) și specificațiile ca `<dl>` mono 12px (`auto 1fr`, `gap: 6px 16px`).
+  - grila: tile-urile-link de la 3.10 („În Materiale”). Fiecare mostră deschide `/configurator?f=<familie>&c=<culoare>` (cu `m=lamele` pentru Lemn masiv), iar sub ea stau numele culorii (14px, 600) și codul (DM Mono 12px, `muted`).
 
 | Familie | Descriere | Specificații |
 |---|---|---|
@@ -493,14 +494,6 @@ Două coloane: informațiile (`flex: 1 1 380px`, `gap: 22px`) și formularul (`f
 
 - **Tab-ul Lemn** are în plus blocul „Finisaje pentru lemn”, cu 3 carduri: **Ulei natural** (Mat, se simte lemnul la atingere. Se reîmprospătează [o dată pe an].), **Lac mat** (Protecție mai bună la pete și zgârieturi.), **Baiț + ulei** (Pentru nuanțe închise pe stejar sau frasin.).
 - **Tab-ul Picioare și baze** are 3 carduri cu poză 4:3: **Picioare din lemn** (Stejar masiv, înălțime [12] cm, finisaj ca tăblia.), **Picioare metalice** (Oțel vopsit negru mat, înălțime [12] cm.), **Bază până la podea** (Pentru ladă de depozitare sau sertare, cu plintă retrasă.).
-- **Cutia cu mostre** (fundal alb, `border: 1.5px ink`):
-  - bara neagră: „Cutia cu mostre” · „{n} / [5]”
-  - goală: „Apasă pe mostrele care îți plac. Poți alege până la [5].”
-  - lista: miniatura 36×36, numele (14px, 600), „{Familie} · {cod}” (mono 11px) și butonul de scoatere de 44×44 (iconița „închide”, `aria-label="Scoate {nume}"`)
-  - plină: „Cutia e plină. Scoate o mostră ca să adaugi alta.” (mono 12px)
-  - formularul (bordură sus dashed): Nume, Telefon, Email (obligatoriu), Adresa de livrare (textarea, 2 rânduri), butonul „Trimite-mi mostrele” și nota „Livrare prin curier în [2–3 zile lucrătoare]. [Gratuit.]”
-  - confirmarea: „Gata! Pregătim cutia.” (20px, 600), textul „Te sunăm să confirmăm adresa. Între timp, încearcă materialele pe patul tău în configurator.” și butoanele „Deschide configuratorul” / „Alege alte mostre” (golește cutia).
-  - cutia se păstrează în `localStorage` (cheia `mostre:v1`), cu try/catch. În prototip erau 2 mostre preselectate doar pentru demo; în producție cutia începe goală.
 
 ### 4.4 Lucrări (`/lucrari`) — propusă, nedesenată în canvas
 
@@ -863,7 +856,7 @@ Linkul WhatsApp: `https://wa.me/<număr în format internațional, fără +>?tex
 | Lucrări | 3 coloane | 1 coloană |
 | Atelierul, Întrebări, Contact | 2 coloane | o coloană |
 | Configurator | desen + fișă sticky în stânga, pașii în dreapta | desen, pașii, fișa, cererea + bară fixă |
-| Materiale | conținut + cutia cu mostre sticky | cutia sub conținut + buton fix „Cutia ({n})” |
+| Materiale | conținut pe toată lățimea | o coloană |
 
 Grilele se fac cu `auto-fit/auto-fill + minmax(min(Xpx,100%),1fr)`. Valorile minime: repere 220, proces 240, modele 160, mostre 100, lucrări 300, recenzii 280, opțiuni din configurator 150, mostre din Materiale 118, câmpurile cererii 220.
 
@@ -874,13 +867,12 @@ Grilele se fac cu `auto-fit/auto-fill + minmax(min(Xpx,100%),1fr)`. Valorile min
 - Fiecare câmp are `<label for>`. Erorile se leagă prin `aria-describedby`.
 - Meniul mobil: `aria-expanded`, `aria-controls`, Escape îl închide, iar focusul revine pe buton.
 - Desenul are `aria-hidden="true"`. Rezumatul configurației e și în `figcaption`, și în fișă (`aria-live="polite"` pe cod).
-- Cutia cu mostre: anunță „{nume} adăugată în cutie” printr-o regiune `aria-live`.
 - Linkurile de ancoră au `scroll-margin-top: 88px` (headerul e sticky).
 - Ținte de minimum 44px, focus vizibil (2.6), `lang="ro"`.
 
 ## 8. Placeholdere și lista de poze
 
-**Toate placeholderele** (vin din `settings` sau din tabele): [Nume atelier], [Localitate], [07xx xxx xxx], [contact@domeniu.ro], [Strada, nr., Localitate], [Luni–Vineri, 9:00–18:00], [24 de ore], [4–6] săptămâni, [X] ani garanție structură / [Y] tapițerie, [Zona de livrare], [gratuit în Localitate] (măsurători), [X] zile lucrătoare (ofertă), [inclus în zona X] (montaj), [5] mostre, [gratuit] (mostre), [2–3 zile lucrătoare] (livrare mostre), [anul], [X] oameni, structură / somieră / burete / stofe, avans [X]%, interval de dimensiuni nestandard, saltele da/nu, rating Google, [Denumire firmă SRL], CUI, Nr. Reg. Com., înălțimea picioarelor [12] cm, [cod furnizor] pe fiecare material.
+**Toate placeholderele** (vin din `settings` sau din tabele): [Nume atelier], [Localitate], [cu programare] (`visits_note`), [07xx xxx xxx], [contact@domeniu.ro], [Strada, nr., Localitate], [Luni–Vineri, 9:00–18:00], [24 de ore], [4–6] săptămâni, [X] ani garanție structură / [Y] tapițerie, [Zona de livrare], [gratuit în Localitate] (măsurători), [X] zile lucrătoare (ofertă), [inclus în zona X] (montaj), [anul], [X] oameni, structură / somieră / burete / stofe, avans [X]%, interval de dimensiuni nestandard, saltele da/nu, rating Google, [Denumire firmă SRL], CUI, Nr. Reg. Com., înălțimea picioarelor [12] cm, [cod furnizor] pe fiecare material.
 
 **Lista de poze** (cadrele din design):
 
