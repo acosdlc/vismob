@@ -31,6 +31,7 @@ How VisMob gets built after setup (phase 0, pull request #1). It replaces the ph
 | Tokens | DESIGN §2.7 `@theme` verbatim plus `--color-on-dark: #F3F3F0` and `--color-error: #9B2C2C`. Ranges pinned once: buttons 52px (header 46px), H3 20px process / 19px model card, mono 12px (13px in the ticket). |
 | Preview emails | Preview sends real emails to the developer (`NOTIFY_EMAIL`); `NOTIFY_DRY_RUN` unset. E2E submissions use `delivered@resend.dev` as the client address. |
 | Revalidation | `/api/revalidate` (PR-5) accepts the Supabase Database Webhook payload and maps table → tag. No Database Webhooks are created: from PR-7 on, every admin save expires its own tag with `updateTag` (see PR-11). |
+| Admin design | No new tokens or components: `/admin` composes the site's tokens, type roles and §3 components (DESIGN §4.8, `src/components/admin/ui.tsx`). Sign-in is a Server Action (`signInWithPassword` through the cookie client), so no auth code runs in the browser; the proxy only redirects anonymous visitors, the `(panel)` layout is the authority. |
 | Crons | Vercel Pro confirmed: `retry-notifications` every 15 min, `purge-pending` daily, `retention` weekly, in `vercel.json` with `"regions": ["fra1"]`. |
 | CI | None in v1. The `ship` skill's checks plus the Vercel build gate every PR. |
 | Playwright | `@playwright/test` pinned to **1.56.1** (the container's Chromium 1194; `cdn.playwright.dev` is blocked), `@axe-core/playwright`, run in-session against `next start`. Screenshots are read by Claude and sent to the owner, never committed. |
@@ -118,7 +119,7 @@ Goal: act on the owner's decision of 2026-10-21: the workshop does not send mate
 
 Goal: `/admin` exists and the workshop can sign in, read and work its requests and edit every setting without Supabase Studio. Everything in the admin reads and writes through the signed-in user's cookie client, under RLS; the secret key is never used there.
 
-- `/admin/login`: email + password through Supabase Auth. The browser client (`src/lib/supabase/client.ts`) signs in; the cookie client (`src/lib/supabase/server.ts`) reads the session server-side. Magic link comes later, once Supabase email sending is pointed at Resend.
+- `/admin/login`: email + password through Supabase Auth, in a Server Action (`signInWithPassword` on the cookie client `src/lib/supabase/server.ts`, which also reads the session server-side with `getClaims()`); the browser client stays unused. Magic link comes later, once Supabase email sending is pointed at Resend.
 - `/admin` layout guard: session + `app_metadata.role = 'admin'` (granted by SQL; `is_admin()` checks the same claim in RLS), redirect to `/admin/login` otherwise; sign-out. `noindex` on `/admin`.
 - Dashboard: the count of new requests (status `nou`).
 - Setări: one form over every `Settings` key, grouped as in `settings.seed.ts`, with the `show_prices` switch; save → `updateTag("settings")`.
