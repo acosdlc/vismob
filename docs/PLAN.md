@@ -128,7 +128,7 @@ Goal: `/admin` exists and the workshop can sign in, read and work its requests a
 - Tests: schemas, actions, the guard; e2e: an unauthenticated visit to `/admin` redirects to `/admin/login`.
 - Needs from the owner: the first user created in the Supabase dashboard (Authentication → Users → Add user) and that user's email, so the role can be granted.
 
-### PR-8 · Admin catalogue and prices (~2 sessions)
+### PR-8 · Admin catalogue and prices (~2 sessions) — merged
 
 Goal: the workshop maintains its materials, the texts and photos of models, families and bases, the model ↔ family rules and the price grid itself.
 
