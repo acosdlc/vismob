@@ -24,7 +24,10 @@ export const ADMIN_MESSAGES = {
   notAdmin: "Contul nu are drepturi de administrare. Cere accesul și intră din nou.",
   forbidden: "Sesiunea a expirat sau nu ai acces. Intră din nou în cont.",
   saved: "Salvat.",
+  created: "Adăugat.",
   deleted: "Cererea a fost ștearsă.",
+  removed: "Șters.",
+  notFound: "Nu am găsit înregistrarea.",
   generic: "Nu am putut salva. Încearcă din nou.",
   unavailable: "Serviciul nu e configurat pe acest mediu.",
 } as const;
@@ -51,5 +54,7 @@ export const LEAD_KIND_LABELS: Record<LeadKind, string> = {
 export const ADMIN_NAV = [
   { label: "Panou", href: "/admin" },
   { label: "Cereri", href: "/admin/cereri" },
+  { label: "Catalog", href: "/admin/catalog" },
+  { label: "Prețuri", href: "/admin/preturi" },
   { label: "Setări", href: "/admin/setari" },
 ] as const;

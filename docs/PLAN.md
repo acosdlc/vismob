@@ -104,7 +104,7 @@ Goal: move settings, catalog, projects and reviews from TypeScript seeds into th
 - Tests: row mappers, settings merge-over-seed, revalidate route (401, table map).
 - Needs from the owner: `REVALIDATE_SECRET` on the Vercel env page.
 
-### PR-6 · Remove samples (~1 session)
+### PR-6 · Remove samples (~1 session) — merged
 
 Goal: act on the owner's decision of 2026-10-21: the workshop does not send material samples, of any kind. `/materiale` stays a library whose swatches open the configurator, and everything about the sample box goes from the code, the texts, the tests and the documents.
 
@@ -115,7 +115,7 @@ Goal: act on the owner's decision of 2026-10-21: the workshop does not send mate
 - Tests: the `SampleBox` / `SamplesForm` / `samplesSchema` tests go; `tests/e2e/materiale.spec.ts` checks the tabs and that a tile opens the configurator with family and colour preselected; unit tests that referenced the three settings keys or the `mostre` kind are updated.
 - Documents: DESIGN, ARHITECTURA, ARHITECTURA-NOTE, PLAN, LISTA-ATELIER, CLAUDE.md and README updated in the same PR.
 
-### PR-7 · Admin shell: login, guard, dashboard, Setări, Cereri (~2 sessions)
+### PR-7 · Admin shell: login, guard, dashboard, Setări, Cereri (~2 sessions) — merged
 
 Goal: `/admin` exists and the workshop can sign in, read and work its requests and edit every setting without Supabase Studio. Everything in the admin reads and writes through the signed-in user's cookie client, under RLS; the secret key is never used there.
 

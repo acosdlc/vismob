@@ -522,6 +522,7 @@ Panoul atelierului (ARHITECTURA.md §8), construit în PR-7 … PR-9 din `docs/P
 - **Fișe**: cardul alb cu bordură 1.5px ink din §3.16; fișa cererii e `Ticket` (§3.6) la mărimea `md`.
 - **Formulare**: exact §3.16 (Field, Label, Input, Select, Textarea, Checkbox, FieldError), câmpurile în grila `minmax(min(220px, 100%), 1fr)`; butonul primar „Salvează”, mesajele într-un `Notice` cu bordură 1px (accent pentru succes, `error` pentru eroare, `rule` pentru informare), anunțat prin `role="status"` / `role="alert"`.
 - **Tabele**: `<table>` nativ, 15px, rânduri despărțite cu 1px `rule`, derulare orizontală pe mobil. Statusul cererii e o etichetă mono 12px uppercase cu bordură 1px: `nou` în accent, `câștigat` pe fundal accent, `pierdut` și `spam` în `muted`.
+- **Catalog și prețuri** (PR-8): în tabelele de materiale culoarea e un pătrat de 28px cu poza sau cu hex-ul; codurile (`CT01`, `CAP`) și stările („Activ” / „Inactiv”, „Acasă”) sunt aceleași etichete mono. Poza se încarcă dintr-un câmp cu previzualizare (pătrat pentru mostre, 4:3 pentru baze) peste `FileInput` din §3.16. Grila de prețuri e un `<table>` cu un rând pe model și o coloană pe lățime standard, fiecare celulă un `Input`; previzualizarea celor trei configurații tipice folosește aceleași funcții pure ca site-ul (§5.7).
 - Textele sunt ale atelierului, scurte, cu diacritice cu virgulă; nicio cifră care nu vine din baza de date. `/admin` e `noindex` și, din PR-10, blocat în `robots.txt`.
 
 ---
