@@ -18,6 +18,8 @@ export interface Model {
   name: string;
   note: string;
   code: string;
+  /** The model card's text on Acasă 02 (`models.description`); the DESIGN text is the fallback. */
+  description?: string;
   families: FamilyId[];
 }
 

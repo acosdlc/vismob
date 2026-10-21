@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("./email", () => ({ sendEmail: mocks.sendEmail }));
 vi.mock("@/lib/data/settings", () => ({ getSettings: mocks.getSettings }));
+// getCatalog is a "use cache" reader: cacheTag() throws outside Next, so the seed stands in.
+vi.mock("@/lib/data/catalog", async () => ({ getCatalog: async () => (await import("@/lib/configurator/catalog.seed")).SEED_CATALOG }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 
 import { SamplesConfirmation } from "@/emails/SamplesConfirmation";

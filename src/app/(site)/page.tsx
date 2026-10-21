@@ -11,6 +11,7 @@ import { Process } from "@/components/home/Process";
 import { Reviews } from "@/components/home/Reviews";
 import { Facts } from "@/components/site/Facts";
 import { getCatalog } from "@/lib/data/catalog";
+import { getStartingPrices } from "@/lib/data/pricing";
 import { getHeroProject, getProjects } from "@/lib/data/projects";
 import { getReviews } from "@/lib/data/reviews";
 import { getSettings } from "@/lib/data/settings";
@@ -24,10 +25,12 @@ export default async function Home() {
     getProjects({ featured: true }),
     getReviews(),
   ]);
+  // The grid stays on the server while prices are not public (ARHITECTURA §7).
+  const startingPrices = settings.show_prices ? await getStartingPrices() : {};
 
   return (
     <>
-      <Hero settings={settings} hero={hero} />
+      <Hero settings={settings} hero={hero} worksHref={featured.length > 0 ? "#lucrari" : "/lucrari"} />
       <div className="container-site">
         <Facts
           items={[
@@ -39,7 +42,7 @@ export default async function Home() {
         />
       </div>
       <Process settings={settings} />
-      <Models catalog={catalog} showPrices={settings.show_prices} />
+      <Models catalog={catalog} showPrices={settings.show_prices} startingPrices={startingPrices} />
       <MaterialsTeaser catalog={catalog} settings={settings} />
       <ConfiguratorBand />
       <Gallery projects={featured} />
