@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { LeadRow } from "@/lib/leads/types";
 import { LeadConfirmation, nextSteps } from "./LeadConfirmation";
 import { LeadToWorkshop } from "./LeadToWorkshop";
-import { formatDate, isReal, leadTicketRows, phoneDigits, PLAIN_TEXT_OPTIONS } from "./shared";
+import { DRAWING_ATTACHED_NOTE, formatDate, isReal, leadTicketRows, phoneDigits, PLAIN_TEXT_OPTIONS } from "./shared";
 
 const LEAD: LeadRow = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -99,6 +99,22 @@ describe("LeadToWorkshop", () => {
     expect(html).toContain('href="https://domeniu.ro/configurator?m=cap"');
     expect(html).toContain("Deschide configurația");
     expect(html).toMatch(/Măsurători<\/td><td[^>]*>nu/);
+  });
+});
+
+describe("drawingAttached", () => {
+  it("names the attached drawing in both emails only when asked", async () => {
+    const base = { lead: CONFIG_LEAD, workshopName: "Atelier", ticketRows: ROWS };
+    const workshopWith = await render(<LeadToWorkshop {...base} photoUrls={[]} drawingAttached />);
+    const workshopWithout = await render(<LeadToWorkshop {...base} photoUrls={[]} />);
+    const client = { ...base, responseTime: "24 de ore", phonePublic: "[07xx]", emailPublic: "[email]" };
+    const clientWith = await render(<LeadConfirmation {...client} drawingAttached />);
+    const clientWithout = await render(<LeadConfirmation {...client} />);
+    expect(DRAWING_ATTACHED_NOTE).toBe("Desenul la scară e atașat ca PNG.");
+    expect(workshopWith).toContain(DRAWING_ATTACHED_NOTE);
+    expect(clientWith).toContain(DRAWING_ATTACHED_NOTE);
+    expect(workshopWithout).not.toContain(DRAWING_ATTACHED_NOTE);
+    expect(clientWithout).not.toContain(DRAWING_ATTACHED_NOTE);
   });
 });
 

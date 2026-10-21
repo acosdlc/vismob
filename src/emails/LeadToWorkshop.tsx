@@ -3,6 +3,7 @@ import type { LeadRow } from "@/lib/leads/types";
 import { workshopSubject } from "@/lib/notify/subjects";
 import {
   colors,
+  DRAWING_ATTACHED_NOTE,
   EmailShell,
   Eyebrow,
   formatDate,
@@ -25,12 +26,22 @@ export interface LeadToWorkshopProps {
   shareUrl?: string;
   /** Formatted price, e.g. „7.450 lei”; shown as the „Preț orientativ” row. */
   priceLabel?: string;
+  /** True when the drawing PNG travels with this email (PR-10), so the body says so. */
+  drawingAttached?: boolean;
 }
 
 // ARHITECTURA §6.4, LeadToWorkshop: the ticket, the price, the contact (tel:
 // link and a WhatsApp button to the client), the message, measurements yes/no,
 // the configuration link and the photo links. Reply-to is the client.
-export function LeadToWorkshop({ lead, workshopName, photoUrls, ticketRows, shareUrl, priceLabel }: LeadToWorkshopProps) {
+export function LeadToWorkshop({
+  lead,
+  workshopName,
+  photoUrls,
+  ticketRows,
+  shareUrl,
+  priceLabel,
+  drawingAttached,
+}: LeadToWorkshopProps) {
   const kindLabel = KIND_LABELS[lead.kind];
   const configRows: TicketRow[] | undefined = ticketRows
     ? [...ticketRows, ...(priceLabel ? [{ k: "Preț orientativ", v: priceLabel }] : [])]
@@ -49,6 +60,7 @@ export function LeadToWorkshop({ lead, workshopName, photoUrls, ticketRows, shar
       <TicketCard title={kindLabel} number={lead.config_code} rows={leadTicketRows(lead)} />
 
       {configRows ? <TicketCard title="Fișă de configurare" number={lead.config_code} rows={configRows} /> : null}
+      {drawingAttached ? <Text style={styles.mono}>{DRAWING_ATTACHED_NOTE}</Text> : null}
 
       <Section style={{ margin: "0 0 20px" }}>
         {whatsapp.length >= 8 ? (

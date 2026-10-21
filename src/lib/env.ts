@@ -11,7 +11,8 @@ export type ServerEnvName =
   | "TURNSTILE_SECRET_KEY"
   | "IP_HASH_SALT"
   | "FORM_HMAC_SECRET"
-  | "REVALIDATE_SECRET";
+  | "REVALIDATE_SECRET"
+  | "CRON_SECRET";
 
 /** The variable's value, or an Error naming it (the Vercel env page is where it is set). */
 export function requireEnv(name: ServerEnvName): string {

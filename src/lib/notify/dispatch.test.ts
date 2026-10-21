@@ -2,9 +2,12 @@
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LeadRow } from "@/lib/leads/types";
-import { DEFAULT_CONFIG } from "@/lib/configurator/catalog.seed";
+import { DEFAULT_CONFIG, SEED_CATALOG } from "@/lib/configurator/catalog.seed";
+import { configCode } from "@/lib/configurator/format";
+import { resolve, type Resolved } from "@/lib/configurator/rules";
 import type { Config } from "@/lib/configurator/types";
 import { SEED_SETTINGS } from "@/lib/data/settings.seed";
+import type { AdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database.types";
 
 vi.mock("server-only", () => ({}));
@@ -13,9 +16,12 @@ const mocks = vi.hoisted(() => ({
   sendEmail: vi.fn(),
   getSettings: vi.fn(),
   createAdminClient: vi.fn(),
+  drawingAttachment: vi.fn(),
   admin: null as unknown,
 }));
 vi.mock("./email", () => ({ sendEmail: mocks.sendEmail }));
+// The real renderer needs resvg and the font; the dispatcher only passes its result on.
+vi.mock("./drawing-png", () => ({ drawingAttachment: mocks.drawingAttachment }));
 vi.mock("@/lib/data/settings", () => ({ getSettings: mocks.getSettings }));
 // getCatalog is a "use cache" reader: cacheTag() throws outside Next, so the seed stands in.
 vi.mock("@/lib/data/catalog", async () => ({ getCatalog: async () => (await import("@/lib/configurator/catalog.seed")).SEED_CATALOG }));
@@ -23,10 +29,18 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminCli
 
 import { LeadConfirmation } from "@/emails/LeadConfirmation";
 import { LeadToWorkshop } from "@/emails/LeadToWorkshop";
-import { dispatchLeadNotifications, PHOTO_LINK_SECONDS } from "./dispatch";
+import {
+  dispatchLeadNotifications,
+  isLeadEventType,
+  LEAD_EVENT_TYPES,
+  PHOTO_LINK_SECONDS,
+  sendLeadNotification,
+} from "./dispatch";
 
 /** Config is an interface (no index signature): the column type needs the cast, as in the action. */
 const asJson = (config: Config) => config as unknown as Json;
+
+const PNG = Buffer.from("not really a png");
 
 const LEAD: LeadRow = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -50,6 +64,16 @@ const LEAD: LeadRow = {
   consent_text: "Sunt de acord cu prelucrarea datelor conform Politicii de confidențialitate.",
   consent_at: "2026-10-14T08:30:00.000Z",
   created_at: "2026-10-14T08:30:00.000Z",
+};
+
+const CONFIG = { ...DEFAULT_CONFIG, base: "lada" as const, led: true };
+const CONFIG_LEAD: LeadRow = {
+  ...LEAD,
+  kind: "configurator",
+  mattress_size: null,
+  config: asJson(CONFIG),
+  config_code: "CAP-160x200-CT01-H120-LD-LED",
+  price_estimate_ron: 7450,
 };
 
 interface EventRow {
@@ -100,12 +124,15 @@ function fakeAdmin(options: { lead?: LeadRow | null; files?: { path: string }[];
   };
   return admin;
 }
+/** The fake as the functions type it. */
+const asClient = (admin: ReturnType<typeof fakeAdmin>) => admin as unknown as AdminClient;
 
 type SentCall = {
   to: string;
   subject: string;
   react: ReactElement<Record<string, unknown>>;
   replyTo?: string;
+  attachments?: { filename: string; content: Buffer }[];
 };
 const sent = () => mocks.sendEmail.mock.calls.map((c) => c[0] as SentCall);
 
@@ -118,6 +145,8 @@ beforeEach(() => {
   mocks.getSettings.mockResolvedValue(SEED_SETTINGS);
   mocks.createAdminClient.mockReset();
   mocks.createAdminClient.mockImplementation(() => mocks.admin);
+  mocks.drawingAttachment.mockReset();
+  mocks.drawingAttachment.mockImplementation(async (_r: Resolved, code: string) => ({ filename: `desen-${code}.png`, content: PNG }));
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
@@ -161,17 +190,7 @@ describe("dispatchLeadNotifications", () => {
   });
 
   it("gives both emails the ticket rows, the share link and the price of a configurator lead", async () => {
-    const config = { ...DEFAULT_CONFIG, base: "lada" as const, led: true };
-    mocks.admin = fakeAdmin({
-      lead: {
-        ...LEAD,
-        kind: "configurator",
-        mattress_size: null,
-        config: asJson(config),
-        config_code: "CAP-160x200-CT01-H120-LD-LED",
-        price_estimate_ron: 7450,
-      },
-    });
+    mocks.admin = fakeAdmin({ lead: CONFIG_LEAD });
 
     await dispatchLeadNotifications(LEAD.id);
 
@@ -211,6 +230,7 @@ describe("dispatchLeadNotifications", () => {
     await dispatchLeadNotifications(LEAD.id);
     expect(mocks.sendEmail).toHaveBeenCalledTimes(2);
     expect(sent()[0].react.props.ticketRows).toBeUndefined();
+    expect(mocks.drawingAttachment).not.toHaveBeenCalled();
   });
 
   it("replies to the workshop's public address once it is a real one", async () => {
@@ -298,5 +318,148 @@ describe("dispatchLeadNotifications", () => {
       { lead_id: LEAD.id, type: "email_workshop", ok: false, detail: { error: "settings unavailable" } },
       { lead_id: LEAD.id, type: "email_client", ok: false, detail: { error: "settings unavailable" } },
     ]);
+  });
+});
+
+describe("the drawing attachment (PR-10)", () => {
+  it("renders the PNG once per dispatch and attaches the same file to both configurator emails, which say so", async () => {
+    mocks.admin = fakeAdmin({ lead: CONFIG_LEAD });
+
+    await dispatchLeadNotifications(LEAD.id);
+
+    expect(mocks.drawingAttachment).toHaveBeenCalledTimes(1);
+    const [resolved, code] = mocks.drawingAttachment.mock.calls[0] as [Resolved, string];
+    expect(code).toBe("CAP-160x200-CT01-H120-LD-LED");
+    expect(resolved.cfg).toMatchObject({ base: "lada", led: true });
+
+    const [workshop, client] = sent();
+    expect(workshop.attachments).toEqual([{ filename: "desen-CAP-160x200-CT01-H120-LD-LED.png", content: PNG }]);
+    expect(client.attachments).toHaveLength(1);
+    expect(client.attachments?.[0]).toBe(workshop.attachments?.[0]);
+    expect(workshop.react.props.drawingAttached).toBe(true);
+    expect(client.react.props.drawingAttached).toBe(true);
+  });
+
+  it("names the sheet after configCode(r) when the lead stored no code", async () => {
+    mocks.admin = fakeAdmin({ lead: { ...CONFIG_LEAD, config_code: null } });
+    await dispatchLeadNotifications(LEAD.id);
+    const expected = configCode(resolve(CONFIG, SEED_CATALOG));
+    expect(mocks.drawingAttachment).toHaveBeenCalledWith(expect.anything(), expected);
+    expect(sent()[0].attachments?.[0].filename).toBe(`desen-${expected}.png`);
+  });
+
+  it("leaves the drawing out of a contact lead", async () => {
+    mocks.admin = fakeAdmin();
+    await dispatchLeadNotifications(LEAD.id);
+    expect(mocks.drawingAttachment).not.toHaveBeenCalled();
+    for (const email of sent()) {
+      expect(email.attachments).toBeUndefined();
+      expect(email.react.props.drawingAttached).toBe(false);
+    }
+  });
+
+  it("sends both emails without the drawing when rendering fails, and logs it", async () => {
+    const admin = fakeAdmin({ lead: CONFIG_LEAD });
+    mocks.admin = admin;
+    mocks.drawingAttachment.mockRejectedValueOnce(new Error("resvg: font not found"));
+
+    await dispatchLeadNotifications(LEAD.id);
+
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(2);
+    for (const email of sent()) {
+      expect(email.attachments).toBeUndefined();
+      expect(email.react.props.drawingAttached).toBe(false);
+      expect(email.react.props.ticketRows).toHaveLength(6);
+    }
+    expect(admin.events.every((event) => event.ok)).toBe(true);
+    const logged = vi.mocked(console.error).mock.calls.map((call) => String(call[0]));
+    expect(logged.some((line) => line.includes("drawing PNG failed"))).toBe(true);
+  });
+});
+
+describe("sendLeadNotification", () => {
+  it("sends only the requested email and records the attempt in the event's detail", async () => {
+    const admin = fakeAdmin();
+
+    const result = await sendLeadNotification(asClient(admin), LEAD, "email_client", { attempt: 2 });
+
+    expect(result).toEqual({ ok: true, id: "re_1" });
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
+    expect(sent()[0].to).toBe("stefan@example.com");
+    expect(sent()[0].react.type).toBe(LeadConfirmation);
+    expect(admin.events).toEqual([{ lead_id: LEAD.id, type: "email_client", ok: true, detail: { attempt: 2, id: "re_1" } }]);
+  });
+
+  it("rebuilds the workshop email of a configurator lead with its drawing", async () => {
+    const admin = fakeAdmin({ files: [{ path: `${LEAD.id}/1.jpg` }] });
+
+    const result = await sendLeadNotification(asClient(admin), CONFIG_LEAD, "email_workshop", { attempt: 3 });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.drawingAttachment).toHaveBeenCalledTimes(1);
+    const [email] = sent();
+    expect(email.to).toBe("atelier-preview@example.com");
+    expect(email.replyTo).toBe("stefan@example.com");
+    expect(email.react.type).toBe(LeadToWorkshop);
+    expect(email.react.props.photoUrls).toHaveLength(1);
+    expect(email.attachments?.[0].filename).toBe("desen-CAP-160x200-CT01-H120-LD-LED.png");
+    expect(admin.events).toEqual([{ lead_id: LEAD.id, type: "email_workshop", ok: true, detail: { attempt: 3, id: "re_1" } }]);
+  });
+
+  it("returns and records a failed send, keeping the send's own keys over the extras", async () => {
+    const admin = fakeAdmin();
+    mocks.sendEmail.mockResolvedValueOnce({ ok: false, error: "rate_limit_exceeded: slow down" });
+
+    const result = await sendLeadNotification(asClient(admin), LEAD, "email_client", { attempt: 3, error: "older" });
+
+    expect(result).toEqual({ ok: false, error: "rate_limit_exceeded: slow down" });
+    expect(admin.events).toEqual([
+      { lead_id: LEAD.id, type: "email_client", ok: false, detail: { attempt: 3, error: "rate_limit_exceeded: slow down" } },
+    ]);
+  });
+
+  it("records NOTIFY_EMAIL missing for the workshop email without calling the sender", async () => {
+    vi.stubEnv("NOTIFY_EMAIL", "");
+    const admin = fakeAdmin();
+
+    const result = await sendLeadNotification(asClient(admin), LEAD, "email_workshop", { attempt: 2 });
+
+    expect(result).toEqual({ ok: false, error: "NOTIFY_EMAIL missing" });
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    expect(admin.events).toEqual([
+      { lead_id: LEAD.id, type: "email_workshop", ok: false, detail: { attempt: 2, error: "NOTIFY_EMAIL missing" } },
+    ]);
+  });
+
+  it("records a failure to build the email and never throws", async () => {
+    const admin = fakeAdmin();
+    mocks.getSettings.mockRejectedValueOnce(new Error("settings unavailable"));
+
+    const result = await sendLeadNotification(asClient(admin), LEAD, "email_client", { attempt: 2 });
+
+    expect(result).toEqual({ ok: false, error: "settings unavailable" });
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    expect(admin.events).toEqual([
+      { lead_id: LEAD.id, type: "email_client", ok: false, detail: { attempt: 2, error: "settings unavailable" } },
+    ]);
+  });
+
+  it("survives a throwing sender", async () => {
+    const admin = fakeAdmin();
+    mocks.sendEmail.mockRejectedValueOnce(new Error("network down"));
+
+    const result = await sendLeadNotification(asClient(admin), LEAD, "email_client");
+
+    expect(result.ok).toBe(false);
+    expect(admin.events[0]).toMatchObject({ type: "email_client", ok: false });
+    expect(String(admin.events[0].detail.error)).toContain("network down");
+  });
+});
+
+describe("LEAD_EVENT_TYPES", () => {
+  it("names the two values the lead_events CHECK constraint allows", () => {
+    expect(LEAD_EVENT_TYPES).toEqual(["email_workshop", "email_client"]);
+    expect(isLeadEventType("email_client")).toBe(true);
+    expect(isLeadEventType("sms")).toBe(false);
   });
 });

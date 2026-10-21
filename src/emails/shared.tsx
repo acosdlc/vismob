@@ -111,6 +111,9 @@ export const PLAIN_TEXT_OPTIONS = {
   },
 } satisfies RenderOptions;
 
+/** One line under the configuration ticket when the drawing PNG is attached (PR-10). */
+export const DRAWING_ATTACHED_NOTE = "Desenul la scară e atașat ca PNG.";
+
 /** The request kind as the workshop names it. */
 export const KIND_LABELS: Record<LeadKind, string> = {
   contact: "Cerere de ofertă",

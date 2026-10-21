@@ -8,7 +8,9 @@ const isProd = process.env.NODE_ENV === "production";
 // in development; vercel.live is the preview toolbar on Vercel previews.
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} https://challenges.cloudflare.com https://vercel.live`,
+  // va.vercel-scripts.com is only the debug build of Vercel Analytics in development;
+  // in production both Analytics and Speed Insights load from this origin (/_vercel/*).
+  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval' https://va.vercel-scripts.com"} https://challenges.cloudflare.com https://vercel.live`,
   "frame-src https://challenges.cloudflare.com https://www.google.com https://vercel.live",
   `img-src 'self' data: blob: ${SUPABASE_HOST}`,
   `connect-src 'self' ${SUPABASE_HOST} https://challenges.cloudflare.com https://vercel.live wss://ws-us3.pusher.com`,
@@ -42,8 +44,9 @@ const nextConfig: NextConfig = {
     },
   },
   // react-dom/server is a throwing stub in the React Server layer; the email
-  // renderer must be required by Node at runtime, outside the bundle.
-  serverExternalPackages: ["@react-email/render", "@react-email/components"],
+  // renderer must be required by Node at runtime, outside the bundle. resvg is a
+  // native Node addon (the drawing PNG, PR-10) and cannot be bundled either.
+  serverExternalPackages: ["@react-email/render", "@react-email/components", "@resvg/resvg-js"],
   async headers() {
     return [
       {
