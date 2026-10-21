@@ -9,7 +9,7 @@ import type { Settings } from "@/lib/data/settings.seed";
 export type SettingsKey = keyof Settings;
 
 /** How the form shows a key and how settings-schema.ts validates it. */
-export type SettingsFieldKind = "text" | "textarea" | "url" | "boolean" | "digits";
+export type SettingsFieldKind = "text" | "textarea" | "url" | "boolean" | "digits" | "photo";
 
 export interface SettingsField {
   key: SettingsKey;
@@ -35,6 +35,8 @@ export const SETTINGS_MAX = {
   /** The international number without "+" has 8 to 15 digits (ITU E.164). */
   digits: 15,
   boolean: 2,
+  /** A media bucket path posted by PhotoField (`site/<slug>-<stamp>.webp`). */
+  photo: 200,
 } as const satisfies Record<SettingsFieldKind, number>;
 
 const text = (key: SettingsKey, label: string, hint?: string): SettingsField => ({
@@ -135,6 +137,13 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       text("founded_year", "Anul înființării"),
       text("team_size", "Echipa"),
       textarea("story_text", "Povestea atelierului"),
+      {
+        key: "atelier_photo_path",
+        label: "Poza atelierului",
+        hint: "Oamenii din atelier, la lucru: tapițare, capitonare, montajul structurii. Apare pe Acasă, în secțiunea Atelierul, la 4:5.",
+        kind: "photo",
+        maxLength: SETTINGS_MAX.photo,
+      },
     ],
   },
   {

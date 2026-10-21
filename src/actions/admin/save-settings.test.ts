@@ -30,6 +30,8 @@ interface FakeCalls {
 
 function fakeClient(result: { data: unknown; error: { message: string } | null }) {
   const calls: FakeCalls = {};
+  /** Every storage removal, in order: [bucket, paths]. */
+  const removed: [string, string[]][] = [];
   const client = {
     from(table: string) {
       calls.table = table;
@@ -50,9 +52,22 @@ function fakeClient(result: { data: unknown; error: { message: string } | null }
         },
       };
     },
+    storage: {
+      from(bucket: string): { remove(paths: string[]): Promise<{ error: { message: string } | null }> } {
+        return {
+          remove: async (paths: string[]) => {
+            removed.push([bucket, paths]);
+            return { error: null };
+          },
+        };
+      },
+    },
   };
-  return { client, calls };
+  return { client, calls, removed };
 }
+
+const OLD_PHOTO = "site/atelier-1792569508000.webp";
+const NEW_PHOTO = "site/atelier-1792569508760.webp";
 
 /** The form's post for a Settings object: every text as a string, a ticked checkbox as "on". */
 function formFor(settings: Settings): FormData {
@@ -102,14 +117,112 @@ describe("saveSettings", () => {
   });
 
   it("writes the whole object to settings row 1, then expires the settings tag", async () => {
-    const { client, calls } = fakeClient({ data: [{ id: 1 }], error: null });
+    const { client, calls, removed } = fakeClient({ data: [{ id: 1 }], error: null });
     mocks.createClient.mockResolvedValue(client);
 
     const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(SAVED));
 
     expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
     expect(calls).toEqual({ table: "settings", update: { data: SAVED }, eq: ["id", 1], select: "id" });
+    expect(removed).toEqual([]);
     expect(mocks.updateTag).toHaveBeenCalledTimes(1);
+    expect(mocks.updateTag).toHaveBeenCalledWith("settings");
+  });
+
+  it("refuses a workshop photo path outside the site folder, without writing", async () => {
+    const fd = formFor({ ...SAVED, atelier_photo_path: "materials/ct-verde-1792569508760.webp" });
+    const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+    expect(state).toEqual({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { atelier_photo_path: SETTINGS_MESSAGES.photo },
+    });
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  it("removes the workshop photo the save replaced, only after the write", async () => {
+    const { client, calls, removed } = fakeClient({ data: [{ id: 1 }], error: null });
+    mocks.createClient.mockResolvedValue(client);
+    const fd = formFor({ ...SAVED, atelier_photo_path: NEW_PHOTO });
+    fd.set("atelier_photo_path_before", OLD_PHOTO);
+
+    const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+
+    expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+    // The `_before` input is not a Settings key: it never reaches the row.
+    expect(calls.update).toEqual({ data: { ...SAVED, atelier_photo_path: NEW_PHOTO } });
+    expect(removed).toEqual([["media", [OLD_PHOTO]]]);
+    expect(mocks.updateTag).toHaveBeenCalledWith("settings");
+  });
+
+  it("removes the old photo when the admin deleted it (empty path)", async () => {
+    const { client, calls, removed } = fakeClient({ data: [{ id: 1 }], error: null });
+    mocks.createClient.mockResolvedValue(client);
+    const fd = formFor({ ...SAVED, atelier_photo_path: "" });
+    fd.set("atelier_photo_path_before", OLD_PHOTO);
+
+    const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+
+    expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+    expect(calls.update).toEqual({ data: { ...SAVED, atelier_photo_path: "" } });
+    expect(removed).toEqual([["media", [OLD_PHOTO]]]);
+  });
+
+  it("removes nothing when the photo is unchanged", async () => {
+    const { client, removed } = fakeClient({ data: [{ id: 1 }], error: null });
+    mocks.createClient.mockResolvedValue(client);
+    const fd = formFor({ ...SAVED, atelier_photo_path: OLD_PHOTO });
+    fd.set("atelier_photo_path_before", OLD_PHOTO);
+
+    const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+
+    expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+    expect(removed).toEqual([]);
+  });
+
+  it("ignores a `_before` value that is not a site photo path", async () => {
+    for (const before of ["materials/ct-verde-1792569508760.webp", "site/atelier.webp", "../x", "nu"]) {
+      const { client, removed } = fakeClient({ data: [{ id: 1 }], error: null });
+      mocks.createClient.mockResolvedValue(client);
+      const fd = formFor({ ...SAVED, atelier_photo_path: NEW_PHOTO });
+      fd.set("atelier_photo_path_before", before);
+
+      const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+
+      expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+      expect(removed).toEqual([]);
+    }
+  });
+
+  it("removes nothing when the write fails or touches no row", async () => {
+    for (const result of [
+      { data: [], error: null },
+      { data: null, error: { message: "permission denied for table settings" } },
+    ]) {
+      const { client, removed } = fakeClient(result);
+      mocks.createClient.mockResolvedValue(client);
+      const fd = formFor({ ...SAVED, atelier_photo_path: NEW_PHOTO });
+      fd.set("atelier_photo_path_before", OLD_PHOTO);
+
+      const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+
+      expect(state.status).toBe("error");
+      expect(removed).toEqual([]);
+    }
+  });
+
+  it("still answers saved when the old photo cannot be removed, and logs it", async () => {
+    const { client, calls } = fakeClient({ data: [{ id: 1 }], error: null });
+    client.storage.from = () => ({ remove: async () => ({ error: { message: "object not found" } }) });
+    mocks.createClient.mockResolvedValue(client);
+    const fd = formFor({ ...SAVED, atelier_photo_path: NEW_PHOTO });
+    fd.set("atelier_photo_path_before", OLD_PHOTO);
+
+    const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+
+    expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+    expect(calls.update).toEqual({ data: { ...SAVED, atelier_photo_path: NEW_PHOTO } });
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("object not found"));
     expect(mocks.updateTag).toHaveBeenCalledWith("settings");
   });
 

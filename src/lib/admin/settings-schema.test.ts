@@ -83,6 +83,34 @@ describe("parseSettingsForm", () => {
     }
   });
 
+  it("takes the workshop photo as empty or a PhotoField path in the site folder", () => {
+    for (const value of ["", "site/atelier-1792569508760.webp", " site/atelier-1792569508760.webp "]) {
+      const result = parseSettingsForm(formFor({ ...SEED_SETTINGS, atelier_photo_path: value }));
+      expect(result.ok && result.data.atelier_photo_path).toBe(value.trim());
+    }
+    for (const value of [
+      "materials/ct-verde-1792569508760.webp",
+      "bases/lamele-1792569508760.webp",
+      "site/atelier.webp",
+      "https://example.supabase.co/storage/v1/object/public/media/site/atelier-1792569508760.webp",
+      "../site/atelier-1792569508760.webp",
+      "nu",
+    ]) {
+      expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, atelier_photo_path: value }))).toEqual({
+        ok: false,
+        fieldErrors: { atelier_photo_path: SETTINGS_MESSAGES.photo },
+      });
+    }
+  });
+
+  it("drops the photo field's `_before` input instead of storing it", () => {
+    const fd = formFor({ ...SEED_SETTINGS, atelier_photo_path: "site/atelier-1792569508760.webp" });
+    fd.set("atelier_photo_path_before", "site/atelier-1792569508000.webp");
+    const result = parseSettingsForm(fd);
+    expect(result.ok).toBe(true);
+    expect(result.ok && Object.keys(result.data)).not.toContain("atelier_photo_path_before");
+  });
+
   it("bounds every text by its kind", () => {
     const ok = parseSettingsForm(
       formFor({

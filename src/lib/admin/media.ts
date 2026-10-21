@@ -5,8 +5,8 @@
 
 export const MEDIA_BUCKET = "media";
 
-/** One folder per table that carries a photo. */
-export const MEDIA_FOLDERS = ["materials", "bases"] as const;
+/** One folder per table (or settings slot) that carries a photo. */
+export const MEDIA_FOLDERS = ["materials", "bases", "projects", "site"] as const;
 export type MediaFolder = (typeof MEDIA_FOLDERS)[number];
 
 /** The browser-side resize (browser-image-compression) before the upload. */
@@ -21,13 +21,22 @@ export const MEDIA_UPLOAD = {
   extension: "webp",
 } as const;
 
-/** The hidden inputs a form with a PhotoField posts; the action reads both. */
-export const PHOTO_FIELDS = {
-  /** The path to store: "" means no photo. */
+/** The two hidden inputs a PhotoField posts: the path to store ("" = none) and the path the form loaded with. */
+export interface PhotoFieldNames {
+  path: string;
+  before: string;
+}
+
+/** The default names; a form with several photos, or a settings key, passes its own (see photoFieldNames). */
+export const PHOTO_FIELDS: PhotoFieldNames = {
   path: "photo_path",
-  /** The path the form loaded with; when it differs from `path`, the action removes that object. */
   before: "photo_path_before",
-} as const;
+};
+
+/** The input names of a PhotoField bound to a specific field, e.g. `atelier_photo_path` / `atelier_photo_path_before`. */
+export function photoFieldNames(field: string): PhotoFieldNames {
+  return { path: field, before: `${field}_before` };
+}
 
 /**
  * `materials/ct-verde-1792569508760.webp`: the folder, a slug and a timestamp, so a
@@ -50,7 +59,7 @@ export function mediaSlug(value: string): string {
   return slug || "foto";
 }
 
-const MEDIA_PATH = /^(materials|bases)\/[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?-\d{10,16}\.webp$/;
+const MEDIA_PATH = /^(materials|bases|projects|site)\/[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?-\d{10,16}\.webp$/;
 
 /** Whether a posted path is one PhotoField produces, optionally in a given folder: nothing else may be stored. */
 export function isMediaPath(path: unknown, folder?: MediaFolder): path is string {
@@ -71,9 +80,10 @@ export interface MediaStorage {
 export function photoChange(
   formData: FormData,
   folder: MediaFolder,
+  names: PhotoFieldNames = PHOTO_FIELDS,
 ): { ok: true; path: string | null; remove: string | null } | { ok: false } {
-  const path = formData.get(PHOTO_FIELDS.path);
-  const before = formData.get(PHOTO_FIELDS.before);
+  const path = formData.get(names.path);
+  const before = formData.get(names.before);
   const next = typeof path === "string" && path !== "" ? path : null;
   const previous = typeof before === "string" && before !== "" ? before : null;
   if (next !== null && !isMediaPath(next, folder)) return { ok: false };

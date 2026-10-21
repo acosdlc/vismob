@@ -11,6 +11,7 @@ import { Process } from "@/components/home/Process";
 import { Reviews } from "@/components/home/Reviews";
 import { Facts } from "@/components/site/Facts";
 import { getCatalog } from "@/lib/data/catalog";
+import { mediaUrl } from "@/lib/data/media";
 import { getStartingPrices } from "@/lib/data/pricing";
 import { getHeroProject, getProjects } from "@/lib/data/projects";
 import { getReviews } from "@/lib/data/reviews";
@@ -46,7 +47,8 @@ export default async function Home() {
       <MaterialsTeaser catalog={catalog} settings={settings} />
       <ConfiguratorBand />
       <Gallery projects={featured} />
-      <Atelier settings={settings} />
+      {/* FOTO 08 is uploaded from Setări (PR-9); without a path the placeholder stays. */}
+      <Atelier settings={settings} photoSrc={mediaUrl(settings.atelier_photo_path)} />
       <Reviews reviews={reviews} settings={settings} />
       <FaqSection settings={settings} />
       <ContactSection settings={settings} form={<ContactForm responseTime={settings.response_time} page="/" />} />

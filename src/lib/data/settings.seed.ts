@@ -57,6 +57,8 @@ export interface Settings {
   founded_year: string;
   team_size: string;
   story_text: string;
+  /** Path of the FOTO 08 photo in the media bucket (site/…); "" shows the placeholder. */
+  atelier_photo_path: string;
 
   // Materials page
   leg_height_cm: string;
@@ -103,6 +105,7 @@ export const SEED_SETTINGS: Settings = {
   founded_year: "[anul]",
   team_size: "[X]",
   story_text: "[Una-două fraze despre ce vă diferențiază.]",
+  atelier_photo_path: "",
 
   leg_height_cm: "[12]",
   oil_refresh_interval: "[o dată pe an]",
