@@ -2,7 +2,10 @@ import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { z } from "zod";
 import { startingPrices, type Pricing } from "@/lib/configurator/pricing";
-import type { BaseId, ModelId } from "@/lib/configurator/types";
+// The schema of the grid lives with the configurator (pure), so the admin's form and
+// Server Action (PR-8) validate the same shape this reader accepts.
+import { pricingSchema } from "@/lib/configurator/pricing-schema";
+import type { ModelId } from "@/lib/configurator/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCatalog } from "./catalog";
 
@@ -12,21 +15,6 @@ import { getCatalog } from "./catalog";
 // no database) every price is null and the ticket shows only „Prețul final îl
 // confirmăm în scris…” (docs/PLAN.md, decisions). Never throws: a price is optional,
 // so a failed read turns prices off for minutes rather than taking a page down.
-
-const MODEL_IDS = ["capitonat", "arcuit", "canale", "lamele"] as const satisfies readonly ModelId[];
-const BASE_IDS = ["lemn", "metal", "lada", "sertare"] as const satisfies readonly BaseId[];
-
-// The exact shape of the Pricing type: z.record with an enum key is exhaustive
-// (every model, every base) and z.object strips keys the type does not have.
-const pricingSchema = z.object({
-  grid: z.record(z.enum(MODEL_IDS), z.record(z.string().regex(/^\d+$/), z.number().positive())),
-  categoryPct: z.object({ A: z.number(), B: z.number(), C: z.number() }),
-  hbPct: z.object({ "100": z.number(), "120": z.number(), "140": z.number() }),
-  base: z.object(Object.fromEntries(BASE_IDS.map((id) => [id, z.number()])) as Record<BaseId, z.ZodNumber>),
-  extras: z.object({ led: z.number(), nightstands: z.number() }),
-  customPct: z.number(),
-  roundTo: z.number().positive(),
-});
 
 /** The grid from `pricing` id=1, or null when there is none or it cannot be read. Cached under the `pricing` tag. */
 export async function getPricing(): Promise<Pricing | null> {

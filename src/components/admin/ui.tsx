@@ -115,6 +115,39 @@ export function StatusBadge({ status, className }: { status: LeadStatus; classNa
   );
 }
 
+export type TagTone = "accent" | "ink" | "muted";
+
+const TAG_TONE: Record<TagTone, string> = {
+  accent: "border-accent text-accent",
+  ink: "border-ink text-ink",
+  muted: "border-rule text-muted",
+};
+
+/** A small mono tag (eyebrow letterforms, 1px border) for a state or a code: „Activ”, „Inactiv”, „CT01”. */
+export function Tag({ tone = "ink", className, children, ...props }: ComponentProps<"span"> & { tone?: TagTone }) {
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center rounded-ui border px-2 py-[2px] font-mono text-[12px] leading-[1.5] tracking-[.08em] uppercase whitespace-nowrap",
+        TAG_TONE[tone],
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** „Activ” in accent or „Inactiv” in muted, for catalogue rows. */
+export function ActiveTag({ active, className }: { active: boolean; className?: string }) {
+  return (
+    <Tag tone={active ? "accent" : "muted"} className={className}>
+      {active ? "Activ" : "Inactiv"}
+    </Tag>
+  );
+}
+
 /** Horizontal scroll for tables on narrow screens; the table keeps its natural width. */
 export function TableWrap({ className, ...props }: ComponentProps<"div">) {
   return <div className={cx("-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0", className)} {...props} />;

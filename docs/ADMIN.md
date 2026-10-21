@@ -39,7 +39,7 @@ The same two steps add any further admin.
 ## Screens
 
 - **PR-7**: `/admin/login`, the guarded shell with its header (Panou / Cereri / Setări / „Vezi site-ul” / „Ieși”), the dashboard `/admin` (the count of new requests), `/admin/setari` (every settings key, `show_prices`) and `/admin/cereri` (list with filters and search; detail with the ticket, photos through signed URLs, status, notes, delete).
-- **PR-8** adds the catalogue: materials with photo upload, models, families and bases, the model ↔ family rules, and the price grid.
+- **PR-8**: `/admin/catalog` (models, material families, materials grouped by family, bases; a material can be added, edited, deactivated or, when nothing references it, deleted; models, families and bases are edited only, their ids are fixed in code), the model ↔ family rules on each model, photos uploaded from the browser into the public `media` bucket (resized to 1600 px WebP; a replaced photo gets a new name so no cache keeps the old one), and `/admin/preturi`, the price grid with a live preview of three typical configurations. Every save expires the `catalog` or `pricing` cache tag, so the site shows the change on its next request.
 - **PR-9** adds the projects (Lucrări) and the reviews (Recenzii), with the consents.
 
 ## Indexing

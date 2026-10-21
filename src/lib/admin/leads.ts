@@ -2,7 +2,7 @@ import type { LeadStatus } from "@/lib/admin/types";
 import { LEAD_STATUSES } from "@/lib/admin/types";
 import type { Config } from "@/lib/configurator/types";
 import { configFromParams } from "@/lib/configurator/url";
-import type { FieldErrors, LeadKind, LeadRow } from "@/lib/leads/types";
+import type { LeadKind, LeadRow } from "@/lib/leads/types";
 import type { Json } from "@/lib/supabase/database.types";
 
 // Pure helpers of the Cereri screens (docs/PLAN.md PR-7, ARHITECTURA §8): the
@@ -243,13 +243,5 @@ export function leadSourceText(source: Json | null): LeadSourceText {
   return { source: parts.length > 0 ? parts.join(" · ") : null, environment: text(source.environment) };
 }
 
-/** The first message per field from Zod issues (the admin actions' `fieldErrors`). */
-export function zodFieldErrors(issues: readonly { path: PropertyKey[]; message: string }[], fallback: string): FieldErrors {
-  const fieldErrors: FieldErrors = {};
-  for (const issue of issues) {
-    const field = String(issue.path[0] ?? "");
-    if (!field || fieldErrors[field]) continue;
-    fieldErrors[field] = issue.message || fallback;
-  }
-  return fieldErrors;
-}
+/** Kept here for the PR-7 callers; it lives in src/lib/validation/form-values.ts. */
+export { zodFieldErrors } from "@/lib/validation/form-values";

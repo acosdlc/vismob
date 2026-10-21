@@ -3,6 +3,7 @@ import { z } from "zod";
 import { QUOTE_FIELDS } from "@/components/configurator/types";
 import { configFromParams } from "@/lib/configurator/url";
 import { FORM_FIELDS, FORM_MESSAGES, MATTRESS_SIZES, UPLOAD_LIMITS, type FieldErrors } from "@/lib/leads/types";
+import { formValues } from "./form-values";
 
 // Zod schemas for the request forms (ARHITECTURA §6.1 table). Every message is a
 // FORM_MESSAGES entry, so the forms show the texts listed for approval and
@@ -111,15 +112,7 @@ export type LeadBaseInput = z.output<typeof leadBaseSchema>;
 export type ContactInput = z.output<typeof contactSchema>;
 export type QuoteInput = z.output<typeof quoteSchema>;
 
-/** The form's string fields, first value per name; files and React's `$ACTION_*` entries are skipped. */
-export function formValues(formData: FormData): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const [key, value] of formData.entries()) {
-    if (typeof value !== "string" || key.startsWith("$ACTION") || key in values) continue;
-    values[key] = value;
-  }
-  return values;
-}
+export { formValues } from "./form-values";
 
 /** Validates a posted form; on failure, the first FORM_MESSAGES text per field. */
 export function parseLeadForm<S extends z.ZodType>(formData: FormData, schema: S): ParseResult<z.output<S>> {
