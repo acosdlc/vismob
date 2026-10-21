@@ -6,7 +6,14 @@ import { Notice } from "@/components/admin/ui";
 import { Button } from "@/components/site/Button";
 import { cx } from "@/components/site/cx";
 import { Field, FieldError, FileInput, Label } from "@/components/site/form";
-import { MEDIA_BUCKET, MEDIA_UPLOAD, mediaObjectPath, PHOTO_FIELDS, type MediaFolder } from "@/lib/admin/media";
+import {
+  MEDIA_BUCKET,
+  MEDIA_UPLOAD,
+  mediaObjectPath,
+  PHOTO_FIELDS,
+  type MediaFolder,
+  type PhotoFieldNames,
+} from "@/lib/admin/media";
 import { ADMIN_MESSAGES } from "@/lib/admin/types";
 import { mediaUrl } from "@/lib/data/media";
 import { createClient } from "@/lib/supabase/client";
@@ -26,6 +33,10 @@ export interface PhotoFieldProps {
   id?: string;
   /** A server-side error for the photo (the action's `fieldErrors.photo_path`). */
   error?: string;
+  /** The hidden inputs' names; the default PHOTO_FIELDS serves a form with one photo. */
+  names?: PhotoFieldNames;
+  /** Blocks picking and removing (a locked form): an upload the form could never save would only orphan an object. */
+  disabled?: boolean;
   /** Tells the form while a photo is still uploading, so it can hold the submit. */
   onUploadingChange?: (uploading: boolean) => void;
 }
@@ -72,6 +83,8 @@ export function PhotoField({
   ratio = "1:1",
   id,
   error,
+  names = PHOTO_FIELDS,
+  disabled = false,
   onUploadingChange,
 }: PhotoFieldProps) {
   const generatedId = useId();
@@ -135,10 +148,11 @@ export function PhotoField({
   const uploading = status === "uploading";
 
   return (
-    <Field data-field={PHOTO_FIELDS.path}>
+    // tabIndex -1: focusFirstInvalid() lands on this wrapper when the server refuses the path (the inputs are hidden).
+    <Field data-field={names.path} tabIndex={-1} className="outline-none">
       <Label htmlFor={fieldId}>{label}</Label>
-      <input type="hidden" name={PHOTO_FIELDS.path} value={path ?? ""} />
-      <input type="hidden" name={PHOTO_FIELDS.before} value={currentPath ?? ""} />
+      <input type="hidden" name={names.path} value={path ?? ""} />
+      <input type="hidden" name={names.before} value={currentPath ?? ""} />
       <div className="flex flex-wrap items-start gap-4">
         <div
           className={cx(
@@ -159,7 +173,7 @@ export function PhotoField({
           <FileInput
             id={fieldId}
             accept={MEDIA_UPLOAD.accept}
-            disabled={uploading}
+            disabled={uploading || disabled}
             invalid={Boolean(error)}
             aria-describedby={hintId}
             aria-busy={uploading || undefined}
@@ -170,7 +184,7 @@ export function PhotoField({
               {hint}
             </p>
           )}
-          {path && !uploading && (
+          {path && !uploading && !disabled && (
             <div>
               <Button type="button" variant="secondary" size="header" onClick={remove}>
                 {PHOTO_TEXTS.remove}

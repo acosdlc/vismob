@@ -100,6 +100,27 @@ describe("PhotoField", () => {
     expect(upload).toHaveBeenCalledTimes(1);
   });
 
+  it("posts under custom input names when given", () => {
+    const { container } = render(
+      <PhotoField
+        folder="site"
+        slug="atelier"
+        currentPath="site/atelier-1792569508760.webp"
+        label="Poză"
+        names={{ path: "atelier_photo_path", before: "atelier_photo_path_before" }}
+      />,
+    );
+    expect(hidden(container, "atelier_photo_path").value).toBe("site/atelier-1792569508760.webp");
+    expect(hidden(container, "atelier_photo_path_before").value).toBe("site/atelier-1792569508760.webp");
+    expect(container.querySelector(`input[name="${PHOTO_FIELDS.path}"]`)).toBeNull();
+  });
+
+  it("is inert while disabled: no picking, no removing", () => {
+    render(<PhotoField folder="materials" slug="x" currentPath={CURRENT} label="Poză" disabled />);
+    expect(screen.getByLabelText("Poză")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: PHOTO_TEXTS.remove })).not.toBeInTheDocument();
+  });
+
   it("renders a server-side error under the field", () => {
     render(<PhotoField folder="materials" slug="x" currentPath={null} label="Poză" error="Poza nu e validă." />);
     expect(screen.getByLabelText("Poză")).toHaveAttribute("aria-invalid", "true");

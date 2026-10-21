@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isMediaPath, mediaObjectPath, mediaSlug, PHOTO_FIELDS, photoChange, removeMediaObject } from "./media";
+import { isMediaPath, mediaObjectPath, mediaSlug, PHOTO_FIELDS, photoChange, photoFieldNames, removeMediaObject } from "./media";
 
 describe("mediaSlug and mediaObjectPath", () => {
   it("turns a name into a safe object name and keeps the folder, the stamp and the extension", () => {
@@ -18,7 +18,9 @@ describe("isMediaPath", () => {
     expect(isMediaPath("bases/lemn-1792569508760.webp", "bases")).toBe(true);
     expect(isMediaPath("bases/lemn-1792569508760.webp", "materials")).toBe(false);
     expect(isMediaPath("materials/../x-1792569508760.webp")).toBe(false);
-    expect(isMediaPath("projects/a-1792569508760.webp")).toBe(false);
+    expect(isMediaPath("projects/a-1792569508760.webp", "projects")).toBe(true);
+    expect(isMediaPath("site/atelier-1792569508760.webp", "site")).toBe(true);
+    expect(isMediaPath("reviews/a-1792569508760.webp")).toBe(false);
     expect(isMediaPath("materials/a-1792569508760.jpg")).toBe(false);
     expect(isMediaPath("materials/a-12.webp")).toBe(false);
     expect(isMediaPath("materials/-a-1792569508760.webp")).toBe(false);
@@ -45,6 +47,23 @@ describe("photoChange", () => {
     expect(photoChange(form(), "materials")).toEqual({ ok: true, path: null, remove: null });
     expect(photoChange(form("bases/x-1792569508760.webp", ""), "materials")).toEqual({ ok: false });
     expect(photoChange(form(a, "../etc/passwd"), "materials")).toEqual({ ok: false });
+  });
+
+  it("reads a field-bound pair of names, e.g. a settings key", () => {
+    const names = photoFieldNames("atelier_photo_path");
+    expect(names).toEqual({ path: "atelier_photo_path", before: "atelier_photo_path_before" });
+    const fd = new FormData();
+    fd.set(names.path, "site/atelier-1792569508761.webp");
+    fd.set(names.before, "site/atelier-1792569508760.webp");
+    expect(photoChange(fd, "site", names)).toEqual({
+      ok: true,
+      path: "site/atelier-1792569508761.webp",
+      remove: "site/atelier-1792569508760.webp",
+    });
+    // The default names are not read when custom ones are given.
+    const other = new FormData();
+    other.set(PHOTO_FIELDS.path, "site/x-1792569508760.webp");
+    expect(photoChange(other, "site", names)).toEqual({ ok: true, path: null, remove: null });
   });
 });
 

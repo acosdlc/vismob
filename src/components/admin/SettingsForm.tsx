@@ -1,11 +1,13 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
+import { startTransition, useActionState, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { saveSettings } from "@/actions/admin/save-settings";
+import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, AdminSection, Notice, fieldGridClasses } from "@/components/admin/ui";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Textarea } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { photoFieldNames } from "@/lib/admin/media";
 import { SETTINGS_FIELDS, SETTINGS_GROUPS, type SettingsField } from "@/lib/admin/settings-fields";
 import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
@@ -36,12 +38,15 @@ const LOCKED = "Salvarea este oprită: formularul nu arată valorile salvate. Re
 // and the submit goes through `onSubmit`, not the form's `action` path, because React
 // resets a form it submitted itself once the action settles: here what the admin
 // typed stays in place after a save. Without JavaScript the `<form action>` posts to
-// the action. No client pre-pass: the admin reads the server's field errors.
+// the action. No client pre-pass: the admin reads the server's field errors. The
+// submit is held while the workshop photo (PR-9, a PhotoField) is still uploading.
 export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
   const [state, formAction, pending] = useActionState(saveSettings, ADMIN_INITIAL_STATE);
+  const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
+  const held = pending || locked || uploading;
 
   useEffect(() => {
     if (state.status === "error" && state.fieldErrors && formRef.current) {
@@ -52,7 +57,7 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // The disabled button already blocks the submit; this covers a scripted one.
-    if (locked) return;
+    if (locked || uploading) return;
     const formData = new FormData(event.currentTarget);
     startTransition(() => formAction(formData));
   }
@@ -77,6 +82,8 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
                   id={`${id}-${field.key}`}
                   value={settings[field.key]}
                   error={errors[field.key]}
+                  locked={locked}
+                  onUploadingChange={setUploading}
                 />
               ))}
             </div>
@@ -85,7 +92,7 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
       ))}
 
       <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-4 border-t border-rule bg-paper py-4">
-        <Button type="submit" variant="primary" disabled={pending || locked} aria-busy={pending || undefined}>
+        <Button type="submit" variant="primary" disabled={held} aria-busy={pending || undefined}>
           {pending ? "Se salvează…" : "Salvează"}
         </Button>
         {locked ? (
@@ -114,9 +121,13 @@ interface SettingsControlProps {
   id: string;
   value: string | boolean;
   error?: string;
+  /** The page could not read the saved row: the photo field must not upload what can never be saved. */
+  locked?: boolean;
+  /** From the photo field: the form holds its submit while an upload runs. */
+  onUploadingChange: (uploading: boolean) => void;
 }
 
-function SettingsControl({ field, id, value, error }: SettingsControlProps) {
+function SettingsControl({ field, id, value, error, onUploadingChange, locked = false }: SettingsControlProps) {
   const invalid = Boolean(error);
   const hintId = field.hint ? `${id}-hint` : undefined;
   const hint = field.hint && (
@@ -124,6 +135,30 @@ function SettingsControl({ field, id, value, error }: SettingsControlProps) {
       {field.hint}
     </p>
   );
+
+  if (field.kind === "photo") {
+    // FOTO 08 (PLAN PR-9): the browser uploads the photo to the `site/` folder of the
+    // media bucket and the field posts its path under the key's name, plus the path it
+    // loaded with (`…_before`), which the action removes once the row is saved. The
+    // preview box is 4:3; the site shows the photo at 4:5 (the hint says so).
+    return (
+      <div className="col-span-full">
+        <PhotoField
+          folder="site"
+          slug="atelier"
+          currentPath={typeof value === "string" && value !== "" ? value : null}
+          label={field.label}
+          hint={field.hint}
+          ratio="4:3"
+          id={id}
+          error={error}
+          names={photoFieldNames(field.key)}
+          disabled={locked}
+          onUploadingChange={onUploadingChange}
+        />
+      </div>
+    );
+  }
 
   if (field.kind === "boolean") {
     return (

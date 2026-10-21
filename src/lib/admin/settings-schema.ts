@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Settings } from "@/lib/data/settings.seed";
 import type { FieldErrors } from "@/lib/leads/types";
 import { formValues } from "@/lib/validation/schemas";
+import { isMediaPath } from "./media";
 import { SETTINGS_FIELDS, type SettingsField } from "./settings-fields";
 import { ADMIN_MESSAGES } from "./types";
 
@@ -14,6 +15,7 @@ import { ADMIN_MESSAGES } from "./types";
 export const SETTINGS_MESSAGES = {
   url: "Scrie un link complet, cu https://",
   digits: "Scrie numărul internațional, doar cifre, fără +",
+  photo: "Poza nu e validă; încarc-o din nou.",
 } as const;
 
 export type ParseSettingsResult = { ok: true; data: Settings } | { ok: false; fieldErrors: FieldErrors };
@@ -38,6 +40,14 @@ const digits = () =>
     .trim()
     .refine((value) => value === "" || WHATSAPP_DIGITS.test(value), SETTINGS_MESSAGES.digits);
 
+/**
+ * "" or a path PhotoField produced in the `site/` folder of the media bucket (PR-9,
+ * the FOTO 08 photo). The photo itself is uploaded by the browser; only its path
+ * is stored, so nothing but such a path may reach `settings.data`.
+ */
+const photo = (field: SettingsField) =>
+  text(field).refine((value) => value === "" || isMediaPath(value, "site"), SETTINGS_MESSAGES.photo);
+
 /** A checkbox posts "on" when ticked and nothing when not. */
 const checkbox = z
   .string()
@@ -53,6 +63,8 @@ function schemaFor(field: SettingsField): z.ZodType<string> | z.ZodType<boolean>
       return url(field);
     case "digits":
       return digits();
+    case "photo":
+      return photo(field);
     case "boolean":
       return checkbox;
   }

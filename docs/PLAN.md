@@ -128,7 +128,7 @@ Goal: `/admin` exists and the workshop can sign in, read and work its requests a
 - Tests: schemas, actions, the guard; e2e: an unauthenticated visit to `/admin` redirects to `/admin/login`.
 - Needs from the owner: the first user created in the Supabase dashboard (Authentication → Users → Add user) and that user's email, so the role can be granted.
 
-### PR-8 · Admin catalogue and prices (~2 sessions)
+### PR-8 · Admin catalogue and prices (~2 sessions) — merged
 
 Goal: the workshop maintains its materials, the texts and photos of models, families and bases, the model ↔ family rules and the price grid itself.
 
@@ -143,10 +143,11 @@ Goal: the workshop maintains its materials, the texts and photos of models, fami
 
 Goal: the workshop publishes its projects and reviews itself, with the consents recorded.
 
-- Lucrări: CRUD with photos (upload, order, delete, alt text), client consent, `published`, `featured`, `hero` (only one project at a time).
-- Recenzii: CRUD with consent, `published`, order.
-- Saves → `updateTag("projects")` / `updateTag("reviews")`.
-- Tests: schemas and actions, including the single `hero`.
+- Lucrări: CRUD with photos (upload, order, delete, alt text), client consent, `published`, `featured`, `hero` (only one project at a time; publishing needs the consent, the hero must be published).
+- Recenzii: CRUD with consent, `published`, order (publishing needs the consent).
+- The workshop photo (FOTO 08, Acasă „Atelierul”): a `settings` key `atelier_photo_path` edited in Setări with the photo field, so every photo on the site is managed from the admin (materials and bases since PR-8, projects and the hero here).
+- Saves → `updateTag("projects")` / `updateTag("reviews")` / `updateTag("settings")`.
+- Tests: schemas and actions, including the single `hero` and the consent rules.
 
 ### PR-10 · Drawing PNG in emails, OG image, crons, analytics, sitemap, robots (~1.5 sessions)
 

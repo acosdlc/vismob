@@ -55,6 +55,10 @@ describe("SETTINGS_FIELDS", () => {
       expect(kind(key)).toBe("textarea");
     }
     expect(kind("workshop_name")).toBe("text");
+    // PR-9: the FOTO 08 photo is the only photo kind, last in the „Atelier” group.
+    expect(kind("atelier_photo_path")).toBe("photo");
+    expect(SETTINGS_FIELDS.filter((field) => field.kind === "photo").map((field) => field.key)).toEqual(["atelier_photo_path"]);
+    expect(SETTINGS_GROUPS.find((group) => group.title === "Atelier")?.fields.at(-1)?.key).toBe("atelier_photo_path");
   });
 
   it("bounds every field by its kind and keeps the texts in Romanian with comma-below diacritics", () => {

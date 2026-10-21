@@ -56,5 +56,7 @@ export const ADMIN_NAV = [
   { label: "Cereri", href: "/admin/cereri" },
   { label: "Catalog", href: "/admin/catalog" },
   { label: "Prețuri", href: "/admin/preturi" },
+  { label: "Lucrări", href: "/admin/lucrari" },
+  { label: "Recenzii", href: "/admin/recenzii" },
   { label: "Setări", href: "/admin/setari" },
 ] as const;

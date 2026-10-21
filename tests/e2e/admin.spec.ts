@@ -7,7 +7,7 @@ import { expectNoAxeViolations, screenshotPath, waitForFonts } from "./axe";
 // and has no axe violations at 1440×900 and 390×844. Signing in needs the Vercel
 // preview (Supabase): the container has no secrets.
 
-for (const path of ["/admin", "/admin/cereri", "/admin/setari", "/admin/catalog", "/admin/preturi"]) {
+for (const path of ["/admin", "/admin/cereri", "/admin/setari", "/admin/catalog", "/admin/preturi", "/admin/lucrari", "/admin/recenzii"]) {
   test(`${path} sends an anonymous visitor to /admin/login`, async ({ page }) => {
     const response = await page.goto(path);
     expect(response, `no response for ${path}`).not.toBeNull();
