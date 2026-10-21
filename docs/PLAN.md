@@ -150,7 +150,7 @@ Goal: the workshop publishes its projects and reviews itself, with the consents 
 - Saves → `updateTag("projects")` / `updateTag("reviews")` / `updateTag("settings")`.
 - Tests: schemas and actions, including the single `hero` and the consent rules.
 
-### PR-10 · Drawing PNG in emails, OG image, crons, analytics, sitemap, robots (~1.5 sessions)
+### PR-10 · Drawing PNG in emails, OG image, crons, analytics, sitemap, robots (~1.5 sessions) — merged
 
 Goal: the content of the old PR-6, unchanged except `robots.ts` disallowing `/admin` and `/api`: the configurator emails carry the drawing as a PNG, the site gets its OG image, the three crons, analytics, a sitemap and robots.
 
