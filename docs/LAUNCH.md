@@ -63,7 +63,7 @@ State on 2026-11-23, read from the deployed site (a session cannot list the proj
 ## 7. Settings and access
 
 - [ ] **Workshop** · The Google Business Profile link and manager access for the owner (docs/LISTA-ATELIER.md §1).
-- [ ] **Owner** · `google_profile_url` in `/admin` › Setări (it feeds the JSON-LD `sameAs` and the reviews link); `google_rating` and `google_reviews_count` only if they are to be shown, an empty value hides the line. In the profile itself: the website link set to the new domain.
+- [ ] **Owner** · `google_profile_url` in `/admin` › Setări (it feeds the JSON-LD `sameAs` only; no page links to the profile); `google_rating` and `google_reviews_count` only if they are to be shown, an empty value hides the line. In the profile itself: the website link set to the new domain.
 - [ ] **Owner** · The admin password changed by its holder (Supabase → Authentication → Users → the user), so that no password that passed through a dashboard screen or a message stays in use; sign out and in again. A second admin for the workshop, if it operates the panel itself: docs/ADMIN.md, "Creating the first user".
 
 ## 8. Environment variables, in one place
