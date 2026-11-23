@@ -19,8 +19,10 @@
 -- hidden, and so does everything else: models, pricing, unpublished projects.
 --
 -- These rows must not come back into the configurator or onto /materiale: the site's
--- catalogue reader asks for active rows itself (src/lib/data/catalog.ts). Apply this file
--- only once that code is live.
+-- catalogue reader asks for active rows itself (src/lib/data/catalog.ts), in the same
+-- pull request as this file. Applied on 2026-11-23, shortly before that code went live,
+-- while public.projects was empty and no colour or base was switched off: with no
+-- published project the two policies return no extra row, so the order did not matter.
 
 create policy "public_read_in_project" on public.materials for select to anon, authenticated using (
   exists (select 1 from public.projects p where p.material_id = materials.id and p.published and p.client_consent));
