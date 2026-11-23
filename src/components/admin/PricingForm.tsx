@@ -1,13 +1,14 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { startTransition, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { savePricing } from "@/actions/admin/save-pricing";
 import { AdminCard, AdminSection, Notice, Table, TableWrap, Tag, Td, Th, fieldGridClasses } from "@/components/admin/ui";
 import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Field, FieldError, Input, Label } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { SEED_CATALOG } from "@/lib/configurator/catalog.seed";
 import { formatPrice } from "@/lib/configurator/format";
 import type { Pricing } from "@/lib/configurator/pricing";
@@ -42,16 +43,20 @@ const ROUND_HINT = "Prețul se rotunjește la acest pas, de exemplu 50.";
 
 const HINT_CLASSES = "text-[14px] leading-[1.4] text-muted";
 
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+
 // DESIGN §4.8 „Catalog și prețuri”: the grid is a table with a row per model and a
 // column per standard width, each cell an Input; the preview of the three typical
-// configurations uses the site's own functions (previewPrices). The inputs are
-// uncontrolled and the submit goes through `onSubmit`, not the form's `action` path,
-// because React resets a form it submitted itself once the action settles: here what
-// the admin typed stays in place after a save. Without JavaScript the `<form action>`
-// posts to the action. Field errors come from the server; the live preview only says
-// when the form does not parse yet.
+// configurations uses the site's own functions (previewPrices). `useGuardedActionState`
+// drives the `savePricing` Server Action: a call that fails leaves the form as it is,
+// with CALL_FAILED in the bar. The inputs are uncontrolled and the submit goes through
+// `onSubmit`, not the form's `action` path, because React resets a form it submitted
+// itself once the action settles: here what the admin typed stays in place after a
+// save. Without JavaScript the `<form action>` posts to the action. Field errors come
+// from the server; the live preview only says when the form does not parse yet.
 export function PricingForm({ pricing, catalog }: PricingFormProps) {
-  const [state, formAction, pending] = useActionState(savePricing, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(savePricing, ADMIN_INITIAL_STATE, CALL_FAILED);
   const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
@@ -71,7 +76,7 @@ export function PricingForm({ pricing, catalog }: PricingFormProps) {
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   /** Every change hides the saved notice (useSavedNotice) and re-reads the whole form: the preview follows what the admin types. */

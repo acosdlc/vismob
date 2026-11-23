@@ -13,10 +13,12 @@ import {
   parseProjectForm,
   parseProjectPhotosForm,
   PHOTO_ROW_ID_FIELD,
+  photoCountAfterSave,
   photoRowFields,
   PROJECT_MESSAGES,
   PROJECT_MODEL_IDS,
   projectSlugFor,
+  publishedHasPhoto,
 } from "./projects";
 import { ADMIN_MESSAGES } from "./types";
 
@@ -212,12 +214,27 @@ describe("parseProjectForm", () => {
   });
 });
 
-describe("canPublish / heroAllowed", () => {
+describe("canPublish / publishedHasPhoto / heroAllowed", () => {
   it("lets a project be published only with the client's consent", () => {
     expect(canPublish({ published: true, client_consent: true })).toBe(true);
     expect(canPublish({ published: true, client_consent: false })).toBe(false);
     expect(canPublish({ published: false, client_consent: false })).toBe(true);
     expect(canPublish({ published: false, client_consent: true })).toBe(true);
+  });
+
+  it("lets a project be published only with at least one photo, and an unpublished one have none", () => {
+    expect(publishedHasPhoto({ published: true }, 1)).toBe(true);
+    expect(publishedHasPhoto({ published: true }, 5)).toBe(true);
+    expect(publishedHasPhoto({ published: true }, 0)).toBe(false);
+    expect(publishedHasPhoto({ published: false }, 0)).toBe(true);
+    expect(publishedHasPhoto({ published: false }, 3)).toBe(true);
+  });
+
+  it("carries the two messages of the photo rule, as the actions answer them", () => {
+    expect(PROJECT_MESSAGES.noPhoto).toBe("Publicarea cere cel puțin o poză; adaug-o întâi.");
+    expect(PROJECT_MESSAGES.lastPhoto).toBe(
+      "Un proiect publicat are nevoie de cel puțin o poză. Păstrează una sau debifează întâi „Publicat (apare pe site)”.",
+    );
   });
 
   it("lets a project be the hero only when published", () => {
@@ -384,5 +401,50 @@ describe("parseProjectPhotosForm", () => {
       ok: false,
       fieldErrors: { [photoRowFields(PHOTO_A).alt]: PROJECT_MESSAGES.photos, [NEW_PHOTO_ALT_FIELD]: PROJECT_MESSAGES.photos },
     });
+  });
+});
+
+describe("photoCountAfterSave", () => {
+  /** The project's rows as saveProjectPhotos reads them. */
+  const OWN = [
+    { id: PHOTO_A, path: "projects/9a1b2c3d-0000-4000-8000-00000000abcd-1792569508760.webp" },
+    { id: PHOTO_B, path: "projects/9a1b2c3d-0000-4000-8000-00000000abcd-1792569508761.webp" },
+  ];
+  const FOREIGN = "3f2b1c4d-0000-4000-8000-00000000ffff";
+  const keep = (id: string) => ({ id, alt: "Ok", sort: 0, delete: false });
+  const remove = (id: string) => ({ id, alt: "", sort: 0, delete: true });
+  const added = { path: NEW_PATH, alt: "Patul în cameră" };
+
+  it("counts the project's rows when nothing is ticked or added, posted or not", () => {
+    expect(photoCountAfterSave(OWN, { edits: [keep(PHOTO_A), keep(PHOTO_B)], newPhoto: null })).toBe(2);
+    expect(photoCountAfterSave(OWN, { edits: [], newPhoto: null })).toBe(2);
+    expect(photoCountAfterSave([], { edits: [], newPhoto: null })).toBe(0);
+  });
+
+  it("leaves out the rows ticked for deletion", () => {
+    expect(photoCountAfterSave(OWN, { edits: [remove(PHOTO_A), keep(PHOTO_B)], newPhoto: null })).toBe(1);
+    expect(photoCountAfterSave(OWN, { edits: [remove(PHOTO_A), remove(PHOTO_B)], newPhoto: null })).toBe(0);
+  });
+
+  it("counts the new photo", () => {
+    expect(photoCountAfterSave(OWN, { edits: [keep(PHOTO_A), keep(PHOTO_B)], newPhoto: added })).toBe(3);
+    expect(photoCountAfterSave(OWN, { edits: [remove(PHOTO_A), remove(PHOTO_B)], newPhoto: added })).toBe(1);
+    expect(photoCountAfterSave([], { edits: [], newPhoto: added })).toBe(1);
+  });
+
+  it("ignores a ticked id that is not one of the project's rows", () => {
+    expect(photoCountAfterSave(OWN, { edits: [remove(FOREIGN)], newPhoto: null })).toBe(2);
+    expect(photoCountAfterSave(OWN, { edits: [remove(FOREIGN), remove(PHOTO_A)], newPhoto: null })).toBe(1);
+  });
+
+  it("counts the rows the project has, not the ones the form posts: a kept row that is already gone is no photo", () => {
+    // The screen still listed PHOTO_B, deleted meanwhile from another tab.
+    expect(photoCountAfterSave([OWN[0]], { edits: [remove(PHOTO_A), keep(PHOTO_B)], newPhoto: null })).toBe(0);
+  });
+
+  it("does not count a new photo whose path one of the rows already stores: the action does not insert it", () => {
+    expect(photoCountAfterSave(OWN, { edits: [], newPhoto: { path: OWN[1].path, alt: "Detaliu tăblie" } })).toBe(2);
+    // Even when that row is ticked: the row goes and nothing takes its place.
+    expect(photoCountAfterSave(OWN, { edits: [remove(PHOTO_A), remove(PHOTO_B)], newPhoto: { path: OWN[1].path, alt: "Detaliu tăblie" } })).toBe(0);
   });
 });

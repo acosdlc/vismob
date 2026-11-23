@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactElement } from "react";
+import { redirect } from "next/navigation";
+import { Component, type ReactElement, type ReactNode } from "react";
 import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CATALOG_MESSAGES, parseFamilyForm, SPEC_ROWS } from "@/lib/admin/catalog-schemas";
@@ -12,6 +13,28 @@ vi.mock("@/actions/admin/save-family", () => ({
 }));
 
 import { FamilyForm, FAMILY_TEXTS } from "./FamilyForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const FAMILY = {
   id: "catifea",
@@ -199,7 +222,7 @@ describe("FamilyForm", () => {
     expect(screen.getByLabelText("Rând 6, valoare")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByLabelText("Rând 1, nume")).toHaveAccessibleDescription(`${FAMILY_TEXTS.specsHint} ${CATALOG_MESSAGES.specs}`);
     expect(screen.getByLabelText("Nume")).not.toHaveAttribute("aria-invalid");
-    expect(screen.getByLabelText("Rând 1, nume")).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText("Rând 1, nume")).toHaveFocus());
   });
 
   it("shows a plain error without field errors", async () => {
@@ -210,6 +233,55 @@ describe("FamilyForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText("Rând 1, nume")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the form and what was typed when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    saveFamily.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<FamilyForm family={FAMILY} />);
+    const description = screen.getByLabelText("Descriere");
+    fireEvent.change(description, { target: { value: "Paragraf nou." } });
+    fireEvent.change(screen.getByLabelText("Rând 3, nume"), { target: { value: "Animale" } });
+    fireEvent.change(screen.getByLabelText("Rând 3, valoare"), { target: { value: "potrivit" } });
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same textarea, not a fresh one with the saved text: the form was never taken down.
+    expect(screen.getByLabelText("Descriere")).toBe(description);
+    expect(description).toHaveValue("Paragraf nou.");
+    expect(shownRows()).toEqual(["Compoziție: 100% poliester", "Frecare: 40.000 cicluri Martindale", "Animale: potrivit", "", "", ""]);
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(saveFamily.mock.calls[1][1].get("description")).toBe("Paragraf nou.");
+    expect(saveFamily.mock.calls[1][1].get("spec_k_3")).toBe("Animale");
+    expect(saveFamily.mock.calls[1][1].get("spec_v_3")).toBe("potrivit");
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/admin/catalog");
+    saveFamily.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <FamilyForm family={FAMILY} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });
 

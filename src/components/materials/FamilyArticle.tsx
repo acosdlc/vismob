@@ -24,7 +24,8 @@ export function FamilyArticle({ family, items }: FamilyArticleProps) {
         <h2 id={headingId} className="h2-family">
           {family.name}
         </h2>
-        {family.description && <p className="text-[16px] leading-[1.55] text-ink-2">{family.description}</p>}
+        {/* pre-line: the panel's „Descriere” is a multi-line box, and a line break typed there has to show here. */}
+        {family.description && <p className="text-[16px] leading-[1.55] whitespace-pre-line text-ink-2">{family.description}</p>}
         {family.specs && family.specs.length > 0 && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-[6px] font-mono text-[12px] leading-[1.5]">
             {/* Keyed by position: the panel accepts two rows with the same name, and a row has no other identity. */}

@@ -32,6 +32,10 @@ describe("MapEmbed", () => {
     expect(link).toHaveAttribute("target", "_blank");
   });
 
+  it("searches for an address typed on two lines as one line", () => {
+    expect(mapUrls("Str. Lungă 10\nCluj")).toEqual(mapUrls("Str. Lungă 10, Cluj"));
+  });
+
   it("encodes the address in both URLs", () => {
     const urls = mapUrls("Str. Lungă 10, Cluj");
     expect(urls.embed).toBe("https://www.google.com/maps?q=Str.%20Lung%C4%83%2010%2C%20Cluj&output=embed");

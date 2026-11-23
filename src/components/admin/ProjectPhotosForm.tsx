@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { saveProjectPhotos } from "@/actions/admin/save-project-photos";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, EmptyState, Notice, fieldGridClasses } from "@/components/admin/ui";
@@ -9,9 +9,10 @@ import { Button } from "@/components/site/Button";
 import { cx } from "@/components/site/cx";
 import { Checkbox, Field, FieldError, Input, Label } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
 import { NEW_PHOTO_ALT_FIELD, PHOTO_ROW_ID_FIELD, photoRowFields, PROJECT_LIMITS } from "@/lib/admin/projects";
-import { ADMIN_INITIAL_STATE } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { mediaUrl } from "@/lib/data/media";
 import type { FieldErrors } from "@/lib/leads/types";
 import type { Tables } from "@/lib/supabase/database.types";
@@ -42,6 +43,9 @@ export const PROJECT_PHOTOS_TEXTS = {
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+
 /** The rows as the site orders them (projectsFromRows): by sort, then path. */
 function sortedPhotos(photos: ProjectPhotosFormPhoto[]): ProjectPhotosFormPhoto[] {
   return [...photos].sort((a, b) => a.sort - b.sort || a.path.localeCompare(b.path));
@@ -51,10 +55,12 @@ function sortedPhotos(photos: ProjectPhotosFormPhoto[]): ProjectPhotosFormPhoto[
 // plus one new photo, for the `saveProjectPhotos` Server Action. The new photo goes to the
 // bucket from the browser (PhotoField, folder `projects`, named after the project id) and
 // the form posts only its path with its alt text; the submit is held while the upload runs.
-// The submit goes through `onSubmit` so the typed values survive a save with errors.
-// Without JavaScript the `<form action>` posts to the action.
+// The submit goes through `onSubmit` so the typed values survive a save with errors, and
+// `useGuardedActionState` drives the action so they survive a call that fails as well (the
+// form then shows CALL_FAILED and keeps the uploaded path). Without JavaScript the
+// `<form action>` posts to the action.
 export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps) {
-  const [state, formAction, pending] = useActionState(saveProjectPhotos, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(saveProjectPhotos, ADMIN_INITIAL_STATE, CALL_FAILED);
   const [edited, markEdited] = useSavedNotice(pending);
   const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -88,7 +94,7 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
     // The disabled button already blocks the submit; this covers a scripted one.
     if (uploading) return;
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const newPhotoId = `${id}-new-photo`;

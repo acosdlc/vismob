@@ -20,6 +20,12 @@ export interface SettingsField {
   kind: SettingsFieldKind;
   /** Longest accepted value, in characters (the checkbox posts "on"). */
   maxLength: number;
+  /**
+   * On a text or a textarea only: the site hides the piece while the value is empty, so
+   * the schema lets it be saved empty. Every other text and textarea is required: the
+   * site prints it inside a fixed sentence, where an empty value would leave a gap.
+   */
+  optional?: true;
 }
 
 export interface SettingsGroup {
@@ -57,6 +63,9 @@ const textarea = (key: SettingsKey, label: string, hint?: string): SettingsField
   kind: "textarea",
   maxLength: SETTINGS_MAX.textarea,
 });
+
+/** A text or a textarea that may be saved empty: the site hides its piece then (see `optional`). */
+const optional = (field: SettingsField): SettingsField => ({ ...field, optional: true });
 
 /** The default hint holds for a link the site shows when filled in; a link no page shows gets its own. */
 const url = (
@@ -103,11 +112,14 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
         "Profil Google",
         "Linkul complet, cu https://. Nu apare pe site: îl citesc doar motoarele de căutare.",
       ),
-      text("google_rating", "Nota Google", "Apare doar când sunt completate și nota, și numărul de recenzii."),
-      text(
-        "google_reviews_count",
-        "Număr de recenzii Google",
-        "Apare doar când sunt completate și nota, și numărul de recenzii.",
+      // The Google line shows only with both values (src/components/home/Reviews.tsx).
+      optional(text("google_rating", "Nota Google", "Apare doar când sunt completate și nota, și numărul de recenzii.")),
+      optional(
+        text(
+          "google_reviews_count",
+          "Număr de recenzii Google",
+          "Apare doar când sunt completate și nota, și numărul de recenzii.",
+        ),
       ),
     ],
   },
@@ -151,7 +163,8 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       textarea("fabrics_text", "Stofe și furnizori"),
       text("founded_year", "Anul înființării"),
       text("team_size", "Echipa"),
-      textarea("story_text", "Povestea atelierului"),
+      // It only ends the paragraph of the „Atelierul” section (src/components/home/Atelier.tsx).
+      optional(textarea("story_text", "Povestea atelierului")),
       {
         key: "atelier_photo_path",
         label: "Poza atelierului",
@@ -169,3 +182,10 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
 
 /** Every field in form order; the schema's shape and the focus order of the form. */
 export const SETTINGS_FIELDS: readonly SettingsField[] = SETTINGS_GROUPS.flatMap((group) => group.fields);
+
+/**
+ * The name of the hidden input in which the form posts the fingerprint of the stored row
+ * its fields were filled from (settings-fingerprint.ts); saveSettings compares it with the
+ * row it finds. Not a Settings key: the schema drops it, like any name it does not know.
+ */
+export const SETTINGS_FINGERPRINT_FIELD = "settings_fingerprint";

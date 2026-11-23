@@ -1,13 +1,14 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, type FormEvent } from "react";
 import { saveModel } from "@/actions/admin/save-model";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
 import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Textarea, fieldErrorId } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 
 export interface ModelFormProps {
@@ -30,14 +31,18 @@ export const MODEL_TEXTS = {
 /** The focus goes to the first invalid field in form order (DESIGN §3.16). */
 const FIELD_ORDER: readonly string[] = ["name", "note", "description", "families", "active", "sort"];
 
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+
 // PLAN PR-8 „Modele”: the texts, the model ↔ family rules and `active` of one model,
-// in the site's card (DESIGN §4.8). `useActionState` drives the `saveModel` Server
-// Action; the submit goes through `onSubmit` so what the admin typed stays in place
-// after a save (React resets a form it submitted itself). Without JavaScript the
+// in the site's card (DESIGN §4.8). `useGuardedActionState` drives the `saveModel`
+// Server Action (a call that fails leaves the form as it is, with CALL_FAILED beside
+// the button); the submit goes through `onSubmit` so what the admin typed stays in
+// place after a save (React resets a form it submitted itself). Without JavaScript the
 // `<form action>` posts to the action. The code is shown, never edited: it is part
 // of every configuration code.
 export function ModelForm({ model, families, selected }: ModelFormProps) {
-  const [state, formAction, pending] = useActionState(saveModel, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(saveModel, ADMIN_INITIAL_STATE, CALL_FAILED);
   const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
@@ -66,7 +71,7 @@ export function ModelForm({ model, families, selected }: ModelFormProps) {
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   return (

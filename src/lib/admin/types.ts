@@ -10,7 +10,12 @@ export type LeadStatus = Database["public"]["Enums"]["lead_status"];
 /** The state `useActionState` holds for every admin form. */
 export type AdminActionState =
   | { status: "idle" }
-  | { status: "ok"; message: string }
+  | {
+      status: "ok";
+      message: string;
+      /** saveSettings only: the fingerprint of the row as that save left it; the Setări form posts it with its next save. */
+      fingerprint?: string;
+    }
   | { status: "error"; message: string; fieldErrors?: FieldErrors };
 
 export const ADMIN_INITIAL_STATE: AdminActionState = { status: "idle" };

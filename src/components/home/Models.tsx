@@ -44,7 +44,8 @@ export function Models({
               </div>
               <div className="flex flex-1 flex-col gap-2 p-[clamp(14px,1.8vw,22px)]">
                 <h3 className="text-[19px] font-semibold leading-[1.25]">{m.name}</h3>
-                <p className="text-[15px] text-ink-2">{m.description ?? DESCRIPTIONS[m.id]}</p>
+                {/* pre-line: the panel's „Descriere” is a multi-line box, and a line break typed there has to show here. */}
+                <p className="text-[15px] whitespace-pre-line text-ink-2">{m.description ?? DESCRIPTIONS[m.id]}</p>
                 {showPrices && price !== undefined && (
                   <p className="mono-12 mt-auto text-muted">de la {formatPrice(price)} · 160 × 200</p>
                 )}

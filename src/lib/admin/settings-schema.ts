@@ -10,14 +10,18 @@ import { ADMIN_MESSAGES } from "./types";
 // Validation of the Setări form (PR-7), built from the same descriptors the form
 // renders. „Telefon” and „Email” are required and checked as a phone number and an
 // email address: the site links them (tel:, mailto:) wherever it shows them, and the
-// email is the reply-to of the client's confirmation. Every other text may be empty.
-// The site hides the piece only for these empty keys: whatsapp_number (the WhatsApp
-// buttons), instagram_url and facebook_url (the footer links), google_rating with
-// google_reviews_count (the Google line), google_profile_url (it only feeds the
-// JSON-LD) and atelier_photo_path (the FOTO 08 box shows instead). Any other key is
-// printed as it is, so an empty one leaves a gap in its sentence. The seed's "[...]"
-// placeholders pass too, in „Telefon” and „Email” as well; they are replaced in PR-11.
-// Only the shape is checked here, never the content.
+// email is the reply-to of the client's confirmation. Every text and textarea is
+// required as well, with at least one character after the trim: the site prints it
+// inside a fixed sentence, so an empty one would leave a gap there („CUI” with no
+// number, a question with no answer). Only what the site hides while it is empty may
+// be saved empty: the texts marked `optional` in settings-fields.ts (google_rating
+// with google_reviews_count, the Google line; story_text, which only ends the Atelier
+// paragraph) and, by their kind, whatsapp_number (the WhatsApp buttons), instagram_url
+// and facebook_url (the footer links), google_profile_url (it only feeds the JSON-LD)
+// and atelier_photo_path (the FOTO 08 box shows instead). The seed's "[...]"
+// placeholders are not empty: they pass everywhere, in „Telefon” and „Email” as well,
+// so the form can be saved before all the content is in; they are replaced in PR-11.
+// Beyond that only the shape is checked here, never the content.
 //
 // Only the Server Action imports this module: libphonenumber-js must not reach a
 // browser bundle. What a Client Component needs is in settings-fields.ts.
@@ -29,6 +33,8 @@ export const SETTINGS_MESSAGES = {
   /** The public forms' wording (FORM_MESSAGES.phone). */
   phone: "Scrie un număr de telefon valid.",
   photo: "Poza nu e validă; încarc-o din nou.",
+  /** saveSettings: the stored row is no longer the one the open page was filled from (settings-fingerprint.ts). */
+  stale: "Setările au fost schimbate între timp din altă fereastră. Reîncarcă pagina și reia modificarea.",
 } as const;
 
 export type ParseSettingsResult = { ok: true; data: Settings } | { ok: false; fieldErrors: FieldErrors };
@@ -143,7 +149,8 @@ function schemaFor(field: SettingsField): z.ZodType<string> | z.ZodType<boolean>
   switch (field.kind) {
     case "text":
     case "textarea":
-      return text(field);
+      // Required, unless the site hides the piece while the value is empty.
+      return field.optional ? text(field) : requiredText(field);
     case "url":
       return url(field);
     case "digits":

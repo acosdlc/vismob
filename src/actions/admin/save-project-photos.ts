@@ -3,7 +3,14 @@
 import { refresh, updateTag } from "next/cache";
 import { getAdminSession } from "@/lib/admin/auth";
 import { removeMediaObject } from "@/lib/admin/media";
-import { isUuid, parseProjectPhotosForm, type ProjectPhotosInput } from "@/lib/admin/projects";
+import {
+  isUuid,
+  parseProjectPhotosForm,
+  photoCountAfterSave,
+  PROJECT_MESSAGES,
+  publishedHasPhoto,
+  type ProjectPhotosInput,
+} from "@/lib/admin/projects";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { createClient, type ServerClient } from "@/lib/supabase/server";
 
@@ -19,7 +26,9 @@ const refused = (message: string): Outcome => ({ ok: false, state: { status: "er
  * and appends the photo PhotoField uploaded (the browser put the object in the bucket;
  * only its path arrives here) after the last existing sort. A posted id that is not one
  * of this project's photos is ignored, and so is a new photo whose path one of them
- * already stores. A successful write expires the "projects" tag.
+ * already stores. A save that would leave a published project without a photo is
+ * refused before any write (the photo rule saveProject applies to „Publicat”). A
+ * successful write expires the "projects" tag.
  */
 export async function saveProjectPhotos(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
@@ -55,12 +64,15 @@ export async function saveProjectPhotos(_prev: AdminActionState, formData: FormD
 }
 
 async function writePhotos(supabase: ServerClient, projectId: string, input: ProjectPhotosInput): Promise<Outcome> {
-  const project = await supabase.from("projects").select("id").eq("id", projectId).maybeSingle();
+  const project = await supabase.from("projects").select("id, published").eq("id", projectId).maybeSingle();
   if (project.error) throw new Error(`projects ${projectId}: ${project.error.message}`);
   if (!project.data) return refused(ADMIN_MESSAGES.notFound);
 
   const photos = await supabase.from("project_photos").select("id, path, sort").eq("project_id", projectId);
   if (photos.error) throw new Error(`project_photos of ${projectId}: ${photos.error.message}`);
+  // The photo rule, before any write: the site shows a published project through its
+  // first photo, so the save has to leave it one. An unpublished project may lose them all.
+  if (!publishedHasPhoto(project.data, photoCountAfterSave(photos.data, input))) return refused(PROJECT_MESSAGES.lastPhoto);
   const own = new Map(photos.data.map((photo) => [photo.id, photo]));
 
   for (const edit of input.edits) {

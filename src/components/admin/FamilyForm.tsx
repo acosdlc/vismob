@@ -1,14 +1,15 @@
 "use client";
 
-import { Fragment, startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
+import { Fragment, startTransition, useEffect, useId, useRef, type FormEvent } from "react";
 import { saveFamily } from "@/actions/admin/save-family";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
 import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Field, FieldError, Input, Label, Textarea, fieldErrorId } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { SPEC_ROW_NUMBERS, specFieldNames } from "@/lib/admin/catalog-schemas";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 
 export interface FamilyFormProps {
@@ -35,15 +36,19 @@ export const FAMILY_TEXTS = {
 /** The focus goes to the first invalid field in form order (DESIGN §3.16). */
 const FIELD_ORDER: readonly string[] = ["name", "description", "specs"];
 
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+
 // PLAN PR-8 „Familii”: the name, the description and the specification rows of one
-// material family, in the site's card (DESIGN §4.8). `useActionState` drives the
-// `saveFamily` Server Action; the submit goes through `onSubmit` so what the admin
+// material family, in the site's card (DESIGN §4.8). `useGuardedActionState` drives the
+// `saveFamily` Server Action (a call that fails leaves the form as it is, with
+// CALL_FAILED beside the button); the submit goes through `onSubmit` so what the admin
 // typed stays in place after a save (React resets a form it submitted itself). The
 // specification grid is the one part that follows the database instead: see `specsKey`.
 // Without JavaScript the `<form action>` posts to the action. The code and the tab are
 // structural and only shown.
 export function FamilyForm({ family }: FamilyFormProps) {
-  const [state, formAction, pending] = useActionState(saveFamily, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(saveFamily, ADMIN_INITIAL_STATE, CALL_FAILED);
   const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
@@ -70,7 +75,7 @@ export function FamilyForm({ family }: FamilyFormProps) {
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   return (

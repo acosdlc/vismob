@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, type FormEvent } from "react";
 import { saveReview } from "@/actions/admin/save-review";
 import { DeleteReviewButton } from "@/components/admin/DeleteReviewButton";
 import { AdminCard, Notice, fieldGridClasses } from "@/components/admin/ui";
@@ -8,8 +8,9 @@ import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Select, Textarea } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { REVIEW_SOURCES, reviewLabel } from "@/lib/admin/reviews";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 import type { Tables } from "@/lib/supabase/database.types";
 
@@ -45,15 +46,19 @@ const FIELD_ORDER: readonly string[] = ["first_name", "city", "body", "model_lab
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+
 // PLAN PR-9 „Recenzii”, DESIGN §4.8: one card over every editable column of a review.
-// `useActionState` drives the `saveReview` Server Action; the submit goes through
+// `useGuardedActionState` drives the `saveReview` Server Action (a call that fails
+// leaves the form as it is, with CALL_FAILED beside the button); the submit goes through
 // `onSubmit` so the typed values stay in place after a save (React resets a form it
 // submitted itself). A new review posts an empty hidden `id` and lands on its own
-// screen (the action redirects). Without JavaScript the `<form action>` posts to the
-// action. No client pre-pass: the admin reads the server's field errors, the consent
-// rule included (it lands on the „Publicată” checkbox).
+// screen (the action redirects, which the hook lets through). Without JavaScript the
+// `<form action>` posts to the action. No client pre-pass: the admin reads the server's
+// field errors, the consent rule included (it lands on the „Publicată” checkbox).
 export function ReviewForm({ review }: ReviewFormProps) {
-  const [state, formAction, pending] = useActionState(saveReview, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(saveReview, ADMIN_INITIAL_STATE, CALL_FAILED);
   const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
@@ -69,7 +74,7 @@ export function ReviewForm({ review }: ReviewFormProps) {
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const firstNameId = `${id}-first-name`;

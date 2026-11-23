@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { saveBase } from "@/actions/admin/save-base";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
@@ -8,8 +8,9 @@ import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 
 export interface BaseFormProps {
@@ -27,13 +28,18 @@ export const BASE_TEXTS = {
 /** The focus goes to the first invalid field in form order (DESIGN §3.16). */
 const FIELD_ORDER: readonly string[] = ["name", "note", PHOTO_FIELDS.path, "active", "sort"];
 
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+
 // PLAN PR-8 „Baze”: the name, the note, the photo (4:3) and `active` of one base, in
-// the site's card (DESIGN §4.8). `useActionState` drives the `saveBase` Server Action;
-// the submit goes through `onSubmit` so what the admin typed stays in place after a
-// save, and it waits while PhotoField is still uploading (the path would be stale).
-// Without JavaScript the `<form action>` posts to the action, keeping the photo it had.
+// the site's card (DESIGN §4.8). `useGuardedActionState` drives the `saveBase` Server
+// Action (a call that fails leaves the form as it is, with CALL_FAILED beside the
+// button); the submit goes through `onSubmit` so what the admin typed stays in place
+// after a save, and it waits while PhotoField is still uploading (the path would be
+// stale). Without JavaScript the `<form action>` posts to the action, keeping the photo
+// it had.
 export function BaseForm({ base }: BaseFormProps) {
-  const [state, formAction, pending] = useActionState(saveBase, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(saveBase, ADMIN_INITIAL_STATE, CALL_FAILED);
   const [edited, markEdited] = useSavedNotice(pending);
   const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -52,7 +58,7 @@ export function BaseForm({ base }: BaseFormProps) {
     // The disabled button already blocks the submit; this covers a scripted one.
     if (uploading) return;
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   return (

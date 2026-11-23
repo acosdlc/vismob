@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { saveMaterial } from "@/actions/admin/save-material";
 import { DeleteMaterialButton } from "@/components/admin/DeleteMaterialButton";
 import { PhotoField } from "@/components/admin/PhotoField";
@@ -9,9 +9,10 @@ import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Select } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { HEX_PATTERN, PRICE_CATEGORIES } from "@/lib/admin/materials";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 import type { Tables } from "@/lib/supabase/database.types";
 
@@ -67,22 +68,26 @@ const FIELD_ORDER: readonly string[] = [
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+
 /** The object-name slug of a row that has no id yet (PhotoField); the uuid keeps two drafts apart. */
 function draftSlug(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `nou-${Date.now()}`;
 }
 
 // PLAN PR-8 „Materiale”, DESIGN §4.8: one card over every editable column of a
-// material. `useActionState` drives the `saveMaterial` Server Action; the submit goes
-// through `onSubmit` so the typed values stay in place after a save (React resets a
-// form it submitted itself). A new material posts an empty hidden `id` and lands on
-// its own screen (the action redirects); an existing one keeps its family and code
-// (the select is disabled, a hidden input carries the family; neither is editable).
-// The submit is held while PhotoField is still uploading. Without JavaScript the
-// `<form action>` posts to the action. No client pre-pass: the admin reads the
-// server's field errors.
+// material. `useGuardedActionState` drives the `saveMaterial` Server Action (a call
+// that fails leaves the form as it is, with CALL_FAILED beside the button); the submit
+// goes through `onSubmit` so the typed values stay in place after a save (React resets
+// a form it submitted itself). A new material posts an empty hidden `id` and lands on
+// its own screen (the action redirects, which the hook lets through); an existing one
+// keeps its family and code (the select is disabled, a hidden input carries the family;
+// neither is editable). The submit is held while PhotoField is still uploading. Without
+// JavaScript the `<form action>` posts to the action. No client pre-pass: the admin
+// reads the server's field errors.
 export function MaterialForm({ material, families }: MaterialFormProps) {
-  const [state, formAction, pending] = useActionState(saveMaterial, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(saveMaterial, ADMIN_INITIAL_STATE, CALL_FAILED);
   const [edited, markEdited] = useSavedNotice(pending);
   const [hex, setHex] = useState(material?.hex ?? "");
   const [uploading, setUploading] = useState(false);
@@ -103,7 +108,7 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
     // The disabled button already blocks the submit; this covers a scripted one.
     if (uploading) return;
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const familyId = `${id}-family`;

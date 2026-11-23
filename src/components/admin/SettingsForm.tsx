@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { saveSettings } from "@/actions/admin/save-settings";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, AdminSection, Notice, fieldGridClasses } from "@/components/admin/ui";
@@ -8,15 +8,22 @@ import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Textarea } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { photoFieldNames } from "@/lib/admin/media";
-import { SETTINGS_FIELDS, SETTINGS_GROUPS, type SettingsField } from "@/lib/admin/settings-fields";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { SETTINGS_FIELDS, SETTINGS_FINGERPRINT_FIELD, SETTINGS_GROUPS, type SettingsField } from "@/lib/admin/settings-fields";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 import type { Settings } from "@/lib/data/settings.seed";
 
 export interface SettingsFormProps {
   /** The current row merged over the seed (settingsFromData); the fields start from it. */
   settings: Settings;
+  /**
+   * The fingerprint of the stored row `settings` was read from (settingsFingerprint); "" when
+   * the page could not read it. The form posts it back, and saveSettings writes nothing when
+   * the stored row is no longer that one: someone else saved while this page was open.
+   */
+  fingerprint: string;
   /**
    * True when the page could not read the saved row and the fields show the seed: a save
    * would then put the placeholders on the site, so „Salvează” is disabled and the bar
@@ -34,15 +41,22 @@ const LONG_TEXTAREAS: ReadonlySet<string> = new Set(["story_text", "delivery_not
 /** Shown in the bar instead of the save notice while the form is locked. */
 const LOCKED = "Salvarea este oprită: formularul nu arată valorile salvate. Reîncarcă pagina înainte de a modifica ceva.";
 
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+
 // DESIGN §4.8 „Formulare”: one form over every Settings key, grouped as the seed
-// groups them. `useActionState` drives the Server Action. The inputs are uncontrolled
+// groups them. `useGuardedActionState` drives the Server Action: a call that fails
+// leaves the form as it is, with CALL_FAILED in the bar. The inputs are uncontrolled
 // and the submit goes through `onSubmit`, not the form's `action` path, because React
 // resets a form it submitted itself once the action settles: here what the admin
 // typed stays in place after a save. Without JavaScript the `<form action>` posts to
 // the action. No client pre-pass: the admin reads the server's field errors. The
 // submit is held while the workshop photo (PR-9, a PhotoField) is still uploading.
-export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
-  const [state, formAction, pending] = useActionState(saveSettings, ADMIN_INITIAL_STATE);
+// A hidden input posts the fingerprint of the stored row the fields stand on
+// (useRowFingerprint): saveSettings refuses the save of a copy that has gone stale.
+export function SettingsForm({ settings, fingerprint, locked = false }: SettingsFormProps) {
+  const [state, formAction, pending, submit] = useGuardedActionState(saveSettings, ADMIN_INITIAL_STATE, CALL_FAILED);
+  const rowFingerprint = useRowFingerprint(fingerprint, state);
   const [edited, markEdited] = useSavedNotice(pending);
   const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -61,7 +75,7 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
     // The disabled button already blocks the submit; this covers a scripted one.
     if (locked || uploading) return;
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   return (
@@ -74,6 +88,7 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
       autoComplete="off"
       className="flex flex-col gap-8"
     >
+      <input type="hidden" name={SETTINGS_FINGERPRINT_FIELD} value={rowFingerprint} />
       {SETTINGS_GROUPS.map((group) => (
         <AdminSection key={group.title} title={group.title}>
           <AdminCard>
@@ -109,6 +124,30 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
       </div>
     </form>
   );
+}
+
+/**
+ * The fingerprint the next save posts: that of the stored row the fields stand on. First the
+ * row the page loaded, then the row each save from this form left (its answer carries the
+ * fingerprint); without that step a second save from the same page would be refused as a
+ * stale copy. A refused save and a failed call wrote nothing, so they leave it as it is.
+ *
+ * `loaded` counts on the first render only. When the page is rendered again under an open
+ * form (an action's answer can bring a refresh of the route), its row may be one someone
+ * else saved meanwhile, while the boxes keep what they hold: posting that row's fingerprint
+ * would let this copy write its old values over it. The answer the form starts with is not
+ * followed either: there is one only on a page rendered whole as the answer to a post made
+ * without JavaScript, and its fields and `loaded` come from a read made after that save.
+ */
+function useRowFingerprint(loaded: string, answer: AdminActionState): string {
+  // Derived while rendering, as React documents for state that follows a changed value
+  // (useSavedNotice does the same).
+  const [row, setRow] = useState({ fingerprint: loaded, answer });
+  if (answer !== row.answer) {
+    const saved = answer.status === "ok" ? answer.fingerprint : undefined;
+    setRow({ fingerprint: saved ?? row.fingerprint, answer });
+  }
+  return row.fingerprint;
 }
 
 function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {

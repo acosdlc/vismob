@@ -148,6 +148,19 @@ describe("parseReviewForm", () => {
     expect(parseReviewForm(form({ model_label: "a".repeat(81) }))).toEqual({ ok: false, fieldErrors: { model_label: ADMIN_MESSAGES.tooLong } });
   });
 
+  it("counts a line break once, as the field does: 1000 characters posted with CR LF pass and come back with LF", () => {
+    // Two paragraphs with an empty line between them, typed up to the field's maxLength.
+    const typed = `${"a".repeat(498)}\n\n${"b".repeat(500)}`;
+    expect(typed).toHaveLength(1000);
+    // The browser posts each line break as CR LF: 1002 characters arrive.
+    const posted = (text: string) => text.replace(/\n/g, "\r\n");
+    expect(parseReviewForm(form({ body: posted(typed) }))).toMatchObject({ ok: true, data: { body: typed } });
+    // One character more is still too long, however its line breaks arrive.
+    const longer = `${typed}c`;
+    expect(parseReviewForm(form({ body: posted(longer) }))).toEqual({ ok: false, fieldErrors: { body: ADMIN_MESSAGES.tooLong } });
+    expect(parseReviewForm(form({ body: longer }))).toEqual({ ok: false, fieldErrors: { body: ADMIN_MESSAGES.tooLong } });
+  });
+
   it("refuses a source the select does not offer", () => {
     expect(parseReviewForm(form({ source: "instagram" }))).toEqual({ ok: false, fieldErrors: { source: ADMIN_MESSAGES.invalid } });
     expect(parseReviewForm(form({ source: "Google" }))).toEqual({ ok: false, fieldErrors: { source: ADMIN_MESSAGES.invalid } });

@@ -13,6 +13,8 @@ export interface FaqProps {
 // DESIGN §3.15: native `<details>` in a list with a 1px ink rule on top and a rule under
 // each item; summary 18px 600 padding 20px 0; answer 16px ink-2 max-width 640px, margin
 // 0 0 20px. The +/− indicator is the optional SVG the spec allows (outline, §2.5 style).
+// The answer is pre-line: some answers are whole texts typed in multi-line boxes in the
+// panel, and a line break typed there has to show here.
 export function Faq({ items, className }: FaqProps) {
   return (
     <ul className={cx("list-none border-t border-ink", className)}>
@@ -36,7 +38,7 @@ export function Faq({ items, className }: FaqProps) {
                 <path d="M6 0v12" className="group-open:hidden" />
               </svg>
             </summary>
-            <p className="mb-5 max-w-[640px] text-[16px] text-ink-2">{item.a}</p>
+            <p className="mb-5 max-w-[640px] text-[16px] whitespace-pre-line text-ink-2">{item.a}</p>
           </details>
         </li>
       ))}

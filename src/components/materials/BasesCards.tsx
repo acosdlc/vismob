@@ -1,3 +1,4 @@
+import { cx } from "@/components/site/cx";
 import { Photo } from "@/components/site/Photo";
 import type { Base, BaseId } from "@/lib/configurator/types";
 
@@ -5,14 +6,15 @@ import type { Base, BaseId } from "@/lib/configurator/types";
 // arrive the box shows the §8 frame for „Picioare” („Picior din stejar, picior metalic, bază
 // cu ladă”), one part per card. [12] comes from settings.leg_height_cm. The card for the
 // floor base covers both storage bases of the catalogue (ladă, sertare); its photo is the
-// first one of them that has one.
+// first one of them that has one. A card shows only while the catalogue offers one of its
+// bases: a base the workshop switched off is not on the site, its card included.
 
 export interface BaseCard {
   id: "lemn" | "metal" | "podea";
   title: string;
   text: string;
   frame: string;
-  /** The catalogue bases whose photo this card may use, in order of preference. */
+  /** The catalogue bases this card stands for; their photos are used in this order of preference. */
   from: BaseId[];
 }
 
@@ -43,8 +45,17 @@ export const BASE_CARDS: readonly (Omit<BaseCard, "text"> & {
   },
 ];
 
-export function baseCards(legHeightCm: string): BaseCard[] {
-  return BASE_CARDS.map((card) => ({ ...card, text: card.text(legHeightCm) }));
+/**
+ * The cards of the bases the catalogue offers, in the order of DESIGN §4.3: a card
+ * stays while at least one of the bases it stands for is there. The tab's counter
+ * counts these (MaterialsBrowser).
+ */
+export function shownBaseCards(bases: Base[]): (typeof BASE_CARDS)[number][] {
+  return BASE_CARDS.filter((card) => card.from.some((id) => bases.some((base) => base.id === id)));
+}
+
+export function baseCards(bases: Base[], legHeightCm: string): BaseCard[] {
+  return shownBaseCards(bases).map((card) => ({ ...card, text: card.text(legHeightCm) }));
 }
 
 export interface BasesCardsProps {
@@ -53,15 +64,29 @@ export interface BasesCardsProps {
   legHeightCm: string;
 }
 
+// The three cards share the row (auto-fit). With one or two, auto-fit would stretch
+// them across it, and the photo with them (its `sizes` counts on a card of about
+// 400px). auto-fill keeps the empty tracks instead, and a track of at least 30% of the
+// row allows three of them at most, so a card stays as wide as it is among all three.
+const GRID_ALL = "grid-cols-[repeat(auto-fit,minmax(min(240px,100%),1fr))]";
+const GRID_FEWER = "grid-cols-[repeat(auto-fill,minmax(max(min(240px,100%),30%),1fr))]";
+
 export function BasesCards({ bases, legHeightCm }: BasesCardsProps) {
+  const cards = baseCards(bases, legHeightCm);
   return (
     <section aria-labelledby="picioare-baze" className="py-8">
       {/* The tab's name as the section's heading, so the cards' h3 follow an h2 (heading order); the tab already shows it. */}
       <h2 id="picioare-baze" className="sr-only">
         Picioare și baze
       </h2>
-      <ul className="grid list-none grid-cols-[repeat(auto-fit,minmax(min(240px,100%),1fr))] gap-[clamp(12px,2vw,24px)] p-0">
-        {baseCards(legHeightCm).map((card) => {
+      <ul
+        className={cx(
+          "grid list-none",
+          cards.length < BASE_CARDS.length ? GRID_FEWER : GRID_ALL,
+          "gap-[clamp(12px,2vw,24px)] p-0",
+        )}
+      >
+        {cards.map((card) => {
           const photoSrc = card.from.map((id) => bases.find((b) => b.id === id)?.photoSrc).find(Boolean);
           return (
             <li key={card.id} className="flex flex-col border border-rule bg-card" data-base={card.id}>

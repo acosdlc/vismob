@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CATALOG_MESSAGES } from "@/lib/admin/catalog-schemas";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
@@ -10,6 +12,28 @@ vi.mock("@/actions/admin/save-model", () => ({
 }));
 
 import { ModelForm, MODEL_TEXTS } from "./ModelForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const MODEL = {
   id: "capitonat",
@@ -180,7 +204,7 @@ describe("ModelForm", () => {
     expect(checkbox(/Catifea/)).toHaveAttribute("aria-invalid", "true");
     expect(checkbox(/Catifea/)).toHaveAccessibleDescription(`${MODEL_TEXTS.familiesHint} ${CATALOG_MESSAGES.noFamily}`);
     expect(screen.getByLabelText("Notă scurtă")).not.toHaveAttribute("aria-invalid");
-    expect(screen.getByLabelText("Nume")).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText("Nume")).toHaveFocus());
   });
 
   it("shows a plain error without field errors", async () => {
@@ -191,5 +215,52 @@ describe("ModelForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText("Nume")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the form and what was typed when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    saveModel.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ModelForm model={MODEL} families={FAMILIES} selected={["catifea"]} />);
+    const description = screen.getByLabelText("Descriere");
+    fireEvent.change(description, { target: { value: "Text nou pentru card." } });
+    fireEvent.click(checkbox(/Lemn masiv/));
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same textarea, not a fresh one with the saved text: the form was never taken down.
+    expect(screen.getByLabelText("Descriere")).toBe(description);
+    expect(description).toHaveValue("Text nou pentru card.");
+    expect(checkbox(/Lemn masiv/)).toBeChecked();
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(saveModel.mock.calls[1][1].get("description")).toBe("Text nou pentru card.");
+    expect(saveModel.mock.calls[1][1].getAll("families")).toEqual(["catifea", "lemn"]);
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/admin/catalog");
+    saveModel.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <ModelForm model={MODEL} families={FAMILIES} selected={["catifea"]} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });

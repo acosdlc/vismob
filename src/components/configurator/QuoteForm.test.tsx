@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { track } from "@vercel/analytics";
 import { DEFAULT_CONFIG } from "@/lib/configurator/catalog.seed";
@@ -20,6 +22,28 @@ vi.mock("@vercel/analytics", () => ({ track: vi.fn() }));
 
 import { QuoteForm } from "./QuoteForm";
 import { QuoteSection } from "./QuoteSection";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const tracked = vi.mocked(track);
 
@@ -152,13 +176,14 @@ describe("QuoteForm", () => {
     expect(await screen.findByText("Configurație trimisă · CAP-150x210-CT01-H120-PL-LED")).toBeInTheDocument();
     const heading = screen.getByRole("heading", { level: 3, name: "Mulțumim! Te sunăm în 24 de ore." });
     expect(heading.className).toContain("h3-confirm");
-    expect(document.activeElement).toBe(heading);
+    // The focus and the event come from effects, a moment after the confirmation is on screen.
+    await waitFor(() => expect(document.activeElement).toBe(heading));
     expect(screen.getByText("Am primit desenul și alegerile tale.")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Cere mostre" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Trimite configurația" })).toBeNull();
 
     // quote_submit once, with the server's code; a later configuration change does not repeat it.
-    expect(tracked).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(tracked).toHaveBeenCalledTimes(1));
     expect(tracked).toHaveBeenCalledWith("quote_submit", { code: "CAP-150x210-CT01-H120-PL-LED" });
   });
 
@@ -167,7 +192,7 @@ describe("QuoteForm", () => {
     fillValid();
     fireEvent.click(screen.getByRole("button", { name: "Trimite configurația" }));
     await screen.findByText(`Configurație trimisă · ${CODE}`);
-    expect(tracked.mock.calls).toEqual([["quote_submit", { code: CODE }]]);
+    await waitFor(() => expect(tracked.mock.calls).toEqual([["quote_submit", { code: CODE }]]));
 
     view.rerender(<QuoteForm config={CUSTOM} code="CAP-150x210-CT01-H120-PL-LED" responseTime="24 de ore" />);
     expect(tracked).toHaveBeenCalledTimes(1);
@@ -191,10 +216,12 @@ describe("QuoteForm", () => {
     fillValid();
     fireEvent.click(screen.getByRole("button", { name: "Trimite configurația" }));
     await screen.findByRole("button", { name: "Modifică configurația" });
-    expect(tracked.mock.calls).toEqual([
-      ["quote_submit", { code: CODE }],
-      ["quote_submit", { code: CODE }],
-    ]);
+    await waitFor(() =>
+      expect(tracked.mock.calls).toEqual([
+        ["quote_submit", { code: CODE }],
+        ["quote_submit", { code: CODE }],
+      ]),
+    );
   });
 
   it("shows a server error message and the server's field errors", async () => {
@@ -213,6 +240,69 @@ describe("QuoteForm", () => {
     expect(phone).toHaveAccessibleDescription(FORM_MESSAGES.phone);
     await waitFor(() => expect(document.activeElement).toBe(phone));
     expect(screen.getByRole("button", { name: "Trimite configurația" })).not.toBeDisabled();
+    expect(tracked).not.toHaveBeenCalled();
+  });
+
+  it("keeps the form, what was typed and the configuration when the call to the action fails, and sends on the next try", async () => {
+    // No answer comes back: the visitor's connection dropped, or a deployment was made meanwhile.
+    submitQuote.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { container } = render(<QuoteForm config={CUSTOM} code="CAP-150x210-CT01-H120-PL-LED" responseTime="24 de ore" />);
+    fillValid();
+    const details = screen.getByLabelText("Detalii (opțional)");
+    fireEvent.change(details, { target: { value: "Tăblia cu 10 cm mai înaltă, dacă se poate." } });
+    fireEvent.change(screen.getByLabelText("Localitate"), { target: { value: "Cluj" } });
+    const submit = screen.getByRole("button", { name: "Trimite configurația" });
+
+    fireEvent.click(submit);
+
+    // The form's own generic message, which already says what to do next.
+    expect(await screen.findByRole("alert")).toHaveTextContent("Nu am putut trimite cererea. Încearcă din nou sau sună-ne.");
+    expect(FORM_MESSAGES.generic).toBe("Nu am putut trimite cererea. Încearcă din nou sau sună-ne.");
+    // The same textarea, not a fresh empty one: the form was never taken down.
+    expect(screen.getByLabelText("Detalii (opțional)")).toBe(details);
+    expect(details).toHaveValue("Tăblia cu 10 cm mai înaltă, dacă se poate.");
+    expect(screen.getByLabelText("Nume")).toHaveValue("Ana Pop");
+    expect(screen.getByLabelText("Telefon")).toHaveValue("0722 123 456");
+    expect(screen.getByLabelText("Email")).toHaveValue("ana@example.com");
+    expect(screen.getByLabelText("Localitate")).toHaveValue("Cluj");
+    expect(screen.getByRole("checkbox", { name: /Sunt de acord/ })).toBeChecked();
+    expect(screen.getByLabelText("Nume")).not.toHaveAttribute("aria-invalid");
+    expect(hiddenConfig(container)).toHaveValue(paramsFromConfig(CUSTOM).toString());
+    expect(screen.getByTestId("attached-code")).toHaveTextContent("CAP-150x210-CT01-H120-PL-LED");
+    expect(submit).toBeEnabled();
+    expect(tracked).not.toHaveBeenCalled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(`Configurație trimisă · ${CODE}`)).toBeInTheDocument();
+    const formData = submitQuote.mock.calls[1][1];
+    expect(formData.get(QUOTE_FIELDS.config)).toBe(paramsFromConfig(CUSTOM).toString());
+    expect(formData.get("name")).toBe("Ana Pop");
+    expect(formData.get("city")).toBe("Cluj");
+    expect(formData.get("message")).toBe("Tăblia cu 10 cm mai înaltă, dacă se poate.");
+    // quote_submit for the request that went through, not for the failed call.
+    await waitFor(() => expect(tracked.mock.calls).toEqual([["quote_submit", { code: CODE }]]));
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/configurator");
+    submitQuote.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <QuoteForm config={DEFAULT_CONFIG} code={CODE} responseTime="24 de ore" />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+    fillValid();
+
+    fireEvent.click(screen.getByRole("button", { name: "Trimite configurația" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(FORM_MESSAGES.generic)).toBeNull();
     expect(tracked).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROJECT_MESSAGES } from "@/lib/admin/projects";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
@@ -23,6 +25,28 @@ import {
   type ProjectFormModel,
   type ProjectFormProject,
 } from "./ProjectForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const MODELS: ProjectFormModel[] = [
   { id: "capitonat", name: "Capitonat" },
@@ -272,6 +296,18 @@ describe("ProjectForm for a new project", () => {
     await waitFor(() => expect(document.activeElement).toBe(hero));
   });
 
+  it("marks the published box when the server refuses publishing without a photo", async () => {
+    saveProject.mockResolvedValue({ status: "error", message: PROJECT_MESSAGES.noPhoto, fieldErrors: { published: PROJECT_MESSAGES.noPhoto } });
+    render(<ProjectForm project={null} {...lists} />);
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(PROJECT_MESSAGES.noPhoto);
+    const published = screen.getByRole("checkbox", { name: T.published });
+    expect(published).toHaveAttribute("aria-invalid", "true");
+    expect(published).toHaveAccessibleDescription(PROJECT_MESSAGES.noPhoto);
+    // The photos form's refusal names this box by its label: the two texts must not drift apart.
+    expect(PROJECT_MESSAGES.lastPhoto).toContain(`„${T.published}”`);
+  });
+
   it("shows a plain error without field errors", async () => {
     saveProject.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.forbidden });
     render(<ProjectForm project={null} {...lists} />);
@@ -280,6 +316,66 @@ describe("ProjectForm for a new project", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText(T.title)).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the form and everything typed when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    saveProject.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ProjectForm project={null} {...lists} />);
+    const title = screen.getByLabelText(T.title);
+    fireEvent.change(title, { target: { value: "Pat arcuit, mansardă" } });
+    fireEvent.change(screen.getByLabelText(T.model), { target: { value: "arcuit" } });
+    fireEvent.change(screen.getByLabelText(T.material), { target: { value: "ct-nisip" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "LED sub pat" }));
+    fireEvent.change(screen.getByLabelText(T.deliveredOn), { target: { value: "2026-05-02" } });
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh empty one: the form was never taken down.
+    expect(screen.getByLabelText(T.title)).toBe(title);
+    expect(title).toHaveValue("Pat arcuit, mansardă");
+    expect(screen.getByLabelText(T.model)).toHaveValue("arcuit");
+    expect(screen.getByLabelText(T.material)).toHaveValue("ct-nisip");
+    expect(screen.getByRole("checkbox", { name: "LED sub pat" })).toBeChecked();
+    expect(screen.getByLabelText(T.deliveredOn)).toHaveValue("2026-05-02");
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    const formData = saveProject.mock.calls[1][1];
+    expect(formData.get("id")).toBe("");
+    expect(formData.get("title")).toBe("Pat arcuit, mansardă");
+    expect(formData.get("model_id")).toBe("arcuit");
+    expect(formData.get("material_id")).toBe("ct-nisip");
+    expect(formData.getAll("extras")).toEqual(["led"]);
+    expect(formData.get("delivered_on")).toBe("2026-05-02");
+    reported.mockRestore();
+  });
+
+  it("lets the redirect to the new project's screen through to the framework instead of calling it a failure", async () => {
+    // On a create the real action ends in redirect(), and the browser's call rejects with it.
+    const thrown = redirectTo(`/admin/lucrari/${PROJECT.id}?creat=1`);
+    saveProject.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <ProjectForm project={null} {...lists} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+    fireEvent.change(screen.getByLabelText(T.title), { target: { value: "Pat arcuit, mansardă" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });
 

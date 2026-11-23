@@ -11,6 +11,7 @@ import {
   parseProjectForm,
   PROJECT_MESSAGES,
   projectSlugFor,
+  publishedHasPhoto,
   type ProjectInput,
 } from "@/lib/admin/projects";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
@@ -25,17 +26,20 @@ type Outcome = { kind: "created"; id: string } | { kind: "updated" } | { kind: "
 const failed = (state: AdminActionState): Outcome => ({ kind: "failed", state });
 const generic = (): Outcome => failed({ status: "error", message: ADMIN_MESSAGES.generic });
 const invalid = (fieldErrors: FieldErrors): Outcome => failed({ status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors });
+/** The photo rule's refusal: on the published box, like the consent rule's. */
+const noPhoto = (): AdminActionState => ({ status: "error", message: PROJECT_MESSAGES.noPhoto, fieldErrors: { published: PROJECT_MESSAGES.noPhoto } });
 
 /**
  * „Salvează” on /admin/lucrari/nou and /admin/lucrari/[id], for `useActionState` (PLAN
- * PR-9 „Lucrări”). Re-checks the admin role, validates the whole form, applies the two
- * publication rules (no publishing without the client's consent, no hero unless
- * published), confirms the model, material and base name rows, then writes through the
- * signed-in user's cookie client (RLS: `admin_all`). A new project (hidden `id` empty)
- * gets its slug from the title and lands on its own screen; an existing one keeps its
- * slug whatever the form posts. When the project is flagged `hero`, every other hero
- * flag is cleared first, so at most one project carries it. A successful write expires
- * the "projects" tag, so the site reads the new rows on its next request (ARHITECTURA §8).
+ * PR-9 „Lucrări”). Re-checks the admin role, validates the whole form, applies the three
+ * publication rules (no publishing without the client's consent, no publishing without
+ * a photo, no hero unless published), confirms the model, material and base name rows,
+ * then writes through the signed-in user's cookie client (RLS: `admin_all`). A new
+ * project (hidden `id` empty) gets its slug from the title and lands on its own screen,
+ * where its photos are added: it is saved unpublished. An existing one keeps its slug
+ * whatever the form posts. When the project is flagged `hero`, every other hero flag is
+ * cleared first, so at most one project carries it. A successful write expires the
+ * "projects" tag, so the site reads the new rows on its next request (ARHITECTURA §8).
  */
 export async function saveProject(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
@@ -52,6 +56,9 @@ export async function saveProject(_prev: AdminActionState, formData: FormData): 
   if (!canPublish(input)) {
     return { status: "error", message: PROJECT_MESSAGES.consent, fieldErrors: { published: PROJECT_MESSAGES.consent } };
   }
+  // A new project has no photo yet: the photos form needs the row to exist. An existing
+  // one is checked against its rows in updateProject.
+  if (projectId === "" && !publishedHasPhoto(input, 0)) return noPhoto();
   if (!heroAllowed(input)) {
     return { status: "error", message: PROJECT_MESSAGES.heroUnpublished, fieldErrors: { hero: PROJECT_MESSAGES.heroUnpublished } };
   }
@@ -160,6 +167,9 @@ async function createProject(supabase: ServerClient, input: ProjectInput): Promi
   );
   if (!slug.ok) return invalid({ title: slug.message });
 
+  // As the rules stand no new project arrives here flagged (the hero is published, and
+  // a new project cannot be: it has no photo yet). The clear stays, so that the insert
+  // alone can never leave two heroes.
   if (input.hero) {
     const cleared = await clearOtherHeroes(supabase, NIL_UUID);
     if (cleared) return cleared;
@@ -186,6 +196,17 @@ async function updateProject(supabase: ServerClient, id: string, input: ProjectI
     return generic();
   }
   if (!row.data) return failed({ status: "error", message: ADMIN_MESSAGES.notFound });
+
+  // The photo rule, before any write (the hero clear included). One row answers it, and
+  // only a project posted as published is asked: an unpublished one may have no photo.
+  if (input.published) {
+    const photos = await supabase.from("project_photos").select("id").eq("project_id", id).limit(1);
+    if (photos.error) {
+      console.error(`saveProject: project_photos of ${id}: ${photos.error.message}`);
+      return generic();
+    }
+    if (!publishedHasPhoto(input, photos.data.length)) return failed(noPhoto());
+  }
 
   if (input.hero) {
     const cleared = await clearOtherHeroes(supabase, id);

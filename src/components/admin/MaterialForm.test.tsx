@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MATERIAL_MESSAGES } from "@/lib/admin/materials";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
@@ -22,6 +24,28 @@ vi.mock("browser-image-compression", () => ({ default: async (file: File) => fil
 import { deleteMaterialConfirmText } from "./DeleteMaterialButton";
 import { MATERIAL_FORM_TEXTS, MaterialForm, type MaterialFormFamily, type MaterialFormMaterial } from "./MaterialForm";
 import { PHOTO_TEXTS } from "./PhotoField";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const FAMILIES: MaterialFormFamily[] = [
   { id: "catifea", name: "Catifea", code: "CT" },
@@ -276,6 +300,67 @@ describe("MaterialForm for a new material", () => {
     fireEvent.click(submit);
     await waitFor(() => expect(saveMaterial).toHaveBeenCalledTimes(1));
     expect(saveMaterial.mock.calls[0][1].get(PHOTO_FIELDS.path)).toBe(path);
+  });
+
+  it("keeps the form, what was typed and the uploaded photo when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    saveMaterial.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<MaterialForm material={null} families={FAMILIES} />);
+    const name = screen.getByLabelText(T.name);
+    fireEvent.change(screen.getByLabelText(T.family), { target: { value: "boucle" } });
+    fireEvent.change(name, { target: { value: "Nisip" } });
+    fireEvent.change(screen.getByLabelText(T.hex), { target: { value: "#cdbfa6" } });
+    const submit = screen.getByRole("button", { name: T.submit });
+    pickPhoto();
+    await waitFor(() => expect(submit).toBeEnabled());
+    const [path] = upload.mock.calls[0];
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh empty one: the form was never taken down.
+    expect(screen.getByLabelText(T.name)).toBe(name);
+    expect(name).toHaveValue("Nisip");
+    expect(screen.getByLabelText(T.family)).toHaveValue("boucle");
+    expect(screen.getByLabelText(T.hex)).toHaveValue("#cdbfa6");
+    expect(screen.getByTestId("hex-preview")).toHaveStyle({ backgroundColor: "#cdbfa6" });
+    expect(hidden(PHOTO_FIELDS.path)).toHaveValue(path);
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    // By its text: the photo field has a status line of its own.
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    const formData = saveMaterial.mock.calls[1][1];
+    expect(formData.get("id")).toBe("");
+    expect(formData.get("family_id")).toBe("boucle");
+    expect(formData.get("name")).toBe("Nisip");
+    expect(formData.get("hex")).toBe("#cdbfa6");
+    expect(formData.get(PHOTO_FIELDS.path)).toBe(path);
+    reported.mockRestore();
+  });
+
+  it("lets the redirect to the new colour's screen through to the framework instead of calling it a failure", async () => {
+    // On a create the real action ends in redirect(), and the browser's call rejects with it.
+    const thrown = redirectTo("/admin/catalog/materiale/bc-nisip?creat=1");
+    saveMaterial.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <MaterialForm material={null} families={FAMILIES} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+    fireEvent.change(screen.getByLabelText(T.name), { target: { value: "Nisip" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });
 

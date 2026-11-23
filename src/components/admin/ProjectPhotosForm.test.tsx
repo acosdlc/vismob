@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { redirect } from "next/navigation";
+import { Component, useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
 import { NEW_PHOTO_ALT_FIELD, PHOTO_ROW_ID_FIELD, photoRowFields, PROJECT_MESSAGES } from "@/lib/admin/projects";
@@ -58,6 +59,28 @@ vi.mock("@/components/admin/PhotoField", () => ({
 }));
 
 import { PROJECT_PHOTOS_TEXTS, ProjectPhotosForm, type ProjectPhotosFormPhoto } from "./ProjectPhotosForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const PHOTO_A: ProjectPhotosFormPhoto = { id: "3f2b1c4d-0000-4000-8000-000000000001", path: `projects/${PROJECT_ID}-1792569508760.webp`, alt: "Patul din față", sort: 0 };
 const PHOTO_B: ProjectPhotosFormPhoto = { id: "3f2b1c4d-0000-4000-8000-000000000002", path: `projects/${PROJECT_ID}-1792569508761.webp`, alt: "Detaliu tăblie", sort: 2 };
@@ -370,5 +393,60 @@ describe("ProjectPhotosForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.notFound);
     expect(screen.getAllByLabelText(T.alt)[0]).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the rows as typed and the uploaded photo with its alt when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    saveProjectPhotos.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ProjectPhotosForm projectId={PROJECT_ID} photos={[PHOTO_A, PHOTO_B]} />);
+    const [altA] = screen.getAllByLabelText(T.alt);
+    fireEvent.change(altA, { target: { value: "Patul, din față" } });
+    fireEvent.click(screen.getAllByRole("checkbox", { name: T.delete })[1]);
+    fireEvent.click(screen.getByRole("button", { name: "end upload" }));
+    fireEvent.change(screen.getByLabelText(T.newAlt), { target: { value: "Patul în cameră" } });
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh one with the saved text: the form was never taken down.
+    expect(screen.getAllByLabelText(T.alt)[0]).toBe(altA);
+    expect(altA).toHaveValue("Patul, din față");
+    expect(screen.getAllByRole("checkbox", { name: T.delete })[1]).toBeChecked();
+    // The new-photo block is emptied only by a save that went through.
+    expect(hidden(PHOTO_FIELDS.path).map((input) => input.value)).toEqual([UPLOADED]);
+    expect(screen.getByLabelText(T.newAlt)).toHaveValue("Patul în cameră");
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    const formData = saveProjectPhotos.mock.calls[1][1];
+    expect(formData.get(photoRowFields(PHOTO_A.id).alt)).toBe("Patul, din față");
+    expect(formData.get(photoRowFields(PHOTO_B.id).delete)).toBe("on");
+    expect(formData.get(PHOTO_FIELDS.path)).toBe(UPLOADED);
+    expect(formData.get(NEW_PHOTO_ALT_FIELD)).toBe("Patul în cameră");
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/admin/lucrari");
+    saveProjectPhotos.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <ProjectPhotosForm projectId={PROJECT_ID} photos={[PHOTO_A]} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });

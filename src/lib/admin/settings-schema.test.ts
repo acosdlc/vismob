@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SEED_SETTINGS, type Settings } from "@/lib/data/settings.seed";
-import { SETTINGS_FIELDS, SETTINGS_MAX } from "./settings-fields";
+import { SETTINGS_FIELDS, SETTINGS_FINGERPRINT_FIELD, SETTINGS_MAX } from "./settings-fields";
 import { parseSettingsForm, SETTINGS_MESSAGES, settingsSchema } from "./settings-schema";
 import { ADMIN_MESSAGES } from "./types";
 
@@ -34,31 +34,75 @@ describe("parseSettingsForm", () => {
     expect(data).toEqual(SEED_SETTINGS);
   });
 
-  it("accepts empty texts except „Telefon” and „Email”, trims the rest and reads the checkbox", () => {
-    const empty = Object.fromEntries(
-      SETTINGS_FIELDS.map((f) => [f.key, f.kind === "boolean" ? true : ""]),
-    ) as Record<keyof Settings, string | boolean>;
-    const contact = { phone_public: "0722 123 456", email_public: "contact@atelier.ro" };
+  // What the site hides while the value is empty, and nothing else: the WhatsApp buttons, the two
+  // footer links, the profile link (it only feeds the JSON-LD), the Google line (it needs both
+  // values), the end of the Atelier paragraph and the photo. Written out here, not read from the
+  // descriptors: a key that joins or leaves this list has to be a decision.
+  const MAY_BE_EMPTY: readonly string[] = [
+    "whatsapp_number",
+    "instagram_url",
+    "facebook_url",
+    "google_profile_url",
+    "google_rating",
+    "google_reviews_count",
+    "story_text",
+    "atelier_photo_path",
+  ];
+
+  it("refuses an empty value, or one of spaces only, for every text the site prints inside a sentence", () => {
+    const required = SETTINGS_FIELDS.filter((f) => f.kind !== "boolean" && !MAY_BE_EMPTY.includes(f.key)).map((f) => f.key);
+    // „Telefon” and „Email” among them: empty, they answer `required`, not the message of their shape.
+    expect(required).toHaveLength(30);
+    expect(required).toEqual(expect.arrayContaining(["cui", "mattresses_note", "phone_public", "email_public"]));
+
+    for (const blank of ["", "   "]) {
+      const emptied = Object.fromEntries(
+        SETTINGS_FIELDS.map((f) => [f.key, f.kind === "boolean" ? true : blank]),
+      ) as Record<keyof Settings, string | boolean>;
+      // Exactly the required keys: the eight above bring no error.
+      expect(parseSettingsForm(formFor(emptied))).toEqual({
+        ok: false,
+        fieldErrors: Object.fromEntries(required.map((key) => [key, ADMIN_MESSAGES.required])),
+      });
+    }
+    expect(ADMIN_MESSAGES.required).toBe("Completează acest câmp.");
+
+    // One emptied box in a form that is otherwise filled in: its own error, and only that one.
+    for (const key of required) {
+      expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, [key]: "" }))).toEqual({
+        ok: false,
+        fieldErrors: { [key]: ADMIN_MESSAGES.required },
+      });
+    }
+  });
+
+  it("stores as empty the pieces the site hides, trims every text and reads the checkbox", () => {
+    const hidden = Object.fromEntries(MAY_BE_EMPTY.map((key) => [key, ""]));
     const result = parseSettingsForm(
-      formFor({ ...empty, ...contact, workshop_name: "  Atelierul  ", whatsapp_number: " 40722123456 " }),
+      formFor({ ...SEED_SETTINGS, ...hidden, show_prices: true, workshop_name: "  Atelierul  ", story_text: "   " }),
     );
     expect(result).toEqual({
       ok: true,
-      data: {
-        ...Object.fromEntries(SETTINGS_FIELDS.map((f) => [f.key, ""])),
-        ...contact,
-        show_prices: true,
-        workshop_name: "Atelierul",
-        whatsapp_number: "40722123456",
-      },
+      data: { ...SEED_SETTINGS, ...hidden, show_prices: true, workshop_name: "Atelierul" },
     });
 
-    // The site always links the phone and the email, so these two, and only these, are required.
-    for (const blank of ["", "   "]) {
-      expect(parseSettingsForm(formFor({ ...empty, phone_public: blank, email_public: blank }))).toEqual({
-        ok: false,
-        fieldErrors: { phone_public: ADMIN_MESSAGES.required, email_public: ADMIN_MESSAGES.required },
-      });
+    const typed = parseSettingsForm(
+      formFor({ ...SEED_SETTINGS, whatsapp_number: " 40722123456 ", google_rating: " 4,9 ", story_text: " Lucrăm la comandă. " }),
+    );
+    expect(typed.ok && typed.data).toMatchObject({
+      whatsapp_number: "40722123456",
+      google_rating: "4,9",
+      story_text: "Lucrăm la comandă.",
+    });
+  });
+
+  it("takes a bracket placeholder in any required text: it is not empty, so the form saves before all the content is in", () => {
+    const required = SETTINGS_FIELDS.filter((f) => f.kind === "text" || f.kind === "textarea").filter((f) => !f.optional);
+    for (const f of required) {
+      // The seed's own placeholders (DESIGN §8) and one typed by hand.
+      expect(SEED_SETTINGS[f.key]).toContain("[");
+      const result = parseSettingsForm(formFor({ ...SEED_SETTINGS, [f.key]: "[de completat]" }));
+      expect(result.ok && result.data[f.key]).toBe("[de completat]");
     }
   });
 
@@ -235,6 +279,13 @@ describe("parseSettingsForm", () => {
     const result = parseSettingsForm(fd);
     expect(result.ok).toBe(true);
     expect(result.ok && Object.keys(result.data)).not.toContain("atelier_photo_path_before");
+  });
+
+  it("drops the fingerprint input instead of storing it", () => {
+    const fd = formFor(SEED_SETTINGS);
+    fd.set(SETTINGS_FINGERPRINT_FIELD, "a".repeat(64));
+    const result = parseSettingsForm(fd);
+    expect(result.ok && result.data).toEqual(SEED_SETTINGS);
   });
 
   it("bounds every text by its kind", () => {

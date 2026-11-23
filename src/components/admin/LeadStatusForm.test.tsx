@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMIN_MESSAGES, LEAD_STATUS_LABELS, LEAD_STATUSES, type AdminActionState } from "@/lib/admin/types";
 
@@ -9,6 +11,28 @@ vi.mock("@/actions/admin/update-lead", () => ({
 }));
 
 import { LeadStatusForm, NOTES_HINT } from "./LeadStatusForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const LEAD_ID = "11111111-2222-4333-8444-555555555555";
 
@@ -151,5 +175,52 @@ describe("LeadStatusForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText("Note interne")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the chosen status and the typed notes when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    updateLead.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<LeadStatusForm leadId={LEAD_ID} status="nou" notes={null} />);
+    const notes = screen.getByLabelText("Note interne");
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "ofertat" } });
+    fireEvent.change(notes, { target: { value: "Ofertă trimisă." } });
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same textarea, not a fresh one with the saved notes: the form was never taken down.
+    expect(screen.getByLabelText("Note interne")).toBe(notes);
+    expect(notes).toHaveValue("Ofertă trimisă.");
+    expect(screen.getByLabelText("Status")).toHaveValue("ofertat");
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(updateLead.mock.calls[1][1].get("status")).toBe("ofertat");
+    expect(updateLead.mock.calls[1][1].get("notes")).toBe("Ofertă trimisă.");
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/admin/cereri");
+    updateLead.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <LeadStatusForm leadId={LEAD_ID} status="nou" notes={null} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });

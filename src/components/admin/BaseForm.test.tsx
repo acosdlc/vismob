@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CATALOG_MESSAGES } from "@/lib/admin/catalog-schemas";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
@@ -40,6 +42,28 @@ vi.mock("@/components/admin/PhotoField", () => ({
 }));
 
 import { BaseForm, BASE_TEXTS } from "./BaseForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const PHOTO = "bases/lemn-1792569508760.webp";
 const BASE = { id: "lemn", name: "Picioare din lemn", note: "Stejar, 12 cm", code: "PL", photo_path: PHOTO, active: true, sort: 0 };
@@ -210,5 +234,52 @@ describe("BaseForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText("Nume")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the form and what was typed when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    saveBase.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<BaseForm base={BASE} />);
+    const note = screen.getByLabelText("Notă");
+    fireEvent.change(note, { target: { value: "Stejar, 14 cm" } });
+    fireEvent.click(screen.getByLabelText(BASE_TEXTS.active));
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh one with the saved note: the form was never taken down.
+    expect(screen.getByLabelText("Notă")).toBe(note);
+    expect(note).toHaveValue("Stejar, 14 cm");
+    expect(screen.getByLabelText(BASE_TEXTS.active)).not.toBeChecked();
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(saveBase.mock.calls[1][1].get("note")).toBe("Stejar, 14 cm");
+    expect(saveBase.mock.calls[1][1].get("active")).toBeNull();
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/admin/catalog");
+    saveBase.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <BaseForm base={BASE} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });

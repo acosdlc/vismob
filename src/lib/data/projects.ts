@@ -18,8 +18,10 @@ export interface ProjectsFilter {
 }
 
 // The columns each select reads. The public_read policies hide unpublished
-// projects (and their photos) and inactive materials and bases, so there is no
-// `published` or `active` check in code.
+// projects (and their photos), so there is no `published` check in code. There is
+// no `active` check either, on purpose: a project keeps the name of a colour or a
+// base that was switched off since, and the policies return such a row while a
+// published project refers to it (supabase/migrations, public_read_in_project).
 export type ProjectRow = Pick<
   Tables<"projects">,
   | "id"

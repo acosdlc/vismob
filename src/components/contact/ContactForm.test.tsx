@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { track } from "@vercel/analytics";
 import { FORM_FIELDS, FORM_MESSAGES, type FormState } from "@/lib/leads/types";
@@ -21,6 +23,28 @@ vi.mock("@/lib/validation/schemas", () => ({
 vi.mock("@vercel/analytics", () => ({ track: vi.fn() }));
 
 import { ContactForm, collectSource } from "./ContactForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const tracked = vi.mocked(track);
 
@@ -161,7 +185,8 @@ describe("ContactForm", () => {
     expect(await screen.findByText("Cerere trimisă")).toBeInTheDocument();
     const heading = screen.getByRole("heading", { level: 3, name: "Mulțumim! Te sunăm în 24 de ore." });
     expect(heading.className).toContain("h3-confirm");
-    expect(document.activeElement).toBe(heading);
+    // The focus and the event come from an effect, a moment after the confirmation is on screen.
+    await waitFor(() => expect(document.activeElement).toBe(heading));
 
     // contact_submit once per success (ARHITECTURA §10).
     expect(tracked).toHaveBeenCalledTimes(1);
@@ -176,7 +201,7 @@ describe("ContactForm", () => {
 
     const heading = await screen.findByRole("heading", { level: 2, name: "Mulțumim! Te sunăm în 24 de ore." });
     expect(heading.className).toContain("h3-confirm");
-    expect(document.activeElement).toBe(heading);
+    await waitFor(() => expect(document.activeElement).toBe(heading));
     expect(
       screen.getByText("Între timp, poți să te uiți prin materiale sau să încerci configuratorul."),
     ).toBeInTheDocument();
@@ -193,10 +218,12 @@ describe("ContactForm", () => {
     fillValid();
     fireEvent.click(screen.getByRole("button", { name: "Trimite cererea" }));
     await screen.findByText("Cerere trimisă");
-    expect(tracked.mock.calls).toEqual([
-      ["contact_submit", undefined],
-      ["contact_submit", undefined],
-    ]);
+    await waitFor(() =>
+      expect(tracked.mock.calls).toEqual([
+        ["contact_submit", undefined],
+        ["contact_submit", undefined],
+      ]),
+    );
   });
 
   it("shows a server error message and the server's field errors", async () => {
@@ -217,6 +244,68 @@ describe("ContactForm", () => {
     expect(phone).toHaveAccessibleDescription(FORM_MESSAGES.phone);
     await waitFor(() => expect(document.activeElement).toBe(phone));
     expect(screen.getByRole("button", { name: "Trimite cererea" })).not.toBeDisabled();
+    expect(tracked).not.toHaveBeenCalled();
+  });
+
+  it("keeps the form and what was typed when the call to the action fails, and sends on the next try", async () => {
+    // No answer comes back: the visitor's connection dropped, or a deployment was made meanwhile.
+    parseLeadForm.mockReturnValue({ ok: true, data: {} });
+    submitContact.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ContactForm responseTime="24 de ore" page="/contact" />);
+    fillValid();
+    const message = screen.getByLabelText("Ce pat îți dorești?");
+    fireEvent.change(message, { target: { value: "Un pat de 160, cu ladă." } });
+    fireEvent.change(screen.getByLabelText("Dimensiunea saltelei"), { target: { value: "160 × 200 cm" } });
+    const submit = screen.getByRole("button", { name: "Trimite cererea" });
+
+    fireEvent.click(submit);
+
+    // The form's own generic message, which already says what to do next.
+    expect(await screen.findByRole("alert")).toHaveTextContent("Nu am putut trimite cererea. Încearcă din nou sau sună-ne.");
+    expect(FORM_MESSAGES.generic).toBe("Nu am putut trimite cererea. Încearcă din nou sau sună-ne.");
+    // The same textarea, not a fresh empty one: the form was never taken down.
+    expect(screen.getByLabelText("Ce pat îți dorești?")).toBe(message);
+    expect(message).toHaveValue("Un pat de 160, cu ladă.");
+    expect(screen.getByLabelText("Nume")).toHaveValue("Ana Pop");
+    expect(screen.getByLabelText("Telefon")).toHaveValue("0722 123 456");
+    expect(screen.getByLabelText("Email")).toHaveValue("ana@example.com");
+    expect(screen.getByLabelText("Dimensiunea saltelei")).toHaveValue("160 × 200 cm");
+    expect(screen.getByRole("checkbox", { name: /Sunt de acord/ })).toBeChecked();
+    expect(screen.getByLabelText("Nume")).not.toHaveAttribute("aria-invalid");
+    expect(submit).toBeEnabled();
+    expect(tracked).not.toHaveBeenCalled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByText("Cerere trimisă")).toBeInTheDocument();
+    const formData = submitContact.mock.calls[1][1];
+    expect(formData.get("name")).toBe("Ana Pop");
+    expect(formData.get("message")).toBe("Un pat de 160, cu ladă.");
+    expect(formData.get("mattressSize")).toBe("160 × 200 cm");
+    // contact_submit for the request that went through, not for the failed call.
+    await waitFor(() => expect(tracked).toHaveBeenCalledTimes(1));
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    parseLeadForm.mockReturnValue({ ok: true, data: {} });
+    const thrown = redirectTo("/contact");
+    submitContact.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <ContactForm responseTime="24 de ore" page="/contact" />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+    fillValid();
+
+    fireEvent.click(screen.getByRole("button", { name: "Trimite cererea" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(FORM_MESSAGES.generic)).toBeNull();
     expect(tracked).not.toHaveBeenCalled();
   });
 });

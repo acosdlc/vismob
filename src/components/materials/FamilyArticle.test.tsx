@@ -22,6 +22,15 @@ afterEach(() => {
 });
 
 describe("FamilyArticle", () => {
+  it("keeps the line breaks of a description typed on several lines", () => {
+    const description = "Țesătură deasă, cu fir scurt.\nSe curăță ușor.";
+    render(<FamilyArticle family={{ ...FAMILY, description }} items={[]} />);
+    const paragraph = screen.getByRole("article", { name: FAMILY.name }).querySelector("p");
+    // The text is printed as stored; pre-line is what makes the browser break the lines.
+    expect(paragraph?.textContent).toBe(description);
+    expect(paragraph?.className).toContain("whitespace-pre-line");
+  });
+
   it("prints every stored specification row, six included, in the stored order", () => {
     const six = [
       { k: "Compoziție", v: "100% poliester" },

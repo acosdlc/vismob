@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REVIEW_MESSAGES } from "@/lib/admin/reviews";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
@@ -15,6 +17,28 @@ vi.mock("@/actions/admin/delete-review", () => ({
 
 import { deleteReviewConfirmText } from "./DeleteReviewButton";
 import { REVIEW_FORM_TEXTS, ReviewForm, type ReviewFormReview } from "./ReviewForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const REVIEW: ReviewFormReview = {
   id: "11111111-2222-4333-8444-555555555555",
@@ -195,6 +219,63 @@ describe("ReviewForm for a new review", () => {
     expect(published).toBeChecked();
     expect(screen.getByRole("checkbox", { name: T.consent })).not.toHaveAttribute("aria-invalid");
     await waitFor(() => expect(document.activeElement).toBe(published));
+  });
+
+  it("keeps the form and the typed review when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    saveReview.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ReviewForm review={null} />);
+    const body = screen.getByLabelText(T.body);
+    fireEvent.change(screen.getByLabelText(T.firstName), { target: { value: "Maria" } });
+    fireEvent.change(body, { target: { value: "Foarte mulțumită." } });
+    fireEvent.change(screen.getByLabelText(T.source), { target: { value: "whatsapp" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: T.consent }));
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same textarea, not a fresh empty one: the form was never taken down.
+    expect(screen.getByLabelText(T.body)).toBe(body);
+    expect(body).toHaveValue("Foarte mulțumită.");
+    expect(screen.getByLabelText(T.firstName)).toHaveValue("Maria");
+    expect(screen.getByLabelText(T.source)).toHaveValue("whatsapp");
+    expect(screen.getByRole("checkbox", { name: T.consent })).toBeChecked();
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    const formData = saveReview.mock.calls[1][1];
+    expect(formData.get("id")).toBe("");
+    expect(formData.get("first_name")).toBe("Maria");
+    expect(formData.get("body")).toBe("Foarte mulțumită.");
+    expect(formData.get("source")).toBe("whatsapp");
+    expect(formData.get("consent")).toBe("on");
+    reported.mockRestore();
+  });
+
+  it("lets the redirect to the new review's screen through to the framework instead of calling it a failure", async () => {
+    // On a create the real action ends in redirect(), and the browser's call rejects with it.
+    const thrown = redirectTo(`/admin/recenzii/${REVIEW.id}?creat=1`);
+    saveReview.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <ReviewForm review={null} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+    fireEvent.change(screen.getByLabelText(T.firstName), { target: { value: "Maria" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });
 

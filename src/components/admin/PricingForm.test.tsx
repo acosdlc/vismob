@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { SEED_CATALOG } from "@/lib/configurator/catalog.seed";
@@ -14,6 +16,28 @@ vi.mock("@/actions/admin/save-pricing", () => ({
 }));
 
 import { PricingForm } from "./PricingForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 // A fixture only (the style of src/lib/configurator/pricing.test.ts): never a real price.
 const PRICING: Pricing = {
@@ -292,5 +316,50 @@ describe("PricingForm", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText("Capitonat, 160 cm")).not.toHaveAttribute("aria-invalid");
     expect(screen.getByLabelText("Rotunjire (lei)")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the form and every typed price when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    savePricing.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<PricingForm pricing={PRICING} catalog={SEED_CATALOG} />);
+    const cell = screen.getByLabelText("Capitonat, 160 cm");
+    fireEvent.change(cell, { target: { value: "4000" } });
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh one with the saved price: the form was never taken down.
+    expect(screen.getByLabelText("Capitonat, 160 cm")).toBe(cell);
+    expect(cell).toHaveValue("4000");
+    expect(previewCells()[0]).toBe(shown(4200));
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(savePricing.mock.calls[1][1].get("grid.capitonat.160")).toBe("4000");
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/admin/preturi");
+    savePricing.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <PricingForm pricing={PRICING} catalog={SEED_CATALOG} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
   });
 });
