@@ -6,7 +6,16 @@ What has to happen between "the code is merged" and "the workshop's site is live
 - **Workshop**: the client, who provides what docs/LISTA-ATELIER.md asks for and operates `/admin` afterwards.
 - **Session**: a Claude Code cloud session, through a pull request or a check it can run from the container.
 
-Order matters: the content first (the placeholder gate cannot pass before), then the domain and the email, then the checks on production.
+Order matters: the forms' secrets can go in today (section 0), the content comes first among the rest (the placeholder gate cannot pass before), then the domain and the email, then the checks on production.
+
+## 0. The request forms: secrets missing today
+
+State on 2026-11-23, read from the deployed site (a session cannot list the project's variables, the connector's token is refused): Production has no `FORM_HMAC_SECRET` (the runtime errors of `/contact` say so; two visitors got the form's generic error) and no `CRON_SECRET`; the `leads` table is empty, so no request has ever been stored, in any environment. The forms have therefore never run end to end on a deployment.
+
+- [ ] **Owner** · `FORM_HMAC_SECRET` and `IP_HASH_SALT` (random, 32 bytes each: `openssl rand -base64 32`) in Production and Preview. Without either, a submit ends with „Nu am putut trimite cererea. Încearcă din nou sau sună-ne.” and nothing is saved.
+- [ ] **Owner** · `RESEND_API_KEY` in Production and Preview, and `NOTIFY_EMAIL` in Preview (the developer's address). Without the key a request is stored but no email leaves, silently: the events are recorded as a dry run. Without `NOTIFY_EMAIL` the workshop's email is recorded as failed and the client's confirmation still goes out.
+- [ ] **Owner** · A redeploy after adding variables: a deployment keeps the variables it was built with.
+- [ ] **Owner** · One test request on the preview from each form (the contact form with a photo, then „Trimite configurația”): it appears in `/admin` › Cereri and both emails arrive, the configurator's one with the PNG drawing. Mark the two as spam afterwards.
 
 ## 1. The content (PR-11)
 
@@ -54,7 +63,7 @@ Order matters: the content first (the placeholder gate cannot pass before), then
 ## 7. Settings and access
 
 - [ ] **Workshop** · The Google Business Profile link and manager access for the owner (docs/LISTA-ATELIER.md §1).
-- [ ] **Owner** · `google_profile_url` in `/admin` › Setări (it feeds the JSON-LD `sameAs` and the reviews link); `google_rating` and `google_reviews_count` only if they are to be shown, an empty value hides the line. In the profile itself: the website link set to the new domain.
+- [ ] **Owner** · `google_profile_url` in `/admin` › Setări (it feeds the JSON-LD `sameAs` only; no page links to the profile); `google_rating` and `google_reviews_count` only if they are to be shown, an empty value hides the line. In the profile itself: the website link set to the new domain.
 - [ ] **Owner** · The admin password changed by its holder (Supabase → Authentication → Users → the user), so that no password that passed through a dashboard screen or a message stays in use; sign out and in again. A second admin for the workshop, if it operates the panel itself: docs/ADMIN.md, "Creating the first user".
 
 ## 8. Environment variables, in one place
@@ -65,9 +74,12 @@ Order matters: the content first (the placeholder gate cannot pass before), then
 | `EMAIL_FROM` | Production | `<Nume atelier> <cereri@<domeniu verified in Resend>>` | owner |
 | `NOTIFY_EMAIL` | Production | the workshop's address (Preview keeps the developer's) | owner |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Production | the real pair of the widget with the new hostnames (Preview keeps the test pair) | owner |
-| `CRON_SECRET` | all | random, 32 bytes; missing today | owner |
+| `CRON_SECRET` | all | random, 32 bytes; missing on 2026-11-23 | owner |
+| `FORM_HMAC_SECRET` | all | random, 32 bytes; missing in Production on 2026-11-23 | owner |
+| `IP_HASH_SALT` | all | random, 32 bytes | owner |
+| `RESEND_API_KEY` | all | the Resend account's key | owner |
 
-Everything else (`RESEND_API_KEY`, `IP_HASH_SALT`, `FORM_HMAC_SECRET`, `REVALIDATE_SECRET`, the three Supabase variables) is already set and does not change at launch.
+The three Supabase variables come from the Vercel integration. `REVALIDATE_SECRET` is optional: nothing calls `/api/revalidate` (docs/PLAN.md, „Revalidation”). Which of the others are set cannot be read from a session, so check every row on the Environment Variables page; section 0 says what the site does without each.
 
 ## 9. Checks on production, before announcing
 
