@@ -178,7 +178,8 @@ describe("LeadStatusForm", () => {
   });
 
   it("keeps the chosen status and the typed notes when the call to the action fails, and saves on the next try", async () => {
-    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    // No answer comes back: here a dropped connection (a laptop just back from sleep gives the same),
+    // which the next try can get past. After a deployment that retired the action's id only a reload helps.
     updateLead.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
     const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -191,7 +192,8 @@ describe("LeadStatusForm", () => {
     fireEvent.click(submit);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    // Not „Nu am putut salva…”, the server's word for a write that failed: this one may have gone through.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
     expect(alert.className).toContain("border-error");
     // The same textarea, not a fresh one with the saved notes: the form was never taken down.
     expect(screen.getByLabelText("Note interne")).toBe(notes);
@@ -221,6 +223,6 @@ describe("LeadStatusForm", () => {
 
     await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
     expect(caught.mock.calls[0][0]).toBe(thrown);
-    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswer)).toBeNull();
   });
 });

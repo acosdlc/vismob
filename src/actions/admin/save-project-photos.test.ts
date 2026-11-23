@@ -271,7 +271,7 @@ describe("saveProjectPhotos", () => {
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
-  it("appends the new photo after the highest existing sort", async () => {
+  it("appends the new photo after the highest existing sort, before it writes the rows", async () => {
     const { client, calls } = fakeClient();
     mocks.createClient.mockResolvedValue(client);
 
@@ -281,10 +281,12 @@ describe("saveProjectPhotos", () => {
     );
 
     expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
-    expect(calls.at(-1)).toEqual({
+    // The sort follows the rows as they were read (0 and 3), not the order this save gives them.
+    expect(calls[2]).toEqual({
       table: "project_photos",
       ops: [["insert", { project_id: PROJECT_ID, path: NEW_PATH, alt: "Patul în cameră", sort: 4 }], ["select", "id"]],
     });
+    expect(summary(calls).map((c) => c[1])).toEqual(["select", "select", "insert", "update", "update"]);
   });
 
   it("does not insert again a photo whose path one of the project's rows already stores", async () => {
@@ -417,19 +419,64 @@ describe("saveProjectPhotos", () => {
       expect(removed).toEqual([]);
     });
 
-    it("lets every photo of a published project go when a new one comes with the same save", async () => {
-      const { client, calls, removed } = fakeClient();
+    it("lets every photo of a published project go when a new one comes with the same save, the new one written first", async () => {
+      const { client, calls, removed, timeline } = fakeClient();
       mocks.createClient.mockResolvedValue(client);
 
       const state = await saveProjectPhotos(ADMIN_INITIAL_STATE, form([...DELETE_BOTH, ...newPhoto(NEW_PATH)]));
 
       expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
-      expect(summary(calls).map((c) => c[1])).toEqual(["select", "select", "delete", "delete", "insert"]);
+      // The insert comes before the first delete: at every step in between the project has a photo.
+      expect(summary(calls).map((c) => c[1])).toEqual(["select", "select", "insert", "delete", "delete"]);
+      expect(timeline).toEqual([
+        "projects.select",
+        "project_photos.select",
+        "project_photos.insert",
+        "project_photos.delete",
+        `storage.remove:${PHOTO_A.path}`,
+        "project_photos.delete",
+        `storage.remove:${PHOTO_B.path}`,
+      ]);
       expect(removed).toEqual([
         ["media", [PHOTO_A.path]],
         ["media", [PHOTO_B.path]],
       ]);
       expect(mocks.updateTag).toHaveBeenCalledWith("projects");
+    });
+
+    it("leaves a published project the photo it had when the new one cannot be written: no row deleted, no file removed", async () => {
+      // The only photo is replaced, and the insert fails (the connection to the database
+      // drops) or is filtered out (no admin role): neither may cost the project its photo.
+      for (const [inserted, message] of [
+        [{ data: null, error: { message: "timeout writing the photo" } }, ADMIN_MESSAGES.generic],
+        [{ data: [], error: null }, ADMIN_MESSAGES.forbidden],
+      ] satisfies [Result, string][]) {
+        const { client, removed, timeline } = fakeClient({ photos: { data: [PHOTO_A], error: null }, inserted });
+        mocks.createClient.mockResolvedValue(client);
+
+        const state = await saveProjectPhotos(ADMIN_INITIAL_STATE, form([...row(PHOTO_A.id, "", "", true), ...newPhoto(NEW_PATH)]));
+
+        expect(state).toEqual({ status: "error", message });
+        expect(timeline).toEqual(["projects.select", "project_photos.select", "project_photos.insert"]);
+        expect(removed).toEqual([]);
+      }
+      expect(console.error).toHaveBeenCalledWith("saveProjectPhotos", expect.objectContaining({ message: expect.stringContaining("timeout writing the photo") }));
+      expect(mocks.updateTag).not.toHaveBeenCalled();
+      expect(mocks.refresh).not.toHaveBeenCalled();
+    });
+
+    it("finishes on the next press a save that stopped after the new photo was written, without writing it twice", async () => {
+      // The first press wrote the new row, then a delete failed: the screen was not refreshed,
+      // so the form posts the same thing again, the ticked old photo and the uploaded path.
+      const NEW_ROW = { id: "3f2b1c4d-0000-4000-8000-000000000003", path: NEW_PATH, sort: 1 };
+      const { client, removed, timeline } = fakeClient({ photos: { data: [PHOTO_A, NEW_ROW], error: null } });
+      mocks.createClient.mockResolvedValue(client);
+
+      const state = await saveProjectPhotos(ADMIN_INITIAL_STATE, form([...row(PHOTO_A.id, "", "", true), ...newPhoto(NEW_PATH)]));
+
+      expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+      expect(timeline).toEqual(["projects.select", "project_photos.select", "project_photos.delete", `storage.remove:${PHOTO_A.path}`]);
+      expect(removed).toEqual([["media", [PHOTO_A.path]]]);
     });
 
     it("does not take for a new photo a path one of the deleted rows stores: nothing would be inserted", async () => {

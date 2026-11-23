@@ -5,7 +5,9 @@ import { createHash } from "node:crypto";
 // added): a page opened earlier would put its old values back over what someone else
 // saved meanwhile. So the page hands the form the fingerprint of the row it read, the
 // form posts it back, and saveSettings writes only while the stored row still has that
-// fingerprint.
+// fingerprint. The one exception changes nothing: a post whose values the stored row
+// already holds, compared by this same fingerprint (the retry of a save whose answer
+// never reached the form).
 //
 // Server code only (node:crypto): the page and the Server Action. The name of the hidden
 // input is in settings-fields.ts, where the Client Component can read it.

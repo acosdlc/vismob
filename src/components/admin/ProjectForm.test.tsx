@@ -106,7 +106,7 @@ afterEach(() => {
 });
 
 describe("ProjectForm for a new project", () => {
-  it("renders a labelled control for every column, with the defaults, in two sections, and no delete", () => {
+  it("renders a labelled control for every column a new project can have, with the defaults, in two sections, and no delete", () => {
     render(<ProjectForm project={null} {...lists} />);
 
     expect(screen.getByRole("heading", { level: 2, name: T.sectionProject })).toBeInTheDocument();
@@ -177,14 +177,17 @@ describe("ProjectForm for a new project", () => {
 
     for (const [label, name] of [
       [T.clientConsent, "client_consent"],
-      [T.published, "published"],
       [T.featured, "featured"],
-      [T.hero, "hero"],
     ]) {
       const box = screen.getByRole("checkbox", { name: label });
       expect(box).toHaveAttribute("name", name);
       expect(box).not.toBeChecked();
     }
+    // Publishing needs a photo, and the photos come once the project is saved: here the
+    // server could only refuse the two boxes, so they are offered on the saved project's screen.
+    expect(screen.queryByRole("checkbox", { name: T.published })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: T.hero })).toBeNull();
+    expect(document.querySelector('[name="published"], [name="hero"]')).toBeNull();
     const sort = screen.getByLabelText(T.sort);
     expect(sort).toHaveAttribute("name", "sort");
     expect(sort).toHaveValue(0);
@@ -211,7 +214,7 @@ describe("ProjectForm for a new project", () => {
     fireEvent.change(screen.getByLabelText(T.city), { target: { value: "Brașov" } });
     fireEvent.change(screen.getByLabelText(T.deliveredOn), { target: { value: "2026-05-02" } });
     fireEvent.click(screen.getByRole("checkbox", { name: T.clientConsent }));
-    fireEvent.click(screen.getByRole("checkbox", { name: T.published }));
+    fireEvent.click(screen.getByRole("checkbox", { name: T.featured }));
     fireEvent.change(screen.getByLabelText(T.sort), { target: { value: "5" } });
 
     fireEvent.click(screen.getByRole("button", { name: T.submit }));
@@ -230,8 +233,9 @@ describe("ProjectForm for a new project", () => {
     expect(formData.get("city")).toBe("Brașov");
     expect(formData.get("delivered_on")).toBe("2026-05-02");
     expect(formData.get("client_consent")).toBe("on");
-    expect(formData.get("published")).toBe("on");
-    expect(formData.get("featured")).toBeNull();
+    expect(formData.get("featured")).toBe("on");
+    // The form has neither box: a new project is always posted unpublished and not the hero.
+    expect(formData.get("published")).toBeNull();
     expect(formData.get("hero")).toBeNull();
     expect(formData.get("sort")).toBe("5");
     expect(formData.has("slug")).toBe(false);
@@ -272,42 +276,6 @@ describe("ProjectForm for a new project", () => {
     await waitFor(() => expect(document.activeElement).toBe(title));
   });
 
-  it("marks the published box when the server refuses publishing without consent, and the hero box for an unpublished hero", async () => {
-    saveProject.mockResolvedValue({ status: "error", message: PROJECT_MESSAGES.consent, fieldErrors: { published: PROJECT_MESSAGES.consent } });
-    const { unmount } = render(<ProjectForm project={null} {...lists} />);
-    fireEvent.click(screen.getByRole("button", { name: T.submit }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(PROJECT_MESSAGES.consent);
-    const published = screen.getByRole("checkbox", { name: T.published });
-    expect(published).toHaveAttribute("aria-invalid", "true");
-    expect(published).toHaveAccessibleDescription(PROJECT_MESSAGES.consent);
-    await waitFor(() => expect(document.activeElement).toBe(published));
-    unmount();
-
-    saveProject.mockResolvedValue({
-      status: "error",
-      message: PROJECT_MESSAGES.heroUnpublished,
-      fieldErrors: { hero: PROJECT_MESSAGES.heroUnpublished },
-    });
-    render(<ProjectForm project={null} {...lists} />);
-    fireEvent.click(screen.getByRole("button", { name: T.submit }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(PROJECT_MESSAGES.heroUnpublished);
-    const hero = screen.getByRole("checkbox", { name: T.hero });
-    expect(hero).toHaveAttribute("aria-invalid", "true");
-    await waitFor(() => expect(document.activeElement).toBe(hero));
-  });
-
-  it("marks the published box when the server refuses publishing without a photo", async () => {
-    saveProject.mockResolvedValue({ status: "error", message: PROJECT_MESSAGES.noPhoto, fieldErrors: { published: PROJECT_MESSAGES.noPhoto } });
-    render(<ProjectForm project={null} {...lists} />);
-    fireEvent.click(screen.getByRole("button", { name: T.submit }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(PROJECT_MESSAGES.noPhoto);
-    const published = screen.getByRole("checkbox", { name: T.published });
-    expect(published).toHaveAttribute("aria-invalid", "true");
-    expect(published).toHaveAccessibleDescription(PROJECT_MESSAGES.noPhoto);
-    // The photos form's refusal names this box by its label: the two texts must not drift apart.
-    expect(PROJECT_MESSAGES.lastPhoto).toContain(`„${T.published}”`);
-  });
-
   it("shows a plain error without field errors", async () => {
     saveProject.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.forbidden });
     render(<ProjectForm project={null} {...lists} />);
@@ -318,7 +286,7 @@ describe("ProjectForm for a new project", () => {
     expect(screen.getByLabelText(T.title)).not.toHaveAttribute("aria-invalid");
   });
 
-  it("keeps the form and everything typed when the call to the action fails, and saves on the next try", async () => {
+  it("keeps the form and everything typed when the call brings no answer, sends her to the list before another try, and can be sent again", async () => {
     // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
     saveProject.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
@@ -335,7 +303,10 @@ describe("ProjectForm for a new project", () => {
     fireEvent.click(submit);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    // The project may have been created all the same, and a second try would then add it
+    // twice: so not „Nu am putut salva”, which the server answers when it wrote nothing.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswerNew);
+    expect(alert).not.toHaveTextContent(ADMIN_MESSAGES.generic);
     expect(alert.className).toContain("border-error");
     // The same input, not a fresh empty one: the form was never taken down.
     expect(screen.getByLabelText(T.title)).toBe(title);
@@ -375,7 +346,7 @@ describe("ProjectForm for a new project", () => {
 
     await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
     expect(caught.mock.calls[0][0]).toBe(thrown);
-    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswerNew)).toBeNull();
   });
 });
 
@@ -499,6 +470,68 @@ describe("ProjectForm for an existing project", () => {
     expect(published).toHaveAttribute("aria-invalid", "true");
     expect(published).toHaveAccessibleDescription(PROJECT_MESSAGES.consent);
     expect(document.activeElement).toBe(title);
+  });
+
+  it("marks the published box when the server refuses publishing without consent, and the hero box for an unpublished hero", async () => {
+    saveProject.mockResolvedValue({ status: "error", message: PROJECT_MESSAGES.consent, fieldErrors: { published: PROJECT_MESSAGES.consent } });
+    const { unmount } = render(<ProjectForm project={PROJECT} {...lists} />);
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(PROJECT_MESSAGES.consent);
+    const published = screen.getByRole("checkbox", { name: T.published });
+    expect(published).toHaveAttribute("aria-invalid", "true");
+    expect(published).toHaveAccessibleDescription(PROJECT_MESSAGES.consent);
+    await waitFor(() => expect(document.activeElement).toBe(published));
+    unmount();
+
+    saveProject.mockResolvedValue({
+      status: "error",
+      message: PROJECT_MESSAGES.heroUnpublished,
+      fieldErrors: { hero: PROJECT_MESSAGES.heroUnpublished },
+    });
+    render(<ProjectForm project={PROJECT} {...lists} />);
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(PROJECT_MESSAGES.heroUnpublished);
+    const hero = screen.getByRole("checkbox", { name: T.hero });
+    expect(hero).toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(document.activeElement).toBe(hero));
+  });
+
+  it("marks the published box when the server refuses publishing without a photo", async () => {
+    saveProject.mockResolvedValue({ status: "error", message: PROJECT_MESSAGES.noPhoto, fieldErrors: { published: PROJECT_MESSAGES.noPhoto } });
+    render(<ProjectForm project={PROJECT} {...lists} />);
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(PROJECT_MESSAGES.noPhoto);
+    const published = screen.getByRole("checkbox", { name: T.published });
+    expect(published).toHaveAttribute("aria-invalid", "true");
+    expect(published).toHaveAccessibleDescription(PROJECT_MESSAGES.noPhoto);
+    // The photos form's refusal names this box by its label: the two texts must not drift apart.
+    expect(PROJECT_MESSAGES.lastPhoto).toContain(`„${T.published}”`);
+  });
+
+  it("says that no answer came, without sending her to the list, when the call fails on a project that exists", async () => {
+    saveProject.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ProjectForm project={PROJECT} {...lists} />);
+    const title = screen.getByLabelText(T.title);
+    fireEvent.change(title, { target: { value: "Pat arcuit" } });
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    // Saving the same project twice changes nothing, so this text has no list to send her to.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(alert).not.toHaveTextContent(ADMIN_MESSAGES.noAnswerNew);
+    expect(alert).not.toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert.className).toContain("border-error");
+    expect(title).toHaveValue("Pat arcuit");
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(saveProject.mock.calls[1][1].get("id")).toBe(PROJECT.id);
+    expect(saveProject.mock.calls[1][1].get("title")).toBe("Pat arcuit");
+    reported.mockRestore();
   });
 });
 

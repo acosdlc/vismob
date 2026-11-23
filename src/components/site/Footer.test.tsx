@@ -20,6 +20,16 @@ describe("Footer", () => {
     expect(screen.getByRole("link", { name: "Termeni" })).toHaveAttribute("href", "/termeni");
   });
 
+  it("full: a registered office typed on two lines goes into the legal row with a comma between them", async () => {
+    const settings = { ...SEED_SETTINGS, registered_office: "Str. Fabricii 12\nTimișoara, jud. Timiș" };
+    render(await Footer({ settings }));
+    const legal = screen.getByText((_, el) => el?.tagName === "P" && /^© /.test(el.textContent ?? ""));
+    // The row is one line of text: a bare line break would show as a space, street against town.
+    expect(legal.textContent).toBe(
+      `© ${YEAR} ${settings.legal_name} · CUI ${settings.cui} · ${settings.reg_com} · Str. Fabricii 12, Timișoara, jud. Timiș`,
+    );
+  });
+
   it("full: brand line, the Pagini nav and the contact links", async () => {
     render(await Footer({ settings: SEED_SETTINGS }));
     expect(

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { redirect } from "next/navigation";
-import { Component, type ReactNode } from "react";
+import { Activity, Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { track } from "@vercel/analytics";
 import { FORM_FIELDS, FORM_MESSAGES, type FormState } from "@/lib/leads/types";
@@ -44,6 +44,21 @@ function redirectTo(path: string): unknown {
   } catch (error) {
     return error;
   }
+}
+
+/**
+ * The page as the router holds it (`cacheComponents`, layout-router.js): inside an Activity
+ * that is hidden while the visitor is on another page and shown again when she returns.
+ * State and DOM are kept; the effects are cleaned up and run again. The link stands for
+ * the site's menu, outside the kept page.
+ */
+function KeptPage({ shown, children }: { shown: boolean; children: ReactNode }) {
+  return (
+    <>
+      <a href="/lucrari">Lucrări</a>
+      <Activity mode={shown ? "visible" : "hidden"}>{children}</Activity>
+    </>
+  );
 }
 
 const tracked = vi.mocked(track);
@@ -130,6 +145,36 @@ describe("ContactForm", () => {
     expect(issueFormToken).toHaveBeenCalledTimes(1);
   });
 
+  it("asks for the form token again after a call that brought no answer, until one does, and posts it", async () => {
+    // The visitor's connection was away at her first touches of the form.
+    parseLeadForm.mockReturnValue({ ok: true, data: {} });
+    issueFormToken.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const { container } = render(<ContactForm responseTime="24 de ore" page="/contact" />);
+    const startedAt = container.querySelector(`input[name="${FORM_FIELDS.startedAt}"]`);
+
+    fireEvent.focus(screen.getByLabelText("Nume"));
+    await act(async () => {}); // the rejection arrives
+    expect(issueFormToken).toHaveBeenCalledTimes(1);
+    expect(startedAt).toHaveValue("");
+
+    // The next pointer-down asks again, and so does the next focus after that one failed too.
+    fireEvent.pointerDown(screen.getByLabelText("Telefon"));
+    expect(issueFormToken).toHaveBeenCalledTimes(2);
+    await act(async () => {});
+    expect(startedAt).toHaveValue("");
+    fireEvent.focus(screen.getByLabelText("Telefon"));
+    expect(issueFormToken).toHaveBeenCalledTimes(3);
+    await waitFor(() => expect(startedAt).toHaveValue("signed-token"));
+
+    // With the token in hand nothing asks any more, and the submit carries it.
+    fillValid();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Trimite cererea" }));
+    fireEvent.click(screen.getByRole("button", { name: "Trimite cererea" }));
+    await waitFor(() => expect(submitContact).toHaveBeenCalledTimes(1));
+    expect(submitContact.mock.calls[0][1].get(FORM_FIELDS.startedAt)).toBe("signed-token");
+    expect(issueFormToken).toHaveBeenCalledTimes(3);
+  });
+
   it("on an empty submit shows the field errors, focuses the name field and does not call the action", () => {
     parseLeadForm.mockReturnValue({ ok: false, fieldErrors: EMPTY_ERRORS });
     render(<ContactForm responseTime="24 de ore" page="/contact" />);
@@ -214,7 +259,8 @@ describe("ContactForm", () => {
     expect(screen.getByRole("button", { name: "Trimite cererea" })).toBeInTheDocument();
     expect(screen.queryByText("Cerere trimisă")).toBeNull();
 
-    // A second request from the remounted form is a second contact_submit.
+    // A second request from the remounted form is a second contact_submit, and its
+    // confirmation takes the focus as the first one did.
     fillValid();
     fireEvent.click(screen.getByRole("button", { name: "Trimite cererea" }));
     await screen.findByText("Cerere trimisă");
@@ -224,6 +270,39 @@ describe("ContactForm", () => {
         ["contact_submit", undefined],
       ]),
     );
+    const second = screen.getByRole("heading", { level: 2, name: "Mulțumim! Te sunăm în 24 de ore." });
+    expect(second).not.toBe(heading);
+    expect(document.activeElement).toBe(second);
+  });
+
+  it("reports contact_submit once and leaves the focus where it is when the router shows the kept page again", async () => {
+    parseLeadForm.mockReturnValue({ ok: true, data: {} });
+    const page = (shown: boolean) => (
+      <KeptPage shown={shown}>
+        <ContactForm responseTime="24 de ore" page="/contact" />
+      </KeptPage>
+    );
+    const view = render(page(true));
+    fillValid();
+    fireEvent.click(screen.getByRole("button", { name: "Trimite cererea" }));
+    const heading = await screen.findByRole("heading", { name: "Mulțumim! Te sunăm în 24 de ore." });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    expect(tracked).toHaveBeenCalledTimes(1);
+
+    // She leaves through the menu and comes back, twice: each time the router hides the
+    // page, then shows it as she left it, on the confirmation.
+    const menu = screen.getByRole("link", { name: "Lucrări" });
+    for (let visit = 1; visit <= 2; visit++) {
+      view.rerender(page(false));
+      act(() => menu.focus());
+      view.rerender(page(true));
+
+      expect(screen.getByRole("heading", { name: "Mulțumim! Te sunăm în 24 de ore." })).toBe(heading);
+      // One request is one conversion, however often its confirmation is seen.
+      expect(tracked).toHaveBeenCalledTimes(1);
+      // The focus, and the scroll with it, is not pulled back to the confirmation.
+      expect(document.activeElement).toBe(menu);
+    }
   });
 
   it("shows a server error message and the server's field errors", async () => {
@@ -248,7 +327,8 @@ describe("ContactForm", () => {
   });
 
   it("keeps the form and what was typed when the call to the action fails, and sends on the next try", async () => {
-    // No answer comes back: the visitor's connection dropped, or a deployment was made meanwhile.
+    // No answer comes back: the visitor's connection dropped for a moment. (After a deployment that
+    // retired the action's id no retry from the page would pass: useGuardedActionState.test.tsx.)
     parseLeadForm.mockReturnValue({ ok: true, data: {} });
     submitContact.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).

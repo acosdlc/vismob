@@ -15,9 +15,18 @@ import { ADMIN_MESSAGES } from "./types";
 /** Texts of these screens that ADMIN_MESSAGES does not carry (listed in the PR for approval). */
 export const PROJECT_MESSAGES = {
   consent: "Publicarea cere acordul clientului; bifează-l întâi.",
-  noPhoto: "Publicarea cere cel puțin o poză; adaug-o întâi.",
-  /** Answered by the Poze form, so it names the box of the project form by its label (PROJECT_FORM_TEXTS.published). */
-  lastPhoto: "Un proiect publicat are nevoie de cel puțin o poză. Păstrează una sau debifează întâi „Publicat (apare pe site)”.",
+  /**
+   * Answered by the project form, while a photo that was only picked may be on screen
+   * under it: the row is written by the Poze form alone, so the text names that section
+   * and its button by their labels (PROJECT_PHOTOS_TEXTS.submit).
+   */
+  noPhoto: "Publicarea cere cel puțin o poză salvată: adaug-o la „Poze” și apasă „Salvează pozele”.",
+  /**
+   * Answered by the Poze form, so it names the box of the project form by its label
+   * (PROJECT_FORM_TEXTS.published) and says to save that form: the rule reads the stored
+   * flag, not the box as it stands on screen.
+   */
+  lastPhoto: "Un proiect publicat are nevoie de cel puțin o poză. Păstrează una sau debifează „Publicat (apare pe site)” și salvează proiectul întâi.",
   heroUnpublished: "Proiectul din hero trebuie să fie publicat.",
   model: "Alege un model din listă.",
   size: "Scrie lățimea și lungimea saltelei în cm (60–300).",

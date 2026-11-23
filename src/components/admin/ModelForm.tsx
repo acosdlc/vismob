@@ -31,8 +31,11 @@ export const MODEL_TEXTS = {
 /** The focus goes to the first invalid field in form order (DESIGN §3.16). */
 const FIELD_ORDER: readonly string[] = ["name", "note", "description", "families", "active", "sort"];
 
-/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
-const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
 
 // PLAN PR-8 „Modele”: the texts, the model ↔ family rules and `active` of one model,
 // in the site's card (DESIGN §4.8). `useGuardedActionState` drives the `saveModel`

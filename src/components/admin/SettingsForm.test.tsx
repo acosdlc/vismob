@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { redirect } from "next/navigation";
-import { Component, type ReactNode } from "react";
+import { Component, type ReactElement, type ReactNode } from "react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SETTINGS_FIELDS, SETTINGS_FINGERPRINT_FIELD, SETTINGS_GROUPS } from "@/lib/admin/settings-fields";
+import { settingsFingerprint } from "@/lib/admin/settings-fingerprint";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { SEED_SETTINGS, type Settings } from "@/lib/data/settings.seed";
 
@@ -11,6 +13,14 @@ const saveSettings = vi.fn<(prev: AdminActionState, formData: FormData) => Promi
 vi.mock("@/actions/admin/save-settings", () => ({
   saveSettings: (...args: [AdminActionState, FormData]) => saveSettings(...args),
 }));
+
+// The last tests put the form next to its two real neighbours: the Setări page around it and, in
+// one of them, the real saveSettings behind it. Both reach the `settings` row through this
+// signed-in client; the action also checks the session and expires the site's tag.
+const server = vi.hoisted(() => ({ createClient: vi.fn() }));
+vi.mock("next/cache", () => ({ updateTag: vi.fn(), cacheTag: vi.fn(), cacheLife: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: server.createClient }));
+vi.mock("@/lib/admin/auth", () => ({ getAdminSession: async () => ({ userId: "user-1", email: "atelier@example.com" }) }));
 
 // The hook is the real one. A test that sets `answered.state` gets the form of a page rendered
 // as the answer to a post made without JavaScript: it starts from that state, not from idle.
@@ -28,6 +38,7 @@ const upload = vi.fn();
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ storage: { from: () => ({ upload }) } }) }));
 vi.mock("browser-image-compression", () => ({ default: async (file: File) => file }));
 
+import SetariPage from "@/app/admin/(panel)/setari/page";
 import { PHOTO_TEXTS } from "./PhotoField";
 import { SettingsForm } from "./SettingsForm";
 
@@ -81,10 +92,56 @@ function pickPhoto() {
   fireEvent.change(input, { target: { files: [new File([new Uint8Array(10)], "poza.jpg", { type: "image/jpeg" })] } });
 }
 
+/**
+ * The form as the browser gets it: "rendered" there (Setări reached from the menu) or "hydrated",
+ * attached to the markup the server sent (the page opened by its address, or reloaded). React
+ * fills a box differently in the two: rendered, it writes the value into every box that has one;
+ * hydrated, it leaves a single-line box as the markup made it. A box nobody typed in then shows
+ * a default that changes later: rendered, only a box that was empty; hydrated, every single-line
+ * box as well, filled or not. (A filled textarea and the tick box never do.)
+ */
+function mount(form: ReactElement, how: "rendered" | "hydrated") {
+  if (how === "rendered") return render(form);
+  const container = document.body.appendChild(document.createElement("div"));
+  container.innerHTML = renderToString(form);
+  const served = container.querySelector("form");
+  const mismatch = vi.fn();
+  const view = render(form, { container, hydrate: true, onRecoverableError: mismatch });
+  // React attached to the server's markup: after a mismatch it would have rendered the form anew.
+  expect(mismatch).not.toHaveBeenCalled();
+  expect(container.querySelector("form")).toBe(served);
+  return view;
+}
+
+/**
+ * The signed-in client over a `settings` table of one row: the Setări page reads it, the real
+ * saveSettings reads and writes it. The table keeps what is written, so one save can follow
+ * another. Given no row, the read fails.
+ */
+function settingsTable(initial: Settings | null) {
+  let row = initial;
+  const maybeSingle = async () =>
+    row ? { data: { data: row }, error: null } : { data: null, error: { message: "connection refused" } };
+  const update = (payload: { data: Settings }) => ({
+    eq: () => ({
+      select: async () => {
+        row = payload.data;
+        return { data: [{ id: 1, data: row }], error: null };
+      },
+    }),
+  });
+  const client = {
+    from: () => ({ select: () => ({ eq: () => ({ maybeSingle }) }), update }),
+    storage: { from: () => ({ remove: async () => ({ error: null }) }) },
+  };
+  return { client, stored: () => row };
+}
+
 beforeEach(() => {
   answered.state = null;
   saveSettings.mockReset();
   saveSettings.mockResolvedValue({ status: "ok", message: ADMIN_MESSAGES.saved });
+  server.createClient.mockReset();
   upload.mockReset().mockResolvedValue({ data: {}, error: null });
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
 });
@@ -394,8 +451,11 @@ describe("SettingsForm", () => {
 
     fireEvent.click(submit);
 
+    // Not „Nu am putut salva…”, which the server answers when a write failed: here nobody knows
+    // whether the save went through, and after a deployment another try from this page cannot work.
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(alert).not.toHaveTextContent(ADMIN_MESSAGES.generic);
     expect(alert.className).toContain("border-error");
     // The same input, not a fresh one with the saved value: the form was never taken down.
     expect(screen.getByLabelText("Localitatea")).toBe(city);
@@ -421,7 +481,7 @@ describe("SettingsForm", () => {
     const [path] = upload.mock.calls[0];
 
     fireEvent.click(submit);
-    expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
     expect(hidden("atelier_photo_path")).toHaveValue(path);
 
     fireEvent.click(submit);
@@ -447,7 +507,7 @@ describe("SettingsForm", () => {
 
     await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
     expect(caught.mock.calls[0][0]).toBe(thrown);
-    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswer)).toBeNull();
   });
 
   it("posts the fingerprint of the row the page loaded, in a hidden input", async () => {
@@ -486,13 +546,17 @@ describe("SettingsForm", () => {
     expect(posted(1)).toBe(first);
     expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue(first);
 
-    // Neither did a call that brought no answer.
+    // A call that brought no answer may have written all the same: the form cannot know what the
+    // row holds now, so it goes on posting the fingerprint it has.
     saveSettings.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     fireEvent.click(submit);
-    await screen.findByText(ADMIN_MESSAGES.generic);
+    await screen.findByText(ADMIN_MESSAGES.noAnswer);
     expect(posted(2)).toBe(first);
     expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue(first);
 
+    // The retry carries that older fingerprint. If the lost call did write, saveSettings finds the
+    // row holding these very values and saves like any other time (save-settings.test.ts); either
+    // way its answer names the row as it is now, and the form follows it.
     saveSettings.mockResolvedValueOnce({ status: "ok", message: ADMIN_MESSAGES.saved, fingerprint: second });
     fireEvent.click(submit);
     await screen.findByText(ADMIN_MESSAGES.saved);
@@ -537,17 +601,73 @@ describe("SettingsForm", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(STALE);
   });
 
-  it("keeps the fingerprint its fields were filled from when the page is rendered again with a newer row", () => {
+  it.each(["rendered", "hydrated"] as const)(
+    "keeps every box and the fingerprint of the row it was filled from when the page is rendered again with a newer row (form %s)",
+    async (how) => {
+      // In the row this copy is filled from, WhatsApp and the story are empty.
+      const mine: Settings = { ...SETTINGS, whatsapp_number: "", story_text: "" };
+      const { rerender } = mount(<SettingsForm settings={mine} fingerprint={LOADED} />, how);
+      fireEvent.change(screen.getByLabelText("Localitatea"), { target: { value: "Cluj-Napoca" } });
+
+      // The page is rendered again under the open form (the refresh an action's answer brings, a
+      // return to the screen the router kept) with the row someone else saved meanwhile.
+      const newer: Settings = {
+        ...mine,
+        workshop_name: "Alt nume",
+        whatsapp_number: "40733111222",
+        address: "Str. Nouă nr. 1",
+        story_text: "Facem paturi din 2009.",
+        show_prices: false,
+      };
+      rerender(<SettingsForm settings={newer} fingerprint={"4c".repeat(32)} />);
+
+      // What she typed stays, and so does every box nobody typed in, filled or empty. Were the
+      // boxes to follow the page, the newer values would show in them with no notice, under the
+      // older fingerprint: a save would then write them back once that row was put back.
+      expect(screen.getByLabelText("Localitatea")).toHaveValue("Cluj-Napoca");
+      expect(screen.getByLabelText("Numele atelierului")).toHaveValue(mine.workshop_name);
+      expect(screen.getByLabelText("Adresa atelierului")).toHaveValue(mine.address);
+      expect(screen.getByLabelText("WhatsApp")).toHaveValue("");
+      expect(screen.getByLabelText("Povestea atelierului")).toHaveValue("");
+      expect(screen.getByRole("checkbox", { name: "Arată prețurile orientative pe site" })).toBeChecked();
+      // With the newer fingerprint this copy would pass the check and put its old values over that row.
+      expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue(LOADED);
+
+      // So a save carries one row, the one the form was filled from, with what she typed, under
+      // that row's fingerprint: refused while the stored row is the newer one.
+      fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+      await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(1));
+      const posted = saveSettings.mock.calls[0][1];
+      for (const field of SETTINGS_FIELDS) {
+        if (field.kind === "boolean" || field.kind === "photo") continue;
+        expect(posted.get(field.key)).toBe(field.key === "city" ? "Cluj-Napoca" : mine[field.key]);
+      }
+      expect(posted.get("show_prices")).toBe("on");
+      expect(posted.get(SETTINGS_FINGERPRINT_FIELD)).toBe(LOADED);
+    },
+  );
+
+  it("lets the photo field follow the page: after the form's own save, the next one names the new photo as the one it loaded with", async () => {
+    const saved = "2e".repeat(32);
     const { rerender } = render(<SettingsForm settings={SETTINGS} fingerprint={LOADED} />);
-    fireEvent.change(screen.getByLabelText("Localitatea"), { target: { value: "Cluj-Napoca" } });
+    const submit = screen.getByRole("button", { name: "Salvează" });
+    pickPhoto();
+    await waitFor(() => expect(submit).toBeEnabled());
+    const [path] = upload.mock.calls[0];
+    saveSettings.mockResolvedValueOnce({ status: "ok", message: ADMIN_MESSAGES.saved, fingerprint: saved });
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    expect(saveSettings.mock.calls[0][1].get("atelier_photo_path_before")).toBe(PHOTO);
 
-    // What a refresh of the route brings after someone else's save: the newer row and its fingerprint.
-    rerender(<SettingsForm settings={{ ...SETTINGS, workshop_name: "Alt nume" }} fingerprint={"4c".repeat(32)} />);
+    // The refresh that the save's answer brings: the page with the row as that save left it.
+    rerender(<SettingsForm settings={{ ...SETTINGS, atelier_photo_path: path }} fingerprint={saved} />);
 
-    // The boxes keep what they hold, so the form still stands on the row it was filled from. With
-    // the newer fingerprint its save would pass the check and put the old values over that row.
-    expect(screen.getByLabelText("Localitatea")).toHaveValue("Cluj-Napoca");
-    expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue(LOADED);
+    // By now the real action has removed PHOTO from the bucket. Were `_before` to stay on the row
+    // of the first render, as the boxes do, a second new photo would name PHOTO again as the one
+    // to remove and leave this one in the bucket for good.
+    expect(hidden("atelier_photo_path")).toHaveValue(path);
+    expect(hidden("atelier_photo_path_before")).toHaveValue(path);
+    expect(screen.queryByText(PHOTO_TEXTS.uploaded)).toBeNull();
   });
 
   it("starts from the page's own fingerprint when the page is the answer to a save posted without JavaScript", async () => {
@@ -582,5 +702,91 @@ describe("SettingsForm", () => {
     fireEvent.submit(submit.closest("form")!);
     await waitFor(() => expect(submit).toBeDisabled());
     expect(saveSettings).not.toHaveBeenCalled();
+  });
+});
+
+// The router keeps the Setări screen while she is on another one and renders the page again when
+// she comes back; an action's answer brings a render of the page too. The form under it is the
+// same form each time, unless the page gives it another key.
+describe("the Setări page, rendered again around SettingsForm", () => {
+  it("starts the form over from the stored row when the page first could not read it and now can", async () => {
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    server.createClient.mockResolvedValue(settingsTable(null).client);
+    const { rerender } = render(await SetariPage());
+    // No row was read: the seed in the boxes, no fingerprint, the save locked.
+    expect(screen.getByLabelText("Numele atelierului")).toHaveValue(SEED_SETTINGS.workshop_name);
+    expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeDisabled();
+    expect(screen.getAllByRole("alert")).toHaveLength(2);
+
+    server.createClient.mockResolvedValue(settingsTable(SETTINGS).client);
+    rerender(await SetariPage());
+
+    // A form that lived on would be a dead end: the seed still in its boxes, the button enabled,
+    // and a fingerprint no row answers to, so every save refused as changed in another window.
+    for (const field of SETTINGS_FIELDS) {
+      if (field.kind === "boolean" || field.kind === "photo") continue;
+      expect(screen.getByLabelText(field.label)).toHaveValue(SETTINGS[field.key] as string);
+    }
+    expect(screen.getByRole("checkbox", { name: "Arată prețurile orientative pe site" })).toBeChecked();
+    expect(hidden("atelier_photo_path")).toHaveValue(PHOTO);
+    expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue(settingsFingerprint(SETTINGS));
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeEnabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    reported.mockRestore();
+  });
+
+  it("keeps the open form and what was typed in it when the row it reads is a newer one", async () => {
+    server.createClient.mockResolvedValue(settingsTable(SETTINGS).client);
+    const { rerender } = render(await SetariPage());
+    const city = screen.getByLabelText("Localitatea");
+    fireEvent.change(city, { target: { value: "Cluj-Napoca" } });
+
+    server.createClient.mockResolvedValue(settingsTable({ ...SETTINGS, workshop_name: "Alt nume" }).client);
+    rerender(await SetariPage());
+
+    // The same input: another row is no reason to start over, and starting over would take her text.
+    expect(screen.getByLabelText("Localitatea")).toBe(city);
+    expect(city).toHaveValue("Cluj-Napoca");
+    expect(screen.getByLabelText("Numele atelierului")).toHaveValue(SETTINGS.workshop_name);
+    expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue(settingsFingerprint(SETTINGS));
+  });
+});
+
+// The two halves of the fingerprint check, together: what the form does after a call without an
+// answer, and what the action then makes of its retry. Each half is right by its own tests and
+// the two still contradicted each other here once.
+describe("SettingsForm over the real saveSettings", () => {
+  it("answers „Salvat.” to the retry of a save whose answer was lost, and goes on saving from that tab", async () => {
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const real = await vi.importActual<typeof import("@/actions/admin/save-settings")>("@/actions/admin/save-settings");
+    const table = settingsTable(SETTINGS);
+    server.createClient.mockResolvedValue(table.client);
+    saveSettings.mockImplementation(real.saveSettings);
+    // The first call reaches the server and is carried out; its answer is lost on the way back.
+    saveSettings.mockImplementationOnce(async (prev, formData) => {
+      await real.saveSettings(prev, formData);
+      throw new TypeError("Failed to fetch");
+    });
+    render(<SettingsForm settings={SETTINGS} fingerprint={settingsFingerprint(SETTINGS)} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+    fireEvent.change(screen.getByLabelText("Localitatea"), { target: { value: "Cluj-Napoca" } });
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(table.stored()?.city).toBe("Cluj-Napoca");
+
+    // She tries again, as the notice says. The form still posts the fingerprint from before her
+    // own save; the row holds what she posts, so it is a save like any other.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // With that answer the form stands on the row as it is: what she types next is saved too.
+    fireEvent.change(screen.getByLabelText("Termen de execuție"), { target: { value: "5 săptămâni" } });
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(table.stored()).toEqual({ ...SETTINGS, city: "Cluj-Napoca", lead_time: "5 săptămâni" });
+    expect(saveSettings).toHaveBeenCalledTimes(3);
+    reported.mockRestore();
   });
 });

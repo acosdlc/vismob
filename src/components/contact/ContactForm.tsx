@@ -88,6 +88,7 @@ function RequestForm({
   const [startedAt, setStartedAt] = useState("");
   const [uploading, setUploading] = useState(false);
   const tokenRequested = useRef(false);
+  const submitReported = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const confirmHeadingRef = useRef<HTMLHeadingElement>(null);
   const id = useId();
@@ -103,13 +104,18 @@ function RequestForm({
   const errors: FieldErrors = clientErrors ?? serverErrors ?? {};
 
   // Server-side field errors (a submit without JavaScript, or a value the client let through).
-  // On success the focus moves to the confirmation and contact_submit is reported once:
-  // `state` changes only when the action returns (ARHITECTURA §10).
+  // On success the focus moves to the confirmation and contact_submit is reported
+  // (ARHITECTURA §10), once per mount: `state` changes only when the action returns, but
+  // the router keeps the page while the visitor is elsewhere (`cacheComponents`) and runs
+  // its effects again each time it shows it. Without the ref one request would be counted
+  // on every return, and the focus, with the scroll, pulled back to the confirmation.
+  // „Trimite altă cerere” remounts the form, so a new request reports again.
   useEffect(() => {
     if (state.status === "error" && state.fieldErrors && formRef.current) {
       focusFirstInvalid(formRef.current, state.fieldErrors);
     }
-    if (state.status === "ok") {
+    if (state.status === "ok" && !submitReported.current) {
+      submitReported.current = true;
       confirmHeadingRef.current?.focus();
       trackEvent("contact_submit");
     }
@@ -120,7 +126,13 @@ function RequestForm({
     tokenRequested.current = true;
     issueFormToken()
       .then((token) => setStartedAt(token))
-      .catch(() => setStartedAt(""));
+      .catch(() => {
+        // The call brought no answer (the connection was away for a moment). The next focus
+        // or pointer-down asks again: without a token the server refuses every submit as
+        // sent too fast, and nothing short of a reload would get the request through.
+        tokenRequested.current = false;
+        setStartedAt("");
+      });
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {

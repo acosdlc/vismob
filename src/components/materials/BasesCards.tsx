@@ -7,7 +7,10 @@ import type { Base, BaseId } from "@/lib/configurator/types";
 // cu ladă”), one part per card. [12] comes from settings.leg_height_cm. The card for the
 // floor base covers both storage bases of the catalogue (ladă, sertare); its photo is the
 // first one of them that has one. A card shows only while the catalogue offers one of its
-// bases: a base the workshop switched off is not on the site, its card included.
+// bases: the card of the wooden or of the metal legs leaves the site when its base is
+// switched off. The floor-base card stays while either of its two bases is offered, and
+// its sentence, DESIGN's fixed text, still names both when one of them is switched off; a
+// shorter wording for that case is the owner's to approve.
 
 export interface BaseCard {
   id: "lemn" | "metal" | "podea";

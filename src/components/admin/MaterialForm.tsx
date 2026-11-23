@@ -68,8 +68,18 @@ const FIELD_ORDER: readonly string[] = [
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
-/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
-const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
+
+/**
+ * The same on the new-material screen. There the call may have created the colour, and saveMaterial
+ * inserts on every post without an id: another try could add it twice, so the text sends her to the list first.
+ * A constant of its own, like CALL_FAILED: the hook wants the same object on every render.
+ */
+const CALL_FAILED_NEW: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswerNew };
 
 /** The object-name slug of a row that has no id yet (PhotoField); the uuid keeps two drafts apart. */
 function draftSlug(): string {
@@ -78,16 +88,21 @@ function draftSlug(): string {
 
 // PLAN PR-8 „Materiale”, DESIGN §4.8: one card over every editable column of a
 // material. `useGuardedActionState` drives the `saveMaterial` Server Action (a call
-// that fails leaves the form as it is, with CALL_FAILED beside the button); the submit
-// goes through `onSubmit` so the typed values stay in place after a save (React resets
-// a form it submitted itself). A new material posts an empty hidden `id` and lands on
-// its own screen (the action redirects, which the hook lets through); an existing one
-// keeps its family and code (the select is disabled, a hidden input carries the family;
-// neither is editable). The submit is held while PhotoField is still uploading. Without
-// JavaScript the `<form action>` posts to the action. No client pre-pass: the admin
-// reads the server's field errors.
+// that fails leaves the form as it is, with CALL_FAILED beside the button, or
+// CALL_FAILED_NEW for a new material); the submit goes through `onSubmit` so the typed
+// values stay in place after a save (React resets a form it submitted itself). A new
+// material posts an empty hidden `id` and lands on its own screen (the action
+// redirects, which the hook lets through); an existing one keeps its family and code
+// (the select is disabled, a hidden input carries the family; neither is editable). The
+// submit is held while PhotoField is still uploading. Without JavaScript the
+// `<form action>` posts to the action. No client pre-pass: the admin reads the server's
+// field errors.
 export function MaterialForm({ material, families }: MaterialFormProps) {
-  const [state, formAction, pending, submit] = useGuardedActionState(saveMaterial, ADMIN_INITIAL_STATE, CALL_FAILED);
+  const [state, formAction, pending, submit] = useGuardedActionState(
+    saveMaterial,
+    ADMIN_INITIAL_STATE,
+    material === null ? CALL_FAILED_NEW : CALL_FAILED,
+  );
   const [edited, markEdited] = useSavedNotice(pending);
   const [hex, setHex] = useState(material?.hex ?? "");
   const [uploading, setUploading] = useState(false);

@@ -92,14 +92,17 @@ function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionP
     if (state.status === "error" && state.fieldErrors && formRef.current) {
       focusInvalid(formRef.current, state.fieldErrors);
     }
-    if (state.status === "ok") confirmHeadingRef.current?.focus();
   }, [state]);
 
-  // ARHITECTURA §10: quote_submit once per success, with the code the server recomputed
-  // („Modifică configurația” remounts the form, so a new request reports again).
+  // On success the focus moves to the confirmation and quote_submit is reported with the
+  // code the server recomputed (ARHITECTURA §10), once per mount: a later change of the
+  // configuration must not repeat them, and neither must the router, which keeps the page
+  // while the visitor is elsewhere (`cacheComponents`) and runs its effects again each time
+  // it shows it. „Modifică configurația” remounts the form, so a new request reports again.
   useEffect(() => {
     if (state.status !== "ok" || submitReported.current) return;
     submitReported.current = true;
+    confirmHeadingRef.current?.focus();
     trackEvent("quote_submit", { code: state.code ?? code });
   }, [state, code]);
 
@@ -108,7 +111,13 @@ function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionP
     tokenRequested.current = true;
     issueFormToken()
       .then((token) => setStartedAt(token))
-      .catch(() => setStartedAt(""));
+      .catch(() => {
+        // The call brought no answer (the connection was away for a moment). The next focus
+        // or pointer-down asks again: without a token the server refuses every submit as
+        // sent too fast, and nothing short of a reload would get the request through.
+        tokenRequested.current = false;
+        setStartedAt("");
+      });
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {

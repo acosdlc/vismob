@@ -16,12 +16,16 @@ import type { FieldErrors } from "@/lib/leads/types";
 import type { Settings } from "@/lib/data/settings.seed";
 
 export interface SettingsFormProps {
-  /** The current row merged over the seed (settingsFromData); the fields start from it. */
+  /**
+   * The current row merged over the seed (settingsFromData). The boxes are filled from the one
+   * the form is first rendered with and from no later one; only the photo field follows it.
+   */
   settings: Settings;
   /**
    * The fingerprint of the stored row `settings` was read from (settingsFingerprint); "" when
    * the page could not read it. The form posts it back, and saveSettings writes nothing when
-   * the stored row is no longer that one: someone else saved while this page was open.
+   * the stored row is no longer that one (someone else saved while this page was open), unless
+   * the row already holds the very values the post carries.
    */
   fingerprint: string;
   /**
@@ -41,8 +45,12 @@ const LONG_TEXTAREAS: ReadonlySet<string> = new Set(["story_text", "delivery_not
 /** Shown in the bar instead of the save notice while the form is locked. */
 const LOCKED = "Salvarea este oprită: formularul nu arată valorile salvate. Reîncarcă pagina înainte de a modifica ceva.";
 
-/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
-const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. Not `generic`, which the server answers when a write failed: here the
+ * save may have gone through, and after a deployment a retry from this page cannot reach the action.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
 
 // DESIGN §4.8 „Formulare”: one form over every Settings key, grouped as the seed
 // groups them. `useGuardedActionState` drives the Server Action: a call that fails
@@ -57,6 +65,12 @@ const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES
 export function SettingsForm({ settings, fingerprint, locked = false }: SettingsFormProps) {
   const [state, formAction, pending, submit] = useGuardedActionState(saveSettings, ADMIN_INITIAL_STATE, CALL_FAILED);
   const rowFingerprint = useRowFingerprint(fingerprint, state);
+  // The row the boxes are filled from: the one of the first render, like the fingerprint above.
+  // The page is rendered again under the open form, and its row may then be a newer one. React
+  // writes a changed default into a box nobody typed in (an empty one always, any single-line one
+  // on a page loaded by its address), so the boxes would show that row's values, unannounced,
+  // while the form went on posting the older fingerprint.
+  const [filled] = useState(settings);
   const [edited, markEdited] = useSavedNotice(pending);
   const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -98,7 +112,10 @@ export function SettingsForm({ settings, fingerprint, locked = false }: Settings
                   key={field.key}
                   field={field}
                   id={`${id}-${field.key}`}
-                  value={settings[field.key]}
+                  // The photo field alone follows the page: the path it posts as `_before` has to
+                  // be the one on the row after this form's own save, which the action's answer
+                  // brings in a new render of the page.
+                  value={(field.kind === "photo" ? settings : filled)[field.key]}
                   error={errors[field.key]}
                   locked={locked}
                   onUploadingChange={setUploading}
@@ -130,14 +147,21 @@ export function SettingsForm({ settings, fingerprint, locked = false }: Settings
  * The fingerprint the next save posts: that of the stored row the fields stand on. First the
  * row the page loaded, then the row each save from this form left (its answer carries the
  * fingerprint); without that step a second save from the same page would be refused as a
- * stale copy. A refused save and a failed call wrote nothing, so they leave it as it is.
+ * stale copy. A refused save wrote nothing, so it leaves the fingerprint as it is. A call that
+ * brought no answer leaves it too, but that call may have written: the form cannot know what
+ * the row holds then. saveSettings takes the retry of the same values all the same (the row
+ * already holds them) and its answer brings the fingerprint to follow; a retry that carries
+ * anything typed since is refused as a stale copy, and only a reload gets past that.
  *
- * `loaded` counts on the first render only. When the page is rendered again under an open
- * form (an action's answer can bring a refresh of the route), its row may be one someone
- * else saved meanwhile, while the boxes keep what they hold: posting that row's fingerprint
- * would let this copy write its old values over it. The answer the form starts with is not
- * followed either: there is one only on a page rendered whole as the answer to a post made
- * without JavaScript, and its fields and `loaded` come from a read made after that save.
+ * `loaded` counts on the first render only, like the row the boxes are filled from (`filled`
+ * in SettingsForm). The page is rendered again under an open form, with the answer of a save
+ * and when the admin returns to a screen the router kept, and its row may then be one someone
+ * else saved meanwhile, while the boxes hold the older row and what was typed: posting the
+ * newer row's fingerprint would let this copy write its old values over it. (A form first
+ * rendered without a row is not kept at all: the page gives it another key once it is read.) The
+ * answer the form starts with is not followed either: there is one only on a page rendered
+ * whole as the answer to a post made without JavaScript, and its fields and `loaded` come
+ * from a read made after that save.
  */
 function useRowFingerprint(loaded: string, answer: AdminActionState): string {
   // Derived while rendering, as React documents for state that follows a changed value

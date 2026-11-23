@@ -10,8 +10,8 @@ import { formatLeadDate, leadConfig, leadSourceText, leadTicketRows, whatsappHre
 import { ADMIN_MESSAGES, LEAD_KIND_LABELS } from "@/lib/admin/types";
 import { configCode, formatPrice, ticketRows } from "@/lib/configurator/format";
 import { resolve } from "@/lib/configurator/rules";
-import type { Catalog } from "@/lib/configurator/types";
-import { catalogFromRows } from "@/lib/data/catalog";
+import type { Catalog, Config } from "@/lib/configurator/types";
+import { catalogFromRows, getCatalog } from "@/lib/data/catalog";
 import { UPLOAD_LIMITS, type LeadRow } from "@/lib/leads/types";
 import { shareUrl } from "@/lib/site-url";
 import type { Tables } from "@/lib/supabase/database.types";
@@ -31,6 +31,10 @@ const READ_FAILED = "Nu am putut citi cererea. Reîncarcă pagina.";
 const PHOTOS_FAILED = "Nu am putut genera linkurile pozelor. Reîncarcă pagina.";
 /** Shown above the sheet when its rows no longer give the code stored with the request. */
 const CATALOG_CHANGED = "Catalogul s-a schimbat de când a venit cererea. Codul din bara fișei e cel trimis de client.";
+/** Shown where the sheet would be when the catalogue cannot be read (the sentence „Proiect nou” uses for the same failure). */
+const CATALOG_FAILED = "Nu am putut citi catalogul. Reîncarcă pagina.";
+/** Shown by the link when the public configurator would open another configuration than the sheet shows. */
+const LINK_OPENS_ANOTHER = "Site-ul nu mai oferă această configurație; linkul deschide alta.";
 
 type LeadFile = Pick<Tables<"lead_files">, "path" | "mime" | "size_bytes">;
 
@@ -44,18 +48,27 @@ interface Photo {
   url: string;
 }
 
-interface ConfigTicket {
+interface ConfigSheet {
   rows: { k: string; v: string }[];
-  href: string;
   /** The rows give another code than the one stored with the request. */
   changed: boolean;
+  /** The site's own catalogue gives the stored choices another code than the rows: the link opens another configuration. */
+  linkOpensAnother: boolean;
+}
+
+interface ConfigTicket {
+  /** Reopens the stored choices in the public configurator; built without a catalogue. */
+  href: string;
+  /** Null when the catalogue could not be read: the page then says so where the sheet would be. */
+  sheet: ConfigSheet | null;
 }
 
 // PLAN PR-7 „Cereri”, the detail: the ticket with the contact rows, the configuration
 // sheet and its link for a configurator lead, the photos through signed URLs, where
 // the request came from, then the status + notes form and the delete. Everything is
-// read through the signed-in user's cookie client (ARHITECTURA §8); the (panel)
-// layout's <Suspense> guard lets params and cookies() be read at the top level.
+// read through the signed-in user's cookie client (ARHITECTURA §8), except the site's
+// own catalogue, which its cached reader gives for one question: what the link opens.
+// The (panel) layout's <Suspense> guard lets params and cookies() be read at the top level.
 export default async function CererePage({ params }: PageProps<"/admin/cereri/[id]">) {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
@@ -112,14 +125,23 @@ export default async function CererePage({ params }: PageProps<"/admin/cereri/[i
 
           {config && (
             <div className="flex flex-col gap-4">
-              {config.changed && <Notice tone="info">{CATALOG_CHANGED}</Notice>}
-              <Ticket title="Fișă de configurare" number={lead.config_code ?? undefined} rows={config.rows} size="md">
-                <div className="border-t border-dashed border-rule pt-3">
-                  <Button href={config.href} variant="link">
-                    Deschide configurația
-                  </Button>
-                </div>
-              </Ticket>
+              {config.sheet ? (
+                <>
+                  {config.sheet.changed && <Notice tone="info">{CATALOG_CHANGED}</Notice>}
+                  <Ticket title="Fișă de configurare" number={lead.config_code ?? undefined} rows={config.sheet.rows} size="md">
+                    <div className="border-t border-dashed border-rule pt-3">
+                      {config.sheet.linkOpensAnother && <Notice tone="info">{LINK_OPENS_ANOTHER}</Notice>}
+                      <ConfigLink href={config.href} />
+                    </div>
+                  </Ticket>
+                </>
+              ) : (
+                <>
+                  <Notice tone="error">{CATALOG_FAILED}</Notice>
+                  {/* A column lays its items out full width; the link keeps its own. */}
+                  <ConfigLink href={config.href} className="self-start" />
+                </>
+              )}
             </div>
           )}
 
@@ -226,22 +248,55 @@ async function readWholeCatalog(supabase: ServerClient): Promise<Catalog> {
  * the rules themselves changed (a family the model no longer allows) or a row that
  * is gone still resolves to something else; then the code no longer matches the
  * stored one, which is what `changed` reports. The price is the one stored with
- * the lead, never recomputed.
+ * the lead, never recomputed. The link is built from the stored choices alone, so
+ * it is returned even when the catalogue cannot be read: `sheet` is then null and
+ * the page says so in its place, as it does for the photos and for the request.
  */
 async function configTicket(supabase: ServerClient, lead: LeadRow): Promise<ConfigTicket | null> {
   const config = leadConfig(lead);
   if (!config) return null;
+  const href = shareUrl(config);
   try {
     const resolved = resolve(config, await readWholeCatalog(supabase));
     const rows = ticketRows(resolved);
     if (lead.price_estimate_ron !== null) rows.push({ k: "Preț orientativ", v: formatPrice(lead.price_estimate_ron) });
-    const changed = lead.config_code !== null && configCode(resolved) !== lead.config_code;
-    return { rows, href: shareUrl(config), changed };
+    const code = configCode(resolved);
+    const changed = lead.config_code !== null && code !== lead.config_code;
+    return { href, sheet: { rows, changed, linkOpensAnother: await linkOpensAnother(config, code, lead.id) } };
   } catch (err) {
     unstable_rethrow(err);
     console.error(`CererePage: config of lead ${lead.id}`, err);
-    return null;
+    return { href, sheet: null };
   }
+}
+
+/**
+ * Whether „Deschide configurația” opens another configuration than the sheet shows.
+ * The link carries the stored choices to the public configurator, which resolves
+ * them against the catalogue the site offers (getCatalog(): the active rows only)
+ * and puts another colour, model or base in place of one that was switched off,
+ * where the sheet keeps the client's. The comparison is with the sheet's code, not
+ * the stored one: when the rules changed for both, the link opens what the sheet
+ * shows and the notice above the sheet covers it. This read stands on its own: when
+ * it fails only the hint is lost, never the sheet.
+ */
+async function linkOpensAnother(config: Config, sheetCode: string, leadId: string): Promise<boolean> {
+  try {
+    return configCode(resolve(config, await getCatalog())) !== sheetCode;
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error(`CererePage: site catalogue for the link of lead ${leadId}`, err);
+    return false;
+  }
+}
+
+/** The link that reopens the stored choices in the public configurator (DESIGN §5.3). */
+function ConfigLink({ href, className }: { href: string; className?: string }) {
+  return (
+    <Button href={href} variant="link" className={className}>
+      Deschide configurația
+    </Button>
+  );
 }
 
 /** Signed links to the lead's photos in the private bucket, through the user's client (RLS: admin_all_lead_uploads). */

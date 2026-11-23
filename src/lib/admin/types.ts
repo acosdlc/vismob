@@ -34,6 +34,18 @@ export const ADMIN_MESSAGES = {
   removed: "Șters.",
   notFound: "Nu am găsit înregistrarea.",
   generic: "Nu am putut salva. Încearcă din nou.",
+  /**
+   * For a call that brought no answer (useGuardedActionState), where `generic` would
+   * mislead: the save may have gone through all the same, and after a deployment a retry
+   * from the same page can never reach the action. So it says what to do in both cases.
+   */
+  noAnswer: "Nu am primit răspuns la salvare. Verifică legătura la internet și încearcă din nou. Dacă se repetă, copiază ce ai scris și reîncarcă pagina.",
+  /**
+   * The same on a screen that creates a record: the first try may have created it, and a
+   * second would add it twice. It ends as `noAnswer` does, because after a deployment a
+   * retry cannot reach the action from that page either.
+   */
+  noAnswerNew: "Nu am primit răspuns la salvare. Înainte să încerci din nou, verifică în listă, într-o filă nouă, dacă nu s-a adăugat deja. Dacă se repetă, copiază ce ai scris și reîncarcă pagina.",
   unavailable: "Serviciul nu e configurat pe acest mediu.",
 } as const;
 

@@ -303,8 +303,9 @@ describe("MaterialForm for a new material", () => {
     expect(saveMaterial.mock.calls[0][1].get(PHOTO_FIELDS.path)).toBe(path);
   });
 
-  it("keeps the form, what was typed and the uploaded photo when the call to the action fails, and saves on the next try", async () => {
+  it("keeps the form, what was typed and the uploaded photo when the call to the action fails, sends her to the list first, and posts it all again on the next try", async () => {
     // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    // On this screen the call may have created the colour all the same.
     saveMaterial.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
     const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -321,7 +322,11 @@ describe("MaterialForm for a new material", () => {
     fireEvent.click(submit);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    // The create text, not the one that asks for another try: saveMaterial inserts on every post
+    // without an id, so a second „Salvează” after a first that did arrive adds the colour twice.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswerNew);
+    // So the notice itself has to say where to look before that second try.
+    expect(alert).toHaveTextContent("Înainte să încerci din nou, verifică în listă, într-o filă nouă, dacă nu s-a adăugat deja.");
     expect(alert.className).toContain("border-error");
     // The same input, not a fresh empty one: the form was never taken down.
     expect(screen.getByLabelText(T.name)).toBe(name);
@@ -332,6 +337,7 @@ describe("MaterialForm for a new material", () => {
     expect(hidden(PHOTO_FIELDS.path)).toHaveValue(path);
     expect(submit).toBeEnabled();
 
+    // Nothing holds the form back once she has looked: the next try is a new call with everything in it.
     fireEvent.click(submit);
     // By its text: the photo field has a status line of its own.
     expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
@@ -361,7 +367,7 @@ describe("MaterialForm for a new material", () => {
 
     await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
     expect(caught.mock.calls[0][0]).toBe(thrown);
-    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswerNew)).toBeNull();
   });
 });
 
@@ -567,6 +573,35 @@ describe("MaterialForm for an existing material", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText(T.name)).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("asks for another try, not for a look in the list, when the call fails on an existing colour, and saves on that try", async () => {
+    // No answer comes back: here a dropped connection (a laptop just back from sleep gives the same),
+    // which the next try can get past. After a deployment that retired the action's id only a reload helps.
+    saveMaterial.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const name = screen.getByLabelText(T.name);
+    fireEvent.change(name, { target: { value: "Verde închis" } });
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    // Saving this row twice writes the same values twice: there is nothing to look for in the list.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh one with the saved name: the form was never taken down.
+    expect(screen.getByLabelText(T.name)).toBe(name);
+    expect(name).toHaveValue("Verde închis");
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveMaterial.mock.calls[1][1].get("id")).toBe("ct-verde");
+    expect(saveMaterial.mock.calls[1][1].get("name")).toBe("Verde închis");
+    reported.mockRestore();
   });
 });
 

@@ -155,6 +155,9 @@ describe("ProjectPhotosForm", () => {
     const submit = screen.getByRole("button", { name: T.submit });
     expect(submit).toHaveAttribute("type", "submit");
     expect(submit).toBeEnabled();
+    // The project form's refusal to publish without a photo sends her to this button by its
+    // label: the two texts must not drift apart.
+    expect(PROJECT_MESSAGES.noPhoto).toContain(`„${T.submit}”`);
     expect(screen.queryByText(T.empty)).toBeNull();
   });
 
@@ -457,7 +460,7 @@ describe("ProjectPhotosForm", () => {
     expect(screen.getAllByLabelText(T.alt)[0]).not.toHaveAttribute("aria-invalid");
   });
 
-  it("keeps the rows as typed and the uploaded photo with its alt when the call to the action fails, and saves on the next try", async () => {
+  it("keeps the rows as typed and the uploaded photo with its alt when the call brings no answer, says so, and saves on the next try", async () => {
     // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
     saveProjectPhotos.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
@@ -473,7 +476,10 @@ describe("ProjectPhotosForm", () => {
     fireEvent.click(submit);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(ADMIN_MESSAGES.generic);
+    // The save may have gone through all the same: not „Nu am putut salva”, which the
+    // server answers when it wrote nothing.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(alert).not.toHaveTextContent(ADMIN_MESSAGES.generic);
     expect(alert.className).toContain("border-error");
     // The same input, not a fresh one with the saved text: the form was never taken down.
     expect(screen.getAllByLabelText(T.alt)[0]).toBe(altA);
@@ -509,6 +515,6 @@ describe("ProjectPhotosForm", () => {
 
     await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
     expect(caught.mock.calls[0][0]).toBe(thrown);
-    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswer)).toBeNull();
   });
 });

@@ -38,8 +38,11 @@ const noPhoto = (): AdminActionState => ({ status: "error", message: PROJECT_MES
  * project (hidden `id` empty) gets its slug from the title and lands on its own screen,
  * where its photos are added: it is saved unpublished. An existing one keeps its slug
  * whatever the form posts. When the project is flagged `hero`, every other hero flag is
- * cleared first, so at most one project carries it. A successful write expires the
- * "projects" tag, so the site reads the new rows on its next request (ARHITECTURA §8).
+ * cleared first, so at most one project carries it. The photo rule is checked per save,
+ * like the hero rule, and is not enforced by the database: two saves that overlap, from
+ * two tabs or two admins, can each pass it and together leave a published project
+ * without a photo. A successful write expires the "projects" tag, so the site reads the
+ * new rows on its next request (ARHITECTURA §8).
  */
 export async function saveProject(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
@@ -56,8 +59,10 @@ export async function saveProject(_prev: AdminActionState, formData: FormData): 
   if (!canPublish(input)) {
     return { status: "error", message: PROJECT_MESSAGES.consent, fieldErrors: { published: PROJECT_MESSAGES.consent } };
   }
-  // A new project has no photo yet: the photos form needs the row to exist. An existing
-  // one is checked against its rows in updateProject.
+  // A new project has no photo yet: the photos form needs the row to exist. For that
+  // reason the creation form offers neither „Publicat” nor the hero box (ProjectForm), so
+  // this refusal answers a post that did not come from it. An existing project is checked
+  // against its rows in updateProject.
   if (projectId === "" && !publishedHasPhoto(input, 0)) return noPhoto();
   if (!heroAllowed(input)) {
     return { status: "error", message: PROJECT_MESSAGES.heroUnpublished, fieldErrors: { hero: PROJECT_MESSAGES.heroUnpublished } };

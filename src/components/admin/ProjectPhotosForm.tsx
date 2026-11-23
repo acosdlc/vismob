@@ -43,8 +43,12 @@ export const PROJECT_PHOTOS_TEXTS = {
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
-/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
-const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made
+ * meanwhile): useGuardedActionState. The save may have gone through all the same, so the
+ * text is not the one the server answers when it wrote nothing (ADMIN_MESSAGES.generic).
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
 
 /** The rows as the site orders them (projectsFromRows): by sort, then path. */
 function sortedPhotos(photos: ProjectPhotosFormPhoto[]): ProjectPhotosFormPhoto[] {

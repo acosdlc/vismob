@@ -24,6 +24,17 @@ describe("Ticket", () => {
     expect(dds).toEqual(["Capitonat", "180 × 200 cm", "Catifea, verde sticlă"]);
   });
 
+  it("keeps the line breaks of a value typed on several lines", () => {
+    // The client's message on the request screen of the panel, as she typed it in the form.
+    const message = "Bună ziua,\nCamera are 3,2 × 4 m.\n- pat de 160\n- cu ladă";
+    render(<Ticket title="Cerere de ofertă" rows={[...ROWS, { k: "Mesaj", v: message }]} size="md" />);
+    const value = screen.getByText("Mesaj").nextElementSibling;
+    expect(value?.tagName).toBe("DD");
+    // The text is printed as stored; pre-line is what makes the browser break the lines.
+    expect(value?.textContent).toBe(message);
+    expect(value?.className).toContain("whitespace-pre-line");
+  });
+
   it("switches row sizes and renders children under the rows", () => {
     const { container } = render(
       <Ticket title="Fișă de configurare" rows={ROWS} size="md">

@@ -43,8 +43,11 @@ const ROUND_HINT = "Prețul se rotunjește la acest pas, de exemplu 50.";
 
 const HINT_CLASSES = "text-[14px] leading-[1.4] text-muted";
 
-/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
-const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
 
 // DESIGN §4.8 „Catalog și prețuri”: the grid is a table with a row per model and a
 // column per standard width, each cell an Input; the preview of the three typical

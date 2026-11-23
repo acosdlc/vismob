@@ -25,8 +25,11 @@ export interface LeadStatusFormProps {
 export const NOTES_MAX = 4000;
 export const NOTES_HINT = "Doar pentru atelier; clientul nu le vede.";
 
-/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
-const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
 
 // PLAN PR-7 „Cereri”: the status select (nou … spam) and the internal notes of one
 // request, in the site's card (DESIGN §4.8). `useGuardedActionState` drives the

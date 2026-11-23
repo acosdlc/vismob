@@ -231,9 +231,11 @@ describe("canPublish / publishedHasPhoto / heroAllowed", () => {
   });
 
   it("carries the two messages of the photo rule, as the actions answer them", () => {
-    expect(PROJECT_MESSAGES.noPhoto).toBe("Publicarea cere cel puțin o poză; adaug-o întâi.");
+    // Each is answered by one form of the project's screen and sends her to the other one:
+    // it names the place and the button to press there, since each form saves by itself.
+    expect(PROJECT_MESSAGES.noPhoto).toBe("Publicarea cere cel puțin o poză salvată: adaug-o la „Poze” și apasă „Salvează pozele”.");
     expect(PROJECT_MESSAGES.lastPhoto).toBe(
-      "Un proiect publicat are nevoie de cel puțin o poză. Păstrează una sau debifează întâi „Publicat (apare pe site)”.",
+      "Un proiect publicat are nevoie de cel puțin o poză. Păstrează una sau debifează „Publicat (apare pe site)” și salvează proiectul întâi.",
     );
   });
 

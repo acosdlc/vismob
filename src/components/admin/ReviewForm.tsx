@@ -46,19 +46,34 @@ const FIELD_ORDER: readonly string[] = ["first_name", "city", "body", "model_lab
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
-/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
-const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
+
+/**
+ * The same on the new-review screen. There the call may have created the review, and saveReview
+ * inserts on every post without an id: another try could add it twice, so the text sends her to the list first.
+ * A constant of its own, like CALL_FAILED: the hook wants the same object on every render.
+ */
+const CALL_FAILED_NEW: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswerNew };
 
 // PLAN PR-9 „Recenzii”, DESIGN §4.8: one card over every editable column of a review.
 // `useGuardedActionState` drives the `saveReview` Server Action (a call that fails
-// leaves the form as it is, with CALL_FAILED beside the button); the submit goes through
-// `onSubmit` so the typed values stay in place after a save (React resets a form it
-// submitted itself). A new review posts an empty hidden `id` and lands on its own
-// screen (the action redirects, which the hook lets through). Without JavaScript the
-// `<form action>` posts to the action. No client pre-pass: the admin reads the server's
-// field errors, the consent rule included (it lands on the „Publicată” checkbox).
+// leaves the form as it is, with CALL_FAILED beside the button, or CALL_FAILED_NEW for a
+// new review); the submit goes through `onSubmit` so the typed values stay in place
+// after a save (React resets a form it submitted itself). A new review posts an empty
+// hidden `id` and lands on its own screen (the action redirects, which the hook lets
+// through). Without JavaScript the `<form action>` posts to the action. No client
+// pre-pass: the admin reads the server's field errors, the consent rule included (it
+// lands on the „Publicată” checkbox).
 export function ReviewForm({ review }: ReviewFormProps) {
-  const [state, formAction, pending, submit] = useGuardedActionState(saveReview, ADMIN_INITIAL_STATE, CALL_FAILED);
+  const [state, formAction, pending, submit] = useGuardedActionState(
+    saveReview,
+    ADMIN_INITIAL_STATE,
+    review === null ? CALL_FAILED_NEW : CALL_FAILED,
+  );
   const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();

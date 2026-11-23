@@ -39,8 +39,11 @@ const FIELD_ORDER: readonly string[] = ["name", "description", "specs"];
 /** The names of the grid's boxes: `spec_k_1`, `spec_v_1` … */
 const SPEC_BOX_NAMES: ReadonlySet<string> = new Set(SPEC_ROW_NUMBERS.flatMap((row) => Object.values(specFieldNames(row))));
 
-/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
-const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
 
 // PLAN PR-8 „Familii”: the name, the description and the specification rows of one
 // material family, in the site's card (DESIGN §4.8). `useGuardedActionState` drives the

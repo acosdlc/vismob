@@ -164,26 +164,57 @@ describe("saveSettings", () => {
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
-  it("answers the field errors of an invalid form without writing", async () => {
+  it("answers the field errors of an invalid form from a current copy, after reading the stored row and without writing", async () => {
+    const { client, calls, stored } = fakeClient();
+    mocks.createClient.mockResolvedValue(client);
     const fd = formFor({ ...SAVED, instagram_url: "instagram.com/atelier", whatsapp_number: "+40722" });
+
     const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+
     expect(state).toEqual({
       status: "error",
       message: ADMIN_MESSAGES.invalid,
       fieldErrors: { instagram_url: SETTINGS_MESSAGES.url, whatsapp_number: SETTINGS_MESSAGES.digits },
     });
-    expect(mocks.createClient).not.toHaveBeenCalled();
+    // The row is read first, to tell a stale copy so before anything about its fields; this copy is current.
+    expect(calls.order).toEqual(["read"]);
+    expect(stored()).toBe(STORED);
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
   it("refuses an emptied text the site prints inside a sentence, without writing", async () => {
+    const { client, calls } = fakeClient();
+    mocks.createClient.mockResolvedValue(client);
+
     const state = await saveSettings(ADMIN_INITIAL_STATE, formFor({ ...SAVED, cui: "", mattresses_note: "  ", story_text: "" }));
+
     expect(state).toEqual({
       status: "error",
       message: ADMIN_MESSAGES.invalid,
       fieldErrors: { cui: ADMIN_MESSAGES.required, mattresses_note: ADMIN_MESSAGES.required },
     });
-    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(calls.order).toEqual(["read"]);
+  });
+
+  it("tells a stale copy that it is stale before anything about its fields", async () => {
+    // Someone else saved after this page was opened, and this copy also has a required box emptied.
+    // Field errors first would have her fill the box in, only to read on the next try that the
+    // copy cannot be saved at all.
+    const invalid: Settings = { ...SAVED, team_size: "" };
+    const newer = asStored({ ...SEED_SETTINGS, city: "Cluj-Napoca" });
+    // A post that does not parse has no row of its own to compare with the stored one, so the
+    // fingerprint alone decides: the older one, none, an empty one.
+    for (const fingerprint of [LOADED, null, ""]) {
+      const { client, calls, stored } = fakeClient({ row: newer });
+      mocks.createClient.mockResolvedValue(client);
+
+      const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(invalid, fingerprint));
+
+      expect(state).toEqual(STALE);
+      expect(calls.order).toEqual(["read"]);
+      expect(stored()).toBe(newer);
+    }
+    expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
   it("reads the stored row, then writes the whole object to settings row 1 and expires the settings tag", async () => {
@@ -227,7 +258,7 @@ describe("saveSettings", () => {
     expect(console.error).not.toHaveBeenCalled();
   });
 
-  it("writes nothing for a post that carries no fingerprint, an empty one or one that is not a text", async () => {
+  it("writes nothing for a post with other values that carries no fingerprint, an empty one or one that is not a text", async () => {
     const posts = [formFor(SAVED, null), formFor(SAVED, ""), formFor(SAVED, "nu"), formFor(SAVED, null)];
     // A file under the input's name is not the fingerprint, whatever its content.
     posts[3].set(SETTINGS_FINGERPRINT_FIELD, new File([LOADED], "amprenta.txt"));
@@ -243,6 +274,74 @@ describe("saveSettings", () => {
       expect(stored()).toBe(STORED);
     }
     expect(mocks.updateTag).not.toHaveBeenCalled();
+  });
+
+  it("takes the retry of a save whose answer was lost: the stored row already holds what the post carries", async () => {
+    const before = asStored({ ...SEED_SETTINGS, atelier_photo_path: OLD_PHOTO });
+    const loaded = settingsFingerprint(before);
+    const { client, calls, removed, stored } = fakeClient({ row: before });
+    mocks.createClient.mockResolvedValue(client);
+    // As she typed it: spaces around the name, the WhatsApp number in its national form, a new photo.
+    const typed: Settings = { ...SEED_SETTINGS, city: " Cluj-Napoca ", whatsapp_number: "0722123456", atelier_photo_path: NEW_PHOTO };
+    const kept: Settings = { ...typed, city: "Cluj-Napoca", whatsapp_number: "40722123456" };
+    const post = (settings: Settings, fingerprint: string | null, photoBefore: string) => {
+      const fd = formFor(settings, fingerprint);
+      fd.set("atelier_photo_path_before", photoBefore);
+      return fd;
+    };
+
+    // The first call is carried out, but its answer never reaches the form (the connection
+    // dropped): the form says it got no answer and keeps the fingerprint it loaded with.
+    expect(await saveSettings(ADMIN_INITIAL_STATE, post(typed, loaded, OLD_PHOTO))).toEqual(saved(kept));
+    expect(stored()).toEqual(kept);
+
+    // „Salvează” again with nothing changed. The row is no longer the one the page loaded, but
+    // it holds exactly these values, so no one's save can be lost: this one runs like any other.
+    const retried = await saveSettings(ADMIN_INITIAL_STATE, post(typed, loaded, OLD_PHOTO));
+
+    expect(retried).toEqual(saved(kept));
+    expect(stored()).toEqual(kept);
+    expect(calls.order).toEqual(["read", "write", "read", "write"]);
+    // The photo the first call replaced is removed once more: it is on no row, so that changes nothing.
+    expect(removed).toEqual([
+      ["media", [OLD_PHOTO]],
+      ["media", [OLD_PHOTO]],
+    ]);
+    expect(mocks.updateTag).toHaveBeenCalledTimes(2);
+
+    // The form follows the fingerprint of that answer, so its next save passes too.
+    const next: Settings = { ...typed, lead_time: "5 săptămâni" };
+    const followed = retried.status === "ok" ? (retried.fingerprint ?? null) : null;
+    expect(await saveSettings(retried, post(next, followed, NEW_PHOTO))).toEqual(saved({ ...kept, lead_time: "5 săptămâni" }));
+    expect(removed).toHaveLength(2);
+  });
+
+  it("still refuses, after a lost answer, a retry that carries anything typed since", async () => {
+    const { client, calls, stored } = fakeClient();
+    mocks.createClient.mockResolvedValue(client);
+    const first: Settings = { ...SEED_SETTINGS, city: "Cluj-Napoca" };
+    expect(await saveSettings(ADMIN_INITIAL_STATE, formFor(first, LOADED))).toEqual(saved(first));
+
+    // With one more value changed the post is no longer the stored row, and the fingerprint it
+    // carries is the one from before her own save: like any stale copy, it is refused.
+    const more = await saveSettings(ADMIN_INITIAL_STATE, formFor({ ...first, lead_time: "5 săptămâni" }, LOADED));
+
+    expect(more).toEqual(STALE);
+    expect(stored()).toEqual(first);
+    expect(calls.order).toEqual(["read", "write", "read"]);
+    expect(mocks.updateTag).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes by the values alone when they are the stored row's: such a post changes nothing, whatever fingerprint it carries", async () => {
+    for (const fingerprint of [null, "", "nu"]) {
+      const { client, stored } = fakeClient({ row: asStored(SAVED) });
+      mocks.createClient.mockResolvedValue(client);
+
+      const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(SAVED, fingerprint));
+
+      expect(state).toEqual(saved(SAVED));
+      expect(stored()).toEqual(SAVED);
+    }
   });
 
   it("lets the same tab save again with the fingerprint its last save returned, and refuses the copy left open elsewhere", async () => {
@@ -290,40 +389,50 @@ describe("saveSettings", () => {
   });
 
   it("takes a missing row as changed: the reloaded page then says it cannot read the settings", async () => {
-    const { client, calls } = fakeClient({ row: null });
-    mocks.createClient.mockResolvedValue(client);
+    // Whatever the post carries: with no row there is nothing it could be current with, or equal to.
+    for (const settings of [SAVED, { ...SAVED, team_size: "" }]) {
+      const { client, calls } = fakeClient({ row: null });
+      mocks.createClient.mockResolvedValue(client);
 
-    const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(SAVED));
+      const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(settings));
 
-    expect(state).toEqual(STALE);
-    expect(calls.order).toEqual(["read"]);
+      expect(state).toEqual(STALE);
+      expect(calls.order).toEqual(["read"]);
+    }
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
   it("answers the generic message when the stored row cannot be read, logs the real one and writes nothing", async () => {
-    const { client, calls, removed } = fakeClient({ readError: { message: "canceling statement due to statement timeout" } });
-    mocks.createClient.mockResolvedValue(client);
-    const fd = formFor({ ...SAVED, atelier_photo_path: NEW_PHOTO });
-    fd.set("atelier_photo_path_before", OLD_PHOTO);
+    // Also for a post that does not parse: whether the copy is current comes before its fields, and that is not known.
+    for (const settings of [SAVED, { ...SAVED, team_size: "" }]) {
+      const { client, calls, removed } = fakeClient({ readError: { message: "canceling statement due to statement timeout" } });
+      mocks.createClient.mockResolvedValue(client);
+      const fd = formFor({ ...settings, atelier_photo_path: NEW_PHOTO });
+      fd.set("atelier_photo_path_before", OLD_PHOTO);
 
-    const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+      const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
 
-    expect(state).toEqual({ status: "error", message: ADMIN_MESSAGES.generic });
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("statement timeout"));
-    expect(calls.order).toEqual(["read"]);
-    expect(removed).toEqual([]);
+      expect(state).toEqual({ status: "error", message: ADMIN_MESSAGES.generic });
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining("statement timeout"));
+      expect(calls.order).toEqual(["read"]);
+      expect(removed).toEqual([]);
+    }
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
   it("refuses a workshop photo path outside the site folder, without writing", async () => {
+    const { client, calls } = fakeClient();
+    mocks.createClient.mockResolvedValue(client);
     const fd = formFor({ ...SAVED, atelier_photo_path: "materials/ct-verde-1792569508760.webp" });
+
     const state = await saveSettings(ADMIN_INITIAL_STATE, fd);
+
     expect(state).toEqual({
       status: "error",
       message: ADMIN_MESSAGES.invalid,
       fieldErrors: { atelier_photo_path: SETTINGS_MESSAGES.photo },
     });
-    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(calls.order).toEqual(["read"]);
   });
 
   it("removes the workshop photo the save replaced, only after the write", async () => {
@@ -437,9 +546,12 @@ describe("saveSettings", () => {
   it("answers the unavailable message when the client cannot be created (no env)", async () => {
     mocks.createClient.mockRejectedValue(new Error("Missing environment variable NEXT_PUBLIC_SUPABASE_URL"));
 
-    const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(SAVED));
+    // The same for a post that does not parse: nothing can be saved here, whatever she corrects.
+    for (const settings of [SAVED, { ...SAVED, team_size: "" }]) {
+      const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(settings));
 
-    expect(state).toEqual({ status: "error", message: ADMIN_MESSAGES.unavailable });
+      expect(state).toEqual({ status: "error", message: ADMIN_MESSAGES.unavailable });
+    }
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 });
@@ -490,13 +602,15 @@ describe("the Setări page and saveSettings", () => {
       // Locked on purpose: the fields show the seed.
       expect(form).toEqual({ settings: SEED_SETTINGS, fingerprint: "", locked: true });
 
-      // Should a post leave that form all the same, the table keeps its row.
-      const table = fakeClient();
+      // Should a post leave that form all the same, with the seed it shows, the table keeps its
+      // row: the post carries neither the row's fingerprint nor the row's values.
+      const row = asStored(SAVED);
+      const table = fakeClient({ row });
       mocks.createClient.mockResolvedValue(table.client);
-      const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(SAVED, form.fingerprint));
+      const state = await saveSettings(ADMIN_INITIAL_STATE, formFor(form.settings, form.fingerprint));
       expect(state).toEqual(STALE);
       expect(table.calls.order).toEqual(["read"]);
-      expect(table.stored()).toBe(STORED);
+      expect(table.stored()).toBe(row);
     }
 
     // The same when there is no client to read with (no Supabase variables on this environment).

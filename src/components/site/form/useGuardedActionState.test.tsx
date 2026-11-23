@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { notFound, redirect } from "next/navigation";
+import { UnrecognizedActionError } from "next/dist/client/components/unrecognized-action-error";
+import { notFound, redirect, unstable_isUnrecognizedActionError } from "next/navigation";
 import { Component, startTransition, type FormEvent, type ReactNode } from "react";
 import { hydrateRoot, type ReactFormState, type Root } from "react-dom/client";
 import { renderToReadableStream } from "react-dom/server";
@@ -10,7 +11,8 @@ import { useGuardedActionState } from "./useGuardedActionState";
 type Action = (prev: AdminActionState, formData: FormData) => Promise<AdminActionState>;
 
 const SAVED: AdminActionState = { status: "ok", message: ADMIN_MESSAGES.saved };
-const FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
+// What the admin forms pass as `failed`: a text for a call that brought no answer.
+const FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
 
 // The forms in small: the hook drives the action, the form element carries `formAction`,
 // the submit goes through `onSubmit` to `submit`, and the input is uncontrolled.
@@ -92,10 +94,10 @@ describe("useGuardedActionState", () => {
     expect(action.mock.calls[1][0]).toBe(SAVED);
   });
 
+  // The causes that pass: the mock fails once and then answers, as the server would.
   it.each<[string, unknown]>([
     ["a dropped connection", new TypeError("Failed to fetch")],
     ["an answer that is not the action's", new Error("An unexpected response was received from the server.")],
-    ["an action the server no longer knows, after a deployment", new Error('Server Action "40c1" was not found on the server.')],
     ["a rejection that is not an Error", "offline"],
   ])("turns %s into the failed state, with the form and what was typed still there", async (_name, rejection) => {
     const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -112,7 +114,7 @@ describe("useGuardedActionState", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.generic);
+    expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
     expect(caught).not.toHaveBeenCalled();
     // The reason is not on screen, so it is left on the console.
     expect(reported).toHaveBeenCalledTimes(1);
@@ -130,6 +132,49 @@ describe("useGuardedActionState", () => {
     expect(action.mock.calls[1][0]).toBe(FAILED);
     expect(action.mock.calls[1][1].get("name")).toBe("Catifea fină");
     expect(reported).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers an action the server no longer knows, after a deployment, with the failed state on every try", async () => {
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // What Next.js throws in the browser when the server answers that it does not know the
+    // action's id (server-action-reducer.js); next/navigation exports only the check for it.
+    // The id is compiled into the script the page loaded, so the server answers every later
+    // call from that page the same way: this mock rejects every call.
+    const retired = new UnrecognizedActionError(
+      'Server Action "40c1" was not found on the server. \nRead more: https://nextjs.org/docs/messages/failed-to-find-server-action',
+    );
+    expect(unstable_isUnrecognizedActionError(retired)).toBe(true);
+    const action = vi.fn<Action>().mockRejectedValue(retired);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <Harness action={action} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+    const name = screen.getByLabelText("Nume");
+    fireEvent.change(name, { target: { value: "Catifea fină" } });
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      fireEvent.click(submit);
+
+      // One report per call the guard caught: the notice below answers this try, not the one before.
+      await waitFor(() => expect(reported).toHaveBeenCalledTimes(attempt));
+      expect(reported).toHaveBeenLastCalledWith("useGuardedActionState", retired);
+      const notice = await screen.findByRole("alert");
+      expect(notice).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+      // No retry from this page can work, so the notice itself has to name the way out: a reload.
+      expect(notice).toHaveTextContent(/reîncarcă pagina/);
+      expect(caught).not.toHaveBeenCalled();
+      // The same input, with its text: neither try took the form down.
+      expect(screen.getByLabelText("Nume")).toBe(name);
+      expect(name).toHaveValue("Catifea fină");
+      expect(submit).toBeEnabled();
+    }
+    expect(action).toHaveBeenCalledTimes(2);
+    expect(action.mock.calls[1][0]).toBe(FAILED);
+    expect(action.mock.calls[1][1].get("name")).toBe("Catifea fină");
   });
 
   it.each<[string, unknown]>([
@@ -152,7 +197,7 @@ describe("useGuardedActionState", () => {
     // The very error, untouched: the framework reads its digest.
     expect(caught.mock.calls[0][0]).toBe(control);
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByText(ADMIN_MESSAGES.generic)).toBeNull();
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswer)).toBeNull();
     expect(reported).not.toHaveBeenCalled();
   });
 });
@@ -240,7 +285,7 @@ describe("useGuardedActionState on the server, for a submit without JavaScript",
 
       fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
 
-      expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.generic);
+      expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
       expect(run.mock.calls[0][0]).toBe(SAVED);
     } finally {
       act(() => root?.unmount());
