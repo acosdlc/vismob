@@ -17,6 +17,7 @@ import { Button } from "@/components/site/Button";
 import { Eyebrow } from "@/components/site/Eyebrow";
 import { Checkbox, Field, FieldError, FormCard, Input, Label, Select, Textarea, formStackClasses } from "@/components/site/form";
 import { collectSource, focusFirstInvalid as focusFirstInvalidIn } from "@/components/site/form/helpers";
+import { trackEvent } from "@/lib/analytics";
 import {
   CONSENT_TEXT,
   FORM_FIELDS,
@@ -96,11 +97,16 @@ function RequestForm({
   const errors: FieldErrors = clientErrors ?? serverErrors ?? {};
 
   // Server-side field errors (a submit without JavaScript, or a value the client let through).
+  // On success the focus moves to the confirmation and contact_submit is reported once:
+  // `state` changes only when the action returns (ARHITECTURA §10).
   useEffect(() => {
     if (state.status === "error" && state.fieldErrors && formRef.current) {
       focusFirstInvalid(formRef.current, state.fieldErrors);
     }
-    if (state.status === "ok") confirmHeadingRef.current?.focus();
+    if (state.status === "ok") {
+      confirmHeadingRef.current?.focus();
+      trackEvent("contact_submit");
+    }
   }, [state]);
 
   function requestToken() {

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-export const metadata: Metadata = { title: "Termeni și condiții" };
+export const metadata: Metadata = { title: "Termeni și condiții", alternates: { canonical: "/termeni" } };
 
 export default function Page() {
   return (

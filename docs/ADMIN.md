@@ -43,6 +43,20 @@ The same two steps add any further admin.
 - **PR-9**: `/admin/lucrari` (projects: title, ticket number, model, mattress size, material, base, extras, city, delivery date, the client's consent, `published`, `featured` for the Acasă gallery, `hero` for the big Acasă photo with the ticket, one project at a time; the photos of each project with alt text and order, the first one being the tile and hero photo), `/admin/recenzii` (reviews with the client's written consent, `published`, order), and the workshop photo of the „Atelierul” section, uploaded from Setări. Publishing a project or a review needs the consent ticked; the site shows only published rows with consent.
 - **PR-10**: no new screen. When one of a request's two notification emails has failed three times (the `retry-notifications` cron, ARHITECTURA §6.1 step 4), the alert email „Notificare eșuată” reaches `NOTIFY_EMAIL` with the link „Deschide cererea”, which opens that request at `/admin/cereri/[id]`.
 
+## Entering the content (PR-11)
+
+The real content goes in through the panel, in this order, because each screen's values show up in the next one's forms and on the site:
+
+1. **Setări**: every key, with `show_prices` as the workshop decided, the Google Business Profile link (`google_profile_url`) and the atelier photo. The footer, the hero ticket, the facts row and the FAQ answers read from here.
+2. **Catalog**: the families' descriptions and specification tables, every material with its photo, supplier, supplier code and price category A/B/C (a code is assigned once and never reused; a colour no longer offered is deactivated, not deleted), the model texts and the model ↔ family rules, the bases' notes and photos.
+3. **Prețuri**: the grid, checked against the three preview configurations.
+4. **Lucrări**: the projects with their photos and the client's consent, `published`, `featured`, and exactly one `hero`.
+5. **Recenzii**: with the written consent, `published`, order.
+
+The catalogue and the grid can also arrive as a filled `docs/atelier/05-catalog.xlsx` (the template `npm run catalog:template` generates; `docs/LISTA-ATELIER.md` §8). Then `npm run catalog:import <file>` validates it, lists every problem, and writes two migrations (`<ts>_catalog_from_excel.sql`, `<ts>_pricing.sql`) that the session applies through the `db-change` skill; photos still go in through the panel. The template is built from the seed catalogue, so the Excel route goes before any catalogue edit in the panel (or the template is regenerated first): a new colour in the sheet gets the next free code of its family, and the migration stops before writing anything if the panel gave that code or id away meanwhile; a colour deactivated in the panel stays deactivated, and a supplier typed there is kept where the sheet's cell is empty. A migration does not expire the `catalog` and `pricing` cache tags the way a panel save does: after the Excel route, one save in Catalog and one in Prețuri (or a day, the cache's lifetime) puts the imported rows on the site.
+
+The gate that proves no `[...]` placeholder is left (`tests/e2e/no-placeholders.spec.ts`) runs by hand against the preview, as `docs/LAUNCH.md` describes.
+
 ## Indexing
 
 Every `/admin` page carries `<meta name="robots" content="noindex, nofollow">` (`src/app/admin/layout.tsx`). From PR-10, `robots.txt` also disallows `/admin`.

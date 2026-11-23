@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-export const metadata: Metadata = { title: "Politica de cookies" };
+export const metadata: Metadata = { title: "Politica de cookies", alternates: { canonical: "/cookies" } };
 
 export default function Page() {
   return (

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { track } from "@vercel/analytics";
 import { SEED_CATALOG } from "@/lib/configurator/catalog.seed";
 import { caption } from "@/lib/configurator/format";
 import type { Resolved } from "@/lib/configurator/rules";
@@ -31,7 +32,12 @@ vi.mock("@/components/configurator/QuoteSection", () => ({
   ),
 }));
 
+// The analytics script is not injected in tests; the mock records the calls (ARHITECTURA §10).
+vi.mock("@vercel/analytics", () => ({ track: vi.fn() }));
+
 import { Configurator } from "./Configurator";
+
+const tracked = vi.mocked(track);
 
 const SETTINGS: ConfiguratorSettings = { show_prices: false, whatsapp_number: "", response_time: "[24 de ore]" };
 
@@ -56,6 +62,7 @@ let replaceState: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   url.query = "";
+  tracked.mockReset();
   replaceState = vi.spyOn(window.history, "replaceState").mockImplementation(() => undefined);
 });
 afterEach(() => {
@@ -225,5 +232,49 @@ describe("Configurator", () => {
     renderConfigurator();
     expect(screen.getByText("Măsurată de la podea. Peste 120 cm arată bine în camere cu tavan înalt.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Vezi toate materialele" })).toHaveAttribute("href", "/materiale");
+  });
+});
+
+describe("Configurator analytics (ARHITECTURA §10)", () => {
+  it("reports nothing on mount, even with a configuration in the URL", () => {
+    url.query = "m=lamele&c=lm-nuc";
+    renderConfigurator();
+    expect(tracked).not.toHaveBeenCalled();
+  });
+
+  it("reports config_start once, on the first change, then config_step with the step of every change", () => {
+    renderConfigurator();
+    fireEvent.click(pressed("Muștar"));
+    expect(tracked.mock.calls).toEqual([
+      ["config_start", undefined],
+      ["config_step", { step: "material" }],
+    ]);
+
+    fireEvent.click(pressed("Bouclé"));
+    fireEvent.click(pressed(/^Arcuit/));
+    fireEvent.click(pressed("140 cm"));
+    fireEvent.click(pressed(/^Ladă de depozitare/));
+    fireEvent.click(screen.getByRole("checkbox", { name: /LED sub pat/ }));
+    fireEvent.click(pressed("Altă dimensiune"));
+    fireEvent.change(screen.getByLabelText("Lățime saltea (cm)"), { target: { value: "135" } });
+
+    expect(tracked.mock.calls.slice(2)).toEqual([
+      ["config_step", { step: "material" }],
+      ["config_step", { step: "model" }],
+      ["config_step", { step: "headboard" }],
+      ["config_step", { step: "base" }],
+      ["config_step", { step: "extras" }],
+      ["config_step", { step: "size" }],
+      ["config_step", { step: "size" }],
+    ]);
+    expect(tracked.mock.calls.filter(([name]) => name === "config_start")).toHaveLength(1);
+  });
+
+  it("reports whatsapp_click { place: configurator } from the ticket's WhatsApp button", () => {
+    const { container } = renderConfigurator({ whatsapp_number: "+40 722 123 456" });
+    container.addEventListener("click", (event) => event.preventDefault()); // jsdom cannot navigate
+    fireEvent.click(screen.getByRole("link", { name: "Trimite pe WhatsApp" }));
+    expect(tracked).toHaveBeenCalledTimes(1);
+    expect(tracked).toHaveBeenCalledWith("whatsapp_click", { place: "configurator" });
   });
 });

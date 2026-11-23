@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { priceFor, type Pricing } from "@/lib/configurator/pricing";
 import { configCode, formatPrice, ticketRows, whatsappText, whatsappUrl } from "@/lib/configurator/format";
 import type { Resolved } from "@/lib/configurator/rules";
+import { trackEvent } from "@/lib/analytics";
 import { shareUrl } from "@/lib/site-url";
 import { Button } from "@/components/site/Button";
 import { Ticket } from "@/components/site/Ticket";
@@ -73,7 +74,7 @@ export function TicketPanel({ resolved, settings, pricing, className }: TicketPa
           Cere ofertă pentru acest pat
         </Button>
         {wa && (
-          <Button variant="secondary" href={wa}>
+          <Button variant="secondary" href={wa} onClick={() => trackEvent("whatsapp_click", { place: "configurator" })}>
             Trimite pe WhatsApp
           </Button>
         )}

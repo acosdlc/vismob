@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Atelier } from "@/components/home/Atelier";
 import { ConfiguratorBand } from "@/components/home/ConfiguratorBand";
 import { ContactForm } from "@/components/contact/ContactForm";
@@ -10,12 +11,18 @@ import { Models } from "@/components/home/Models";
 import { Process } from "@/components/home/Process";
 import { Reviews } from "@/components/home/Reviews";
 import { Facts } from "@/components/site/Facts";
+import { JsonLd } from "@/components/site/JsonLd";
 import { getCatalog } from "@/lib/data/catalog";
 import { mediaUrl } from "@/lib/data/media";
 import { getStartingPrices } from "@/lib/data/pricing";
 import { getHeroProject, getProjects } from "@/lib/data/projects";
 import { getReviews } from "@/lib/data/reviews";
 import { getSettings } from "@/lib/data/settings";
+import { furnitureStoreJsonLd } from "@/lib/seo/json-ld";
+import { siteUrl } from "@/lib/site-url";
+
+// The title and the description come from the root layout.
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 // Acasă, in the DESIGN §4.1 order. Every bracket on this page is a seed value.
 export default async function Home() {
@@ -31,6 +38,8 @@ export default async function Home() {
 
   return (
     <>
+      {/* ARHITECTURA §10: FurnitureStore, absent while the name is a placeholder. */}
+      <JsonLd data={furnitureStoreJsonLd(settings, siteUrl())} />
       <Hero settings={settings} hero={hero} worksHref={featured.length > 0 ? "#lucrari" : "/lucrari"} />
       <div className="container-site">
         <Facts

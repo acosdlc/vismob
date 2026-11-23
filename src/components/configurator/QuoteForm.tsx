@@ -18,6 +18,7 @@ import { Turnstile } from "@/components/contact/Turnstile";
 import { Button } from "@/components/site/Button";
 import { Eyebrow } from "@/components/site/Eyebrow";
 import { Checkbox, Field, FieldError, FormCard, Input, Label, Textarea, formStackClasses } from "@/components/site/form";
+import { trackEvent } from "@/lib/analytics";
 import { paramsFromConfig } from "@/lib/configurator/url";
 import { CONSENT_TEXT, FORM_FIELDS, INITIAL_FORM_STATE, type FieldErrors } from "@/lib/leads/types";
 import { parseLeadForm, quoteSchema } from "@/lib/validation/schemas";
@@ -67,6 +68,7 @@ function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionP
   const [clientErrors, setClientErrors] = useState<FieldErrors | null>(null);
   const [startedAt, setStartedAt] = useState("");
   const tokenRequested = useRef(false);
+  const submitReported = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const confirmHeadingRef = useRef<HTMLHeadingElement>(null);
   const id = useId();
@@ -88,6 +90,14 @@ function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionP
     }
     if (state.status === "ok") confirmHeadingRef.current?.focus();
   }, [state]);
+
+  // ARHITECTURA §10: quote_submit once per success, with the code the server recomputed
+  // („Modifică configurația” remounts the form, so a new request reports again).
+  useEffect(() => {
+    if (state.status !== "ok" || submitReported.current) return;
+    submitReported.current = true;
+    trackEvent("quote_submit", { code: state.code ?? code });
+  }, [state, code]);
 
   function requestToken() {
     if (tokenRequested.current) return;

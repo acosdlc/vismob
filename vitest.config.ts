@@ -11,7 +11,8 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // The app and the catalogue scripts only: `.claude/**` carries the guard's own test.
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "scripts/**/*.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
   },
 });
