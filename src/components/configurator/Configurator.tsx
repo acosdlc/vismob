@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { DrawingFigure } from "@/components/drawings/DrawingFigure";
+import { trackEvent } from "@/lib/analytics";
 import { configCode } from "@/lib/configurator/format";
 import { resolve } from "@/lib/configurator/rules";
 import type { Config, FamilyId } from "@/lib/configurator/types";
@@ -24,6 +25,9 @@ import type { ConfiguratorProps } from "./types";
 // change is written back with history.replaceState (no new history entries; Next syncs
 // useSearchParams with it). Components only display what resolve() returns.
 
+/** The step a change comes from, reported as `config_step { step }` (ARHITECTURA §10). */
+type ConfigStep = "model" | "size" | "material" | "headboard" | "base" | "extras";
+
 export function Configurator({ catalog, settings, pricing }: ConfiguratorProps) {
   const searchParams = useSearchParams();
   const query = searchParams.toString();
@@ -44,18 +48,26 @@ export function Configurator({ catalog, settings, pricing }: ConfiguratorProps) 
 
   const figureRef = useRef<HTMLDivElement>(null);
   const quoteRef = useRef<HTMLDivElement>(null);
+  // ARHITECTURA §10: config_start once per mount, on the visitor's first change (a configuration
+  // that only arrived in the URL does not count), then config_step with the step of every change.
+  const started = useRef(false);
 
-  function update(patch: Partial<Config>) {
+  function update(patch: Partial<Config>, step: ConfigStep) {
     const next = resolve({ ...config, ...patch }, catalog).cfg;
     const nextQuery = paramsFromConfig(next).toString();
     setConfig(next);
     setWrittenQuery(nextQuery);
     window.history.replaceState(null, "", `?${nextQuery}`);
+    if (!started.current) {
+      started.current = true;
+      trackEvent("config_start");
+    }
+    trackEvent("config_step", { step });
   }
 
   /** §5.2: a new family takes its first colour (resolve picks it when the id is unknown). */
   function changeFamily(family: FamilyId) {
-    update({ family, color: "" });
+    update({ family, color: "" }, "material");
   }
 
   return (
@@ -72,10 +84,10 @@ export function Configurator({ catalog, settings, pricing }: ConfiguratorProps) 
 
         <div className={RIGHT_CLASSES}>
           <StepFieldset {...STEPS[0]}>
-            <StepModel models={catalog.models} value={resolved.model.id} onChange={(model) => update({ model })} />
+            <StepModel models={catalog.models} value={resolved.model.id} onChange={(model) => update({ model }, "model")} />
           </StepFieldset>
           <StepFieldset {...STEPS[1]}>
-            <StepSize config={resolved.cfg} onChange={update} />
+            <StepSize config={resolved.cfg} onChange={(patch) => update(patch, "size")} />
           </StepFieldset>
           <StepFieldset {...STEPS[2]}>
             <StepMaterial
@@ -83,17 +95,17 @@ export function Configurator({ catalog, settings, pricing }: ConfiguratorProps) 
               families={catalog.families}
               resolved={resolved}
               onFamilyChange={changeFamily}
-              onColorChange={(color) => update({ color })}
+              onColorChange={(color) => update({ color }, "material")}
             />
           </StepFieldset>
           <StepFieldset {...STEPS[3]}>
-            <StepHeadboard value={resolved.cfg.hb} onChange={(hb) => update({ hb })} />
+            <StepHeadboard value={resolved.cfg.hb} onChange={(hb) => update({ hb }, "headboard")} />
           </StepFieldset>
           <StepFieldset {...STEPS[4]}>
-            <StepBase bases={catalog.bases} value={resolved.base.id} onChange={(base) => update({ base })} />
+            <StepBase bases={catalog.bases} value={resolved.base.id} onChange={(base) => update({ base }, "base")} />
           </StepFieldset>
           <StepFieldset {...STEPS[5]}>
-            <StepExtras value={resolved.cfg} onChange={update} />
+            <StepExtras value={resolved.cfg} onChange={(patch) => update(patch, "extras")} />
           </StepFieldset>
         </div>
       </div>

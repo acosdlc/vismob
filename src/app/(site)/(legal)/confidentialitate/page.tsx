@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-export const metadata: Metadata = { title: "Politica de confidențialitate" };
+export const metadata: Metadata = { title: "Politica de confidențialitate", alternates: { canonical: "/confidentialitate" } };
 
 export default function Page() {
   return (

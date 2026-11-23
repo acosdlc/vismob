@@ -29,6 +29,10 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(siteUrl()),
     title: { default: `${workshop_name} · Paturi la comandă`, template: `%s · ${workshop_name}` },
     description: "Paturi construite pe măsura camerei tale, în atelier.",
+    // ARHITECTURA §10. Inherited by every page (none sets openGraph, so nothing is
+    // overwritten); og:image comes from src/app/opengraph-image.tsx. The canonical
+    // is set per page: one here would also reach /admin and the 404.
+    openGraph: { type: "website", locale: "ro_RO", siteName: workshop_name },
   };
 }
 

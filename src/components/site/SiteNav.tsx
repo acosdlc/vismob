@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { trackEvent } from "@/lib/analytics";
 import { Button } from "./Button";
 import { cx } from "./cx";
 import { CloseIcon, MenuIcon } from "./Icons";
@@ -51,6 +52,8 @@ export function SiteNav({ phone, showCta = true }: SiteNavProps) {
   }, [open]);
 
   const tel = telHref(phone);
+  // ARHITECTURA §10: both tel: links of the header report phone_click; the navigation goes on.
+  const reportPhoneClick = () => trackEvent("phone_click", { place: "header" });
 
   return (
     <>
@@ -77,7 +80,7 @@ export function SiteNav({ phone, showCta = true }: SiteNavProps) {
             })}
           </ul>
         </nav>
-        <a href={tel} className="py-3 font-mono text-[14px] leading-[1.4] hover:underline">
+        <a href={tel} onClick={reportPhoneClick} className="py-3 font-mono text-[14px] leading-[1.4] hover:underline">
           {phone}
         </a>
         {showCta && (
@@ -132,7 +135,7 @@ export function SiteNav({ phone, showCta = true }: SiteNavProps) {
               <Button href="/contact" onClick={close} className="flex-[1_1_140px]">
                 Cere ofertă
               </Button>
-              <Button href={tel} variant="secondary" className="flex-[1_1_140px]">
+              <Button href={tel} variant="secondary" className="flex-[1_1_140px]" onClick={reportPhoneClick}>
                 Sună acum
               </Button>
             </div>

@@ -1,8 +1,15 @@
+import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
 // Runs in the cloud session against `next start` after `npm run build`.
-// Pinned to @playwright/test 1.56.1: the container ships Chromium 1194 and
-// cannot download another browser build.
+// @playwright/test stays pinned (cdn.playwright.dev is blocked, so no browser can be
+// downloaded); the container ships its own Chromium behind the stable path below, whatever
+// build it is (1194 in October 2026, 1243 in November), and Playwright launches that one.
+// PLAYWRIGHT_CHROMIUM_PATH overrides it; without either, Playwright's own lookup applies.
+const CONTAINER_CHROMIUM = "/opt/pw-browsers/chromium";
+const executablePath =
+  process.env.PLAYWRIGHT_CHROMIUM_PATH ?? (existsSync(CONTAINER_CHROMIUM) ? CONTAINER_CHROMIUM : undefined);
+
 export default defineConfig({
   testDir: "tests/e2e",
   outputDir: "test-results",
@@ -12,6 +19,7 @@ export default defineConfig({
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
     trace: "off",
+    ...(executablePath ? { launchOptions: { executablePath } } : {}),
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },

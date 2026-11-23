@@ -3,7 +3,12 @@ import { ContactForm } from "@/components/contact/ContactForm";
 import { ContactSection } from "@/components/home/ContactSection";
 import { getSettings } from "@/lib/data/settings";
 
-export const metadata: Metadata = { title: "Contact" };
+export const metadata: Metadata = {
+  title: "Contact",
+  // Section 09's heading and paragraph (ContactSection), nothing new.
+  description: "Spune-ne ce pat îți dorești. O poză cu camera și dimensiunea saltelei sunt suficiente ca să începem.",
+  alternates: { canonical: "/contact" },
+};
 
 // DESIGN §4.5: section 09 of Acasă as its own page, with an H1 and the large map
 // (400px, docs/PLAN.md).

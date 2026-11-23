@@ -7,7 +7,15 @@ import { getCatalog } from "@/lib/data/catalog";
 import { getPricing } from "@/lib/data/pricing";
 import { getSettings } from "@/lib/data/settings";
 
-export const metadata: Metadata = { title: "Configurator" };
+/** DESIGN §4.2, the paragraph under the H1; also the page's description (ARHITECTURA §10). */
+const LEAD =
+  "Desenul se schimbă la fiecare alegere și e la scară. Trimiți configurația, iar prețul final îl confirmăm după o discuție scurtă, fără obligații.";
+
+export const metadata: Metadata = {
+  title: "Configurator",
+  description: LEAD,
+  alternates: { canonical: "/configurator" },
+};
 
 // DESIGN §4.2. A static shell: the configuration lives in the URL (§5.3) and is read in
 // the browser by the client root (useSearchParams inside <Suspense>), so this page never
@@ -25,11 +33,7 @@ export default async function ConfiguratorPage() {
   return (
     <>
       <div className="container-site">
-        <PageHeader
-          title="Configurează-ți patul"
-          lead="Desenul se schimbă la fiecare alegere și e la scară. Trimiți configurația, iar prețul final îl confirmăm după o discuție scurtă, fără obligații."
-          aside="6 pași · aproximativ 2 minute"
-        />
+        <PageHeader title="Configurează-ți patul" lead={LEAD} aside="6 pași · aproximativ 2 minute" />
       </div>
       <Suspense fallback={<ConfiguratorSkeleton />}>
         <Configurator catalog={catalog} settings={clientSettings} pricing={pricing} />

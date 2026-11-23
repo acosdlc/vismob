@@ -124,6 +124,8 @@ Pentru fiecare mostră, un rând în Excel (foaia „Materiale”, vezi punctul 
 | **Prețuri** | prețul de bază pe model × lățime; adaosul pe categoria de material (A/B/C); adaosul pentru tăblia înaltă; prețul pe bază și pe fiecare opțional; adaosul pentru dimensiune nestandard |
 | **Termene** | termenul de execuție pe tip de comandă (standard / nestandard / materiale la comandă) |
 
+Fișierul de completat e `docs/atelier/05-catalog.xlsx` (vi-l trimitem noi): are foile de mai sus, cu modelele, familiile, bazele și culorile de pe site deja scrise și o explicație deasupra fiecărui tabel, așa că nu trebuie decât să completați celulele goale, fără să schimbați ID-urile și codurile.
+
 Prețurile pot fi aproximative. Pe site apar ca „preț orientativ”, iar prețul final îl dați voi în scris.
 
 ## 9. Recenzii

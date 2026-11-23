@@ -7,7 +7,10 @@ import type { Model } from "@/lib/configurator/types";
 import { getCatalog } from "@/lib/data/catalog";
 import { getProjects } from "@/lib/data/projects";
 
-export const metadata: Metadata = { title: "Lucrări" };
+/** DESIGN §4.4, the paragraph under the H1; also the page's description (ARHITECTURA §10). */
+const LEAD = "Proiecte reale, fotografiate la clienți acasă, cu dimensiunile și materialele folosite.";
+
+export const metadata: Metadata = { title: "Lucrări", description: LEAD, alternates: { canonical: "/lucrari" } };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -17,10 +20,7 @@ export default async function LucrariPage({ searchParams }: { searchParams: Sear
   const catalog = await getCatalog();
   return (
     <div className="container-site pb-[clamp(64px,8vw,112px)]">
-      <PageHeader
-        title="Lucrări"
-        lead="Proiecte reale, fotografiate la clienți acasă, cu dimensiunile și materialele folosite."
-      />
+      <PageHeader title="Lucrări" lead={LEAD} />
       <Suspense fallback={<ModelFilter models={catalog.models} />}>
         <FilteredProjects searchParams={searchParams} models={catalog.models} />
       </Suspense>

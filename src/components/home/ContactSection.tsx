@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { MapEmbed } from "@/components/contact/MapEmbed";
-import { Button } from "@/components/site/Button";
 import { telHref } from "@/components/site/links";
 import { SpecList } from "@/components/site/SpecList";
+import { TrackedLink } from "@/components/site/TrackedLink";
 import type { Settings } from "@/lib/data/settings.seed";
 import { Section } from "./Section";
 
@@ -39,14 +39,29 @@ export function ContactSection({
             ]}
           />
           <div className="flex flex-wrap gap-3">
+            {/* ARHITECTURA §10: whatsapp_click / phone_click { place: "contact" }; TrackedLink is the Button plus the event. */}
             {wa && (
-              <Button href={wa} variant="primary" className="flex-[1_1_200px]" target="_blank" rel="noreferrer">
+              <TrackedLink
+                event="whatsapp_click"
+                properties={{ place: "contact" }}
+                href={wa}
+                variant="primary"
+                className="flex-[1_1_200px]"
+                target="_blank"
+                rel="noreferrer"
+              >
                 Scrie-ne pe WhatsApp
-              </Button>
+              </TrackedLink>
             )}
-            <Button href={telHref(settings.phone_public)} variant="secondary" className="flex-[1_1_200px]">
+            <TrackedLink
+              event="phone_click"
+              properties={{ place: "contact" }}
+              href={telHref(settings.phone_public)}
+              variant="secondary"
+              className="flex-[1_1_200px]"
+            >
               Sună acum
-            </Button>
+            </TrackedLink>
           </div>
           <MapEmbed address={settings.address} height={mapHeight} />
         </div>

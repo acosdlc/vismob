@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { track } from "@vercel/analytics";
 import { DEFAULT_CONFIG } from "@/lib/configurator/catalog.seed";
 import { paramsFromConfig } from "@/lib/configurator/url";
 import { FORM_FIELDS, FORM_MESSAGES, type FormState } from "@/lib/leads/types";
@@ -14,9 +15,13 @@ vi.mock("@/actions/issue-form-token", () => ({ issueFormToken: () => issueFormTo
 // ContactForm (collectSource, focusFirstInvalid) imports the contact actions, which are server-only.
 vi.mock("@/actions/submit-contact", () => ({ submitContact: vi.fn() }));
 vi.mock("@/actions/create-upload-urls", () => ({ createUploadUrls: vi.fn() }));
+// The analytics script is not injected in tests; the mock records the calls (ARHITECTURA §10).
+vi.mock("@vercel/analytics", () => ({ track: vi.fn() }));
 
 import { QuoteForm } from "./QuoteForm";
 import { QuoteSection } from "./QuoteSection";
+
+const tracked = vi.mocked(track);
 
 const CODE = "CAP-160x200-CT01-H120-PL";
 const CUSTOM = { ...DEFAULT_CONFIG, size: "custom" as const, customW: 150, customL: 210, led: true };
@@ -34,6 +39,7 @@ const hiddenConfig = (container: HTMLElement) =>
 beforeEach(() => {
   submitQuote.mockReset();
   issueFormToken.mockReset();
+  tracked.mockReset();
   issueFormToken.mockResolvedValue("signed-token");
   submitQuote.mockResolvedValue({ status: "ok", leadId: "lead-1", code: CODE });
 });
@@ -120,6 +126,7 @@ describe("QuoteForm", () => {
     expect(screen.getByLabelText("Email")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByRole("checkbox", { name: /Sunt de acord/ })).toHaveAccessibleDescription(FORM_MESSAGES.privacy);
     expect(screen.getByLabelText("Localitate")).not.toHaveAttribute("aria-invalid");
+    expect(tracked).not.toHaveBeenCalled();
   });
 
   it("on a valid submit calls the action with the configuration and shows the server's code", async () => {
@@ -149,6 +156,21 @@ describe("QuoteForm", () => {
     expect(screen.getByText("Am primit desenul și alegerile tale.")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Cere mostre" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Trimite configurația" })).toBeNull();
+
+    // quote_submit once, with the server's code; a later configuration change does not repeat it.
+    expect(tracked).toHaveBeenCalledTimes(1);
+    expect(tracked).toHaveBeenCalledWith("quote_submit", { code: "CAP-150x210-CT01-H120-PL-LED" });
+  });
+
+  it("reports quote_submit once per success, not again when the configuration prop changes", async () => {
+    const view = render(<QuoteForm config={DEFAULT_CONFIG} code={CODE} responseTime="24 de ore" />);
+    fillValid();
+    fireEvent.click(screen.getByRole("button", { name: "Trimite configurația" }));
+    await screen.findByText(`Configurație trimisă · ${CODE}`);
+    expect(tracked.mock.calls).toEqual([["quote_submit", { code: CODE }]]);
+
+    view.rerender(<QuoteForm config={CUSTOM} code="CAP-150x210-CT01-H120-PL-LED" responseTime="24 de ore" />);
+    expect(tracked).toHaveBeenCalledTimes(1);
   });
 
   it("„Modifică configurația” brings the form back with the same configuration", async () => {
@@ -164,6 +186,15 @@ describe("QuoteForm", () => {
     expect(hiddenConfig(container)).toHaveValue(paramsFromConfig(CUSTOM).toString());
     expect(screen.getByTestId("attached-code")).toHaveTextContent("CAP-150x210-CT01-H120-PL-LED");
     expect(screen.getByLabelText("Nume")).toHaveValue("");
+
+    // A second request from the remounted form is a second quote_submit.
+    fillValid();
+    fireEvent.click(screen.getByRole("button", { name: "Trimite configurația" }));
+    await screen.findByRole("button", { name: "Modifică configurația" });
+    expect(tracked.mock.calls).toEqual([
+      ["quote_submit", { code: CODE }],
+      ["quote_submit", { code: CODE }],
+    ]);
   });
 
   it("shows a server error message and the server's field errors", async () => {
@@ -182,5 +213,6 @@ describe("QuoteForm", () => {
     expect(phone).toHaveAccessibleDescription(FORM_MESSAGES.phone);
     await waitFor(() => expect(document.activeElement).toBe(phone));
     expect(screen.getByRole("button", { name: "Trimite configurația" })).not.toBeDisabled();
+    expect(tracked).not.toHaveBeenCalled();
   });
 });

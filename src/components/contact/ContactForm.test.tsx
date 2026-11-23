@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { track } from "@vercel/analytics";
 import { FORM_FIELDS, FORM_MESSAGES, type FormState } from "@/lib/leads/types";
 
 // The three Server Actions and the shared schema are replaced: the test drives the form,
@@ -16,8 +17,12 @@ vi.mock("@/lib/validation/schemas", () => ({
   contactSchema: { kind: "contact" },
   parseLeadForm: (formData: FormData) => parseLeadForm(formData),
 }));
+// The analytics script is not injected in tests; the mock records the calls (ARHITECTURA §10).
+vi.mock("@vercel/analytics", () => ({ track: vi.fn() }));
 
 import { ContactForm, collectSource } from "./ContactForm";
+
+const tracked = vi.mocked(track);
 
 const EMPTY_ERRORS = {
   name: FORM_MESSAGES.required,
@@ -38,6 +43,7 @@ beforeEach(() => {
   issueFormToken.mockReset();
   createUploadUrls.mockReset();
   parseLeadForm.mockReset();
+  tracked.mockReset();
   issueFormToken.mockResolvedValue("signed-token");
   submitContact.mockResolvedValue({ status: "ok", leadId: "lead-1" });
 });
@@ -121,6 +127,7 @@ describe("ContactForm", () => {
     expect(consent).toHaveAccessibleDescription(FORM_MESSAGES.privacy);
     expect(screen.getByLabelText("Telefon")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByLabelText("Dimensiunea saltelei")).not.toHaveAttribute("aria-invalid");
+    expect(tracked).not.toHaveBeenCalled();
   });
 
   it("posts the source with the page, referrer and utm parameters", () => {
@@ -155,6 +162,10 @@ describe("ContactForm", () => {
     const heading = screen.getByRole("heading", { level: 3, name: "Mulțumim! Te sunăm în 24 de ore." });
     expect(heading.className).toContain("h3-confirm");
     expect(document.activeElement).toBe(heading);
+
+    // contact_submit once per success (ARHITECTURA §10).
+    expect(tracked).toHaveBeenCalledTimes(1);
+    expect(tracked).toHaveBeenCalledWith("contact_submit", undefined);
   });
 
   it("renders the confirmation as an H2 under the H1 of /contact", async () => {
@@ -177,6 +188,15 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText("Nume")).toHaveValue("");
     expect(screen.getByRole("button", { name: "Trimite cererea" })).toBeInTheDocument();
     expect(screen.queryByText("Cerere trimisă")).toBeNull();
+
+    // A second request from the remounted form is a second contact_submit.
+    fillValid();
+    fireEvent.click(screen.getByRole("button", { name: "Trimite cererea" }));
+    await screen.findByText("Cerere trimisă");
+    expect(tracked.mock.calls).toEqual([
+      ["contact_submit", undefined],
+      ["contact_submit", undefined],
+    ]);
   });
 
   it("shows a server error message and the server's field errors", async () => {
@@ -197,5 +217,6 @@ describe("ContactForm", () => {
     expect(phone).toHaveAccessibleDescription(FORM_MESSAGES.phone);
     await waitFor(() => expect(document.activeElement).toBe(phone));
     expect(screen.getByRole("button", { name: "Trimite cererea" })).not.toBeDisabled();
+    expect(tracked).not.toHaveBeenCalled();
   });
 });
