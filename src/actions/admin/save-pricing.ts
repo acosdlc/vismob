@@ -12,17 +12,19 @@ import { createClient, type ServerClient } from "@/lib/supabase/server";
  * role, validates the whole grid, writes `pricing` row 1 (insert or update: the row
  * does not exist until the workshop's first save) through the signed-in user's
  * cookie client (RLS: `admin_all`), then expires the "pricing" tag so the site
- * prices with the new grid on its next request (ARHITECTURA §8). A lei amount under
- * LEI_FLOOR (pricing-schema.ts) is refused with the grid's other errors, before any
- * write, as the Excel import refuses it.
+ * prices with the new grid on its next request (ARHITECTURA §8). A lei amount taken
+ * for a thousands-separator slip (fieldsUnderLeiFloor in pricing-schema.ts: a grid
+ * price under LEI_FLOOR, as in the Excel import, or a base or an extra typed like
+ * "1.200") is refused with the grid's other errors, before any write.
  */
 export async function savePricing(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
   if (!admin) return { status: "error", message: ADMIN_MESSAGES.forbidden };
 
   const parsed = parsePricingForm(formData);
-  // "3.450" parses, as 3.45 lei: the parser cannot tell that slip from a price, the floor
-  // can. Checked beside the parse, not after it, so one answer marks every such field.
+  // "3.450" parses, as 3.45 lei: the parser cannot tell that slip from a price. The floor
+  // can for a grid price, and the typed shape for a base or an extra, which may really
+  // cost less. Checked beside the parse, not after it, so one answer marks every such field.
   const underFloor = Object.fromEntries(fieldsUnderLeiFloor(formData).map((field) => [field, PRICING_MESSAGES.floor]));
   if (!parsed.ok || Object.keys(underFloor).length > 0) {
     const fieldErrors = parsed.ok ? underFloor : { ...parsed.fieldErrors, ...underFloor };

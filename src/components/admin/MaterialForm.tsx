@@ -44,8 +44,8 @@ export const MATERIAL_FORM_TEXTS = {
   featured: "Apare pe Acasă (grila de 8 mostre)",
   active: "Activ (apare în configurator și pe Materiale)",
   sort: "Ordine",
-  /** Only on the new-material screen: there an empty „Ordine” means last, on an edit it is saved as 0. */
-  sortHint: "Lasă gol ca să apară ultima în familie.",
+  /** Only on the new-material screen: there an empty „Ordine” means last; on an edit the action refuses it. */
+  sortHint: "Lasă gol ca să apară ultimul în familie.",
   photo: "Poză (pătrată)",
   photoHint: "Mostra fotografiată de aproape, cel puțin 600 × 600 px.",
   submit: "Salvează",

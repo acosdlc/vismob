@@ -2,9 +2,10 @@ import type { Settings } from "@/lib/data/settings.seed";
 
 // The Setări form (docs/PLAN.md PR-7, ARHITECTURA §8): one descriptor per key of
 // `Settings`, grouped as src/lib/data/settings.seed.ts groups them. The labels are
-// the workshop's words; a hint says where the value appears on the site and comes
-// from the JSDoc of the seed, nothing else. Pure: the client form and the server
-// schema (settings-schema.ts) both read it, so it must not import the seed values.
+// the workshop's words; a hint says where the value appears on the site, from the
+// JSDoc of the seed, or which shape the schema takes (the links, WhatsApp, „Telefon”),
+// nothing else. Pure: the client form and the server schema (settings-schema.ts) both
+// read it, so it must not import the seed values.
 
 export type SettingsKey = keyof Settings;
 
@@ -15,7 +16,7 @@ export interface SettingsField {
   key: SettingsKey;
   /** Short, with comma-below diacritics; the `<label>` text (for a boolean, the checkbox text). */
   label: string;
-  /** One sentence: where the value appears on the site, or what shape it has. */
+  /** Where the value appears on the site, or what shape it has. */
   hint?: string;
   kind: SettingsFieldKind;
   /** Longest accepted value, in characters (the checkbox posts "on"). */
@@ -92,8 +93,16 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       textarea("address", "Adresa atelierului"),
       text("city", "Localitatea"),
       // „Telefon” and, below, „Email”: the site links them (tel:, mailto:) wherever it shows
-      // them, so the schema requires both and checks them as a number and an address.
-      { key: "phone_public", label: "Telefon", kind: "phone", maxLength: SETTINGS_MAX.phone },
+      // them, so the schema requires both and checks them as a number and an address. The
+      // check takes one number that dials as typed and answers every refusal with the same
+      // message, also for a valid number written 0264/123.456: the hint states the rule.
+      {
+        key: "phone_public",
+        label: "Telefon",
+        hint: "Un singur număr, de exemplu 0722 123 456 sau +40 722 123 456. Fără „/”, fără al doilea număr și fără alt text.",
+        kind: "phone",
+        maxLength: SETTINGS_MAX.phone,
+      },
       {
         key: "whatsapp_number",
         label: "WhatsApp",

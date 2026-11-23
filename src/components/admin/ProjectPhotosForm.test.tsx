@@ -18,7 +18,7 @@ const UPLOADED = `projects/${PROJECT_ID}-1792569600000.webp`;
 
 // PhotoField has its own test; here a stub posts the hidden inputs it would, lets the
 // test flip the uploading state the form must honour, "finish" an upload with a path and
-// press „Șterge poza”.
+// press „Șterge poza”. Like the real one, `disabled` closes its picker and nothing else.
 const photoProps = vi.fn<(props: PhotoFieldProps) => void>();
 vi.mock("@/components/admin/PhotoField", () => ({
   PhotoField: (props: PhotoFieldProps) => {
@@ -27,7 +27,7 @@ vi.mock("@/components/admin/PhotoField", () => ({
     return (
       <div>
         <label htmlFor={props.id}>{props.label}</label>
-        <input id={props.id} type="file" aria-invalid={props.error ? "true" : undefined} />
+        <input id={props.id} type="file" disabled={props.disabled} aria-invalid={props.error ? "true" : undefined} />
         <input type="hidden" name={PHOTO_FIELDS.path} value={path} />
         <input type="hidden" name={PHOTO_FIELDS.before} value={props.currentPath ?? ""} />
         <p>{props.hint}</p>
@@ -59,6 +59,10 @@ vi.mock("@/components/admin/PhotoField", () => ({
 }));
 
 import { PROJECT_PHOTOS_TEXTS, ProjectPhotosForm, type ProjectPhotosFormPhoto } from "./ProjectPhotosForm";
+
+/** An action the test answers by hand (`answers.shift()?.(state)`), to stand between a submit and its answer. */
+const answers: Array<(state: AdminActionState) => void> = [];
+const held = () => new Promise<AdminActionState>((resolve) => answers.push(resolve));
 
 /** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
 class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
@@ -99,6 +103,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // A held action that a failed test left unanswered would keep every later save waiting behind it.
+  for (const answer of answers.splice(0)) answer({ status: "idle" });
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
@@ -313,6 +319,62 @@ describe("ProjectPhotosForm", () => {
     expect(second.get(PHOTO_FIELDS.path)).toBe("");
     expect(second.get(NEW_PHOTO_ALT_FIELD)).toBe("");
     expect(second.get(photoRowFields(PHOTO_A.id).alt)).toBe("Patul, din față");
+  });
+
+  it("holds the „Adaugă o poză” block while the save is on its way: a photo picked or a text typed then would be dropped with the block", async () => {
+    saveProjectPhotos.mockImplementationOnce(held);
+    render(<ProjectPhotosForm projectId={PROJECT_ID} photos={[PHOTO_A]} />);
+    fireEvent.click(screen.getByRole("button", { name: "end upload" }));
+    fireEvent.change(screen.getByLabelText(T.newAlt), { target: { value: "Patul în cameră" } });
+    const submit = screen.getByRole("button", { name: T.submit });
+    expect(screen.getByLabelText(T.newPhoto)).toBeEnabled();
+    expect(screen.getByLabelText(T.newAlt)).not.toHaveAttribute("readonly");
+
+    fireEvent.click(submit);
+    expect(submit).toBeDisabled();
+
+    // The picker is closed (the file dialog cannot be opened) and the text cannot be changed.
+    expect(photoProps).toHaveBeenLastCalledWith(expect.objectContaining({ disabled: true }));
+    expect(screen.getByLabelText(T.newPhoto)).toBeDisabled();
+    const newAlt = screen.getByLabelText(T.newAlt);
+    expect(newAlt).toHaveAttribute("readonly");
+    // Read-only, not disabled, and the two hidden inputs untouched: a disabled control would not post.
+    expect(newAlt).toBeEnabled();
+    expect(hidden(PHOTO_FIELDS.path)[0]).toBeEnabled();
+    expect(hidden(PHOTO_FIELDS.before)[0]).toBeEnabled();
+    // The rows are never rebuilt, so they stay open.
+    expect(screen.getAllByLabelText(T.alt)[0]).not.toHaveAttribute("readonly");
+    expect(screen.getAllByLabelText(T.sort)[0]).not.toHaveAttribute("readonly");
+    // What the submit carried: the uploaded path and its text.
+    expect(saveProjectPhotos.mock.calls[0][1].get(PHOTO_FIELDS.path)).toBe(UPLOADED);
+    expect(saveProjectPhotos.mock.calls[0][1].get(NEW_PHOTO_ALT_FIELD)).toBe("Patul în cameră");
+
+    answers.shift()?.({ status: "ok", message: ADMIN_MESSAGES.saved });
+    await waitFor(() => expect(submit).toBeEnabled());
+
+    // The emptied block is open again for the next photo.
+    expect(photoProps).toHaveBeenLastCalledWith(expect.objectContaining({ disabled: false }));
+    expect(screen.getByLabelText(T.newPhoto)).toBeEnabled();
+    expect(screen.getByLabelText(T.newAlt)).not.toHaveAttribute("readonly");
+    expect(screen.getByLabelText(T.newAlt)).toHaveValue("");
+  });
+
+  it("opens the „Adaugă o poză” block again after a refused save, with the uploaded photo and its text still there", async () => {
+    saveProjectPhotos.mockImplementationOnce(held);
+    render(<ProjectPhotosForm projectId={PROJECT_ID} photos={[PHOTO_A]} />);
+    fireEvent.click(screen.getByRole("button", { name: "end upload" }));
+    fireEvent.change(screen.getByLabelText(T.newAlt), { target: { value: "Patul" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    expect(screen.getByLabelText(T.newPhoto)).toBeDisabled();
+    expect(screen.getByLabelText(T.newAlt)).toHaveAttribute("readonly");
+    answers.shift()?.({ status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: { [NEW_PHOTO_ALT_FIELD]: PROJECT_MESSAGES.photos } });
+    await screen.findByRole("alert");
+
+    expect(screen.getByLabelText(T.newPhoto)).toBeEnabled();
+    expect(screen.getByLabelText(T.newAlt)).not.toHaveAttribute("readonly");
+    expect(screen.getByLabelText(T.newAlt)).toHaveValue("Patul");
+    expect(hidden(PHOTO_FIELDS.path).map((input) => input.value)).toEqual([UPLOADED]);
   });
 
   it("keeps the uploaded path and its alt after a save with errors, so the admin only fixes the field", async () => {

@@ -87,6 +87,16 @@ describe("SETTINGS_FIELDS", () => {
     }
   });
 
+  it("says under „Telefon” which spelling the check takes, with the two examples and what it refuses", () => {
+    const hint = (key: string) => SETTINGS_FIELDS.find((field) => field.key === key)?.hint;
+    // The check answers one message for every refusal („Scrie un număr de telefon valid.”), also
+    // for a valid number written as 0264/123.456 or followed by a second one, so the rule is
+    // stated on the field. Both examples pass the check: settings-schema.test.ts posts them.
+    expect(hint("phone_public")).toBe(
+      "Un singur număr, de exemplu 0722 123 456 sau +40 722 123 456. Fără „/”, fără al doilea număr și fără alt text.",
+    );
+  });
+
   it("names the fingerprint input apart from every Settings key and from the photo field's inputs", () => {
     // The form posts it next to the settings; a name shared with a key would be stored in its place.
     const taken = SETTINGS_FIELDS.flatMap((field) => [field.key as string, `${field.key}_before`]);

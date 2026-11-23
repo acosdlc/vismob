@@ -88,7 +88,8 @@ export const SORT_MAX = 999;
 /**
  * Whether „Ordine” was left empty in the posted form, or not posted at all. Read from the
  * raw value, as the schema below receives it: the schema turns an empty sort into 0, and
- * a new colour has to tell that from a typed 0 (nextMaterialSort).
+ * a new colour has to tell that from a typed 0 (nextMaterialSort), and an existing colour
+ * is refused with an empty one (saveMaterial).
  */
 export function sortLeftBlank(formData: FormData): boolean {
   const posted = formValues(formData).sort;

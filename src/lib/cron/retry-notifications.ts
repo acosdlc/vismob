@@ -5,7 +5,7 @@ import { leadSourceText } from "@/lib/admin/leads";
 import { environment, optionalEnv } from "@/lib/env";
 import type { LeadRow } from "@/lib/leads/types";
 import { sendLeadNotification, type EventDetail, type LeadEventType } from "@/lib/notify/dispatch";
-import { sendEmail, type SendEmailResult } from "@/lib/notify/email";
+import { cannotSendReason, sendEmail, type SendEmailResult } from "@/lib/notify/email";
 import { siteUrl } from "@/lib/site-url";
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database.types";
@@ -29,7 +29,9 @@ import {
 // alerted twice. `lead_events.type` only allows the two email types, so the
 // alert leaves no event of its own. Every environment writes to the one database
 // (ARHITECTURA-NOTE), so the job only retries the requests of its own
-// deployment's environment: a test request made on a preview is skipped.
+// deployment's environment: a test request made on a preview is skipped. While
+// the deployment cannot send at all (`cannotSendReason`) nothing is attempted
+// and no attempt is counted: the run only reports why.
 
 /** The two `lead_events.type` values; anything else in the column is left alone. */
 const LEAD_EVENT_TYPES: readonly LeadEventType[] = ["email_workshop", "email_client"];
@@ -177,6 +179,18 @@ export async function retryNotifications(admin: AdminClient, now: Date = new Dat
 
     const pairs = groupPairs(failed);
     if (pairs.length === 0) return finishReport(report);
+
+    // Production without RESEND_API_KEY or EMAIL_FROM cannot send at all: every retry
+    // would fail on that variable, the alert with it, and the pairs would be out of
+    // attempts within two runs, with nothing sent once the variable is added. So the
+    // run ends here with that one error. No attempt is recorded, each run fails for
+    // as long as a failed email is in the window, and once the variable is set the
+    // pairs are retried from the attempt they were left at.
+    const cannotSend = cannotSendReason();
+    if (cannotSend) {
+      report.errors.push(cannotSend);
+      return finishReport(report);
+    }
 
     // A pair with a delivered email needs no retry, whatever failed before it.
     // The ids go in the URL, so they are asked for in slices.

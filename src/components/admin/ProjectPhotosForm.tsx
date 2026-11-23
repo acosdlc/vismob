@@ -72,6 +72,9 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
   // client state: left alone, the submit after a successful save would post the stored
   // photo again. Counting the saves (derived while rendering, as React documents for state
   // that follows a changed value) keys the „Adaugă o poză” block, so it remounts empty.
+  // The remount takes whatever the block holds, so the block is closed while a save runs
+  // (its picker disabled, its text read-only): a photo picked or a text typed then was not
+  // in the submit and would be dropped, the photo left in the bucket with no row.
   const [seen, setSeen] = useState(state);
   const [saved, setSaved] = useState(0);
   if (state !== seen) {
@@ -130,6 +133,7 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
                 ratio="4:3"
                 id={newPhotoId}
                 error={errors[PHOTO_FIELDS.path]}
+                disabled={pending}
                 onUploadingChange={setUploading}
                 onRemove={markEdited}
               />
@@ -141,6 +145,7 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
                 name={NEW_PHOTO_ALT_FIELD}
                 type="text"
                 maxLength={PROJECT_LIMITS.alt}
+                readOnly={pending}
                 invalid={Boolean(errors[NEW_PHOTO_ALT_FIELD])}
                 aria-describedby={newAltHintId}
               />

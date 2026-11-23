@@ -1,7 +1,8 @@
 // The price grid as data: its Zod schema (shared by the site's reader and the admin),
-// the names of the inputs the Prețuri form posts, the parser of that form, the floor
-// under its lei amounts (shared with the Excel import) and the three typical
-// configurations the form previews (docs/ARHITECTURA.md §7, §8; docs/PLAN.md PR-8).
+// the names of the inputs the Prețuri form posts, the parser of that form, the check
+// of its lei amounts for a thousands-separator slip (the floor under a grid price is
+// shared with the Excel import) and the three typical configurations the form
+// previews (docs/ARHITECTURA.md §7, §8; docs/PLAN.md PR-8).
 // Pure: no React, no Supabase, so the Client Component, the Server Action and the
 // `src/lib/data` reader all import it.
 import { z } from "zod";
@@ -68,11 +69,15 @@ export const PRICING_FIELD_ORDER: readonly string[] = [
 ];
 
 /**
- * Below this, a lei amount is taken for a thousands-separator slip, not a price: the
+ * Below this, a grid price is taken for a thousands-separator slip, not a price: the
  * site and the panel print „3.450 lei” (formatPrice, ro-RO), and "3.450" typed back
- * is a number to the parser, 3.45. One constant for the Prețuri form's Server Action
- * (fieldsUnderLeiFloor) and the Excel import (scripts/catalog-workbook.ts), so both
- * refuse the same amounts.
+ * is a number to the parser, 3.45. No bed costs less, so there the size of the amount
+ * is enough. One constant for the Prețuri form's Server Action (fieldsUnderLeiFloor)
+ * and the Excel import (scripts/catalog-workbook.ts), so both refuse the same grid
+ * prices. A base or an extra may really cost less, and there the two differ: the form
+ * refuses only the typed shape of the slip (THOUSANDS_SLIP); the import, where a
+ * number cell has no typed shape left, still holds a base to this floor and does not
+ * check an extra for the slip.
  */
 export const LEI_FLOOR = 100;
 
@@ -80,17 +85,25 @@ export const LEI_FLOOR = 100;
 export const PRICING_MESSAGES = {
   number: "Scrie un număr.",
   positive: "Scrie un număr mai mare ca zero.",
-  /** Under a grid cell or a base amount above zero and under LEI_FLOOR. */
+  /**
+   * Under a grid cell above zero and under LEI_FLOOR, and under a base or an extra typed
+   * with a point between thousands ("1.200", 1.2 lei to the parser): fieldsUnderLeiFloor.
+   */
   floor: `Preț sub ${LEI_FLOOR} lei. Scrie suma fără punct la mii: 3450, nu 3.450.`,
-  /** Above the grid. It says what an empty cell does: the width is still offered and priced (PRICING_FIELDS.grid). */
-  grid: "Scrie prețul în lei pentru fiecare lățime, fără punct la mii: 3450, nu 3.450. O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate.",
+  /**
+   * Above the grid. It says what an empty cell does: the width is still offered, and
+   * priced from the next filled width or, with none wider, from the widest filled one
+   * (PRICING_FIELDS.grid). The note under the price grid of the Excel template carries
+   * the same second sentence (NOTES.grid in scripts/catalog-workbook.ts).
+   */
+  grid: "Scrie prețul în lei pentru fiecare lățime, fără punct la mii: 3450, nu 3.450. O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate sau, dacă nu e niciuna mai lată, al celei mai late completate.",
 } as const;
 
 export type ParsePricingResult = { ok: true; data: Pricing } | { ok: false; fieldErrors: FieldErrors };
 
 /**
  * Plain digits with an optional decimal point: "3450", "3450.50". No sign. A point is
- * always the decimal point, so "3.450" is 3.45: LEI_FLOOR catches that slip.
+ * always the decimal point, so "3.450" is 3.45: fieldsUnderLeiFloor catches that slip.
  */
 const NUMBER = /^\d+(\.\d+)?$/;
 const INTEGER = /^\d+$/;
@@ -193,24 +206,38 @@ export function parsePricingForm(formData: FormData): ParsePricingResult {
 }
 
 /**
- * The inputs of the posted Prețuri form (PRICING_FIELDS names, in form order) that
- * carry a lei amount above zero and under LEI_FLOOR: the grid cells and the bases,
- * the rule of the Excel import (parsePricing in scripts/catalog-workbook.ts). 0 is a
- * real amount for a base, an extra may cost less than the floor, and the percentages
- * and the rounding step are small by nature, so none of those is flagged. It reads
- * the post, not parsePricingForm's output, so the action can mark these inputs in the
- * same answer as the parser's errors; an input the parser refuses is never flagged.
+ * The slip as it is typed: one to three digits, a point and exactly three digits
+ * ("1.200", "12.500"), which is the panel's own „1.200 lei” typed back. A text of this
+ * shape is always a number to the parser (NUMBER).
+ */
+const THOUSANDS_SLIP = /^\d{1,3}\.\d{3}$/;
+
+/**
+ * The inputs of the posted Prețuri form (PRICING_FIELDS names, in form order) whose
+ * lei amount is taken for a thousands-separator slip; savePricing answers
+ * PRICING_MESSAGES.floor under each. A grid cell is flagged by size, above zero and
+ * under LEI_FLOOR: no bed costs less, and it is the rule of the Excel import for the
+ * grid (parsePricing in scripts/catalog-workbook.ts). A base and an extra are flagged
+ * by shape only (THOUSANDS_SLIP): 0 is a real amount for a base and either may cost
+ * less than the floor (metal legs for 50 lei more), so the size cannot tell "1.200"
+ * from a price there. The percentages and the rounding step are small by nature and
+ * are never flagged. It reads the post, not parsePricingForm's output: the typed text
+ * is what carries the shape, and the action can mark these inputs in the same answer
+ * as the parser's errors. An input the parser refuses is never flagged.
  */
 export function fieldsUnderLeiFloor(formData: FormData): string[] {
   const posted = values(formData);
-  const lei = [
-    ...PRICING_MODEL_IDS.flatMap((model) => PRICING_WIDTHS.map((width) => PRICING_FIELDS.grid(model, width))),
-    ...PRICING_BASE_IDS.map((base) => PRICING_FIELDS.base(base)),
-  ];
-  return lei.filter((name) => {
+  const underFloor = (name: string) => {
     const parsed = amount.safeParse(posted[name]);
     return parsed.success && parsed.data > 0 && parsed.data < LEI_FLOOR;
-  });
+  };
+  // Trimmed as the parser trims it (`amount`); an input that was not posted has no text.
+  const typedAsSlip = (name: string) => THOUSANDS_SLIP.test((posted[name] ?? "").trim());
+  return [
+    ...PRICING_MODEL_IDS.flatMap((model) => PRICING_WIDTHS.map((width) => PRICING_FIELDS.grid(model, width))).filter(underFloor),
+    ...PRICING_BASE_IDS.map((base) => PRICING_FIELDS.base(base)).filter(typedAsSlip),
+    ...[PRICING_FIELDS.extras.led, PRICING_FIELDS.extras.nightstands].filter(typedAsSlip),
+  ];
 }
 
 export interface PreviewConfig {

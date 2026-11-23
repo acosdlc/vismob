@@ -30,12 +30,12 @@ const failed = (state: AdminActionState): Outcome => ({ kind: "failed", state })
  * user's cookie client (RLS: `admin_all`). A new material (hidden `id` empty) gets its
  * id and its code from the family, comes last in the family when „Ordine” was left
  * empty, and lands on its own screen; an existing one keeps its family and its code
- * whatever the form posts, and cannot be the last active colour of its family
- * (catalogFromRows() would drop the family and the models that allow only it). A
- * successful write expires the "catalog" tag, so the site reads the new rows on its next
- * request (ARHITECTURA §8), and the "projects" tag with it: the project captions and
- * the hero ticket are cached under that one with the colour's name, for a day
- * (src/lib/data/projects.ts).
+ * whatever the form posts, is refused with an emptied „Ordine”, and cannot be the last
+ * active colour of its family (catalogFromRows() would drop the family and the models
+ * that allow only it). A successful write expires the "catalog" tag, so the site reads
+ * the new rows on its next request (ARHITECTURA §8), and the "projects" tag with it: the
+ * project captions and the hero ticket are cached under that one with the colour's
+ * name, for a day (src/lib/data/projects.ts).
  */
 export async function saveMaterial(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
@@ -45,7 +45,19 @@ export async function saveMaterial(_prev: AdminActionState, formData: FormData):
   const materialId = typeof posted === "string" ? posted.trim() : "";
 
   const parsed = parseMaterialForm(formData);
-  if (!parsed.ok) return { status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: parsed.fieldErrors };
+  // An existing colour needs its „Ordine”. The schema reads an emptied box as 0, and a 0
+  // ties with the family's first colour and can take its place (the id decides), under
+  // „Salvat.” and with the box still empty. Only a new colour may leave it empty, to come
+  // last (createMaterial). Answered with the schema's own errors, so one answer marks
+  // every field.
+  const sortMissing = materialId !== "" && sortLeftBlank(formData);
+  if (!parsed.ok || sortMissing) {
+    return {
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { ...(parsed.ok ? {} : parsed.fieldErrors), ...(sortMissing ? { sort: ADMIN_MESSAGES.required } : {}) },
+    };
+  }
 
   const change = photoChange(formData, "materials");
   if (!change.ok) {

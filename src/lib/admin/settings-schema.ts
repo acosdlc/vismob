@@ -21,6 +21,8 @@ import { ADMIN_MESSAGES } from "./types";
 // and atelier_photo_path (the FOTO 08 box shows instead). The seed's "[...]"
 // placeholders are not empty: they pass everywhere, in „Telefon” and „Email” as well,
 // so the form can be saved before all the content is in; they are replaced in PR-11.
+// In those two fields only a value that is one whole bracket counts as a placeholder
+// (isPlaceholder); a number or an address with a bracketed note is checked like any other.
 // Beyond that only the shape is checked here, never the content.
 //
 // Only the Server Action imports this module: libphonenumber-js must not reach a
@@ -53,8 +55,15 @@ const httpUrl = z.url({ protocol: /^https?$/ });
 /** The check the public forms run on the client's address (src/lib/validation/schemas.ts). */
 const emailAddress = z.email();
 
-/** A value that carries "[" is still a placeholder, as on the site (`isReal` in src/emails/shared.tsx). */
-const isPlaceholder = (value: string) => value.includes("[");
+/**
+ * In „Telefon” and „Email” a value is still a placeholder only when it is one whole
+ * bracket, as the seed's „[07xx xxx xxx]” and „[contact@domeniu.ro]” are: it opens with
+ * "[", closes with "]" and has no other "]" inside. The value arrives trimmed. The
+ * emails and the JSON-LD take any text that carries "[" for a placeholder (`isReal` in
+ * src/emails/shared.tsx) and leave it unlinked; here that rule would switch the check
+ * off for „0722 123 456 [Alex]”, which the public pages link as it is.
+ */
+const isPlaceholder = (value: string) => /^\[[^\]]*\]$/.test(value);
 
 /** A posted text: present (the form always posts it), trimmed, bounded; "" allowed. */
 const text = (field: SettingsField) =>

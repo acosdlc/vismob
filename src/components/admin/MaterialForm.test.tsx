@@ -154,7 +154,8 @@ describe("MaterialForm for a new material", () => {
     // Empty, not 0: a 0 would tie with the family's first colour and could take its place.
     expect(sort).toHaveValue(null);
     expect(sort).toHaveAccessibleDescription(T.sortHint);
-    expect(T.sortHint).toBe("Lasă gol ca să apară ultima în familie.");
+    // „ultimul”: the screen speaks of „material” („Material nou”, „Activ”).
+    expect(T.sortHint).toBe("Lasă gol ca să apară ultimul în familie.");
 
     const photo = screen.getByLabelText(T.photo);
     expect(photo).toHaveAttribute("type", "file");
@@ -389,7 +390,7 @@ describe("MaterialForm for an existing material", () => {
     expect(screen.getByRole("checkbox", { name: T.featured })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: T.active })).toBeChecked();
     expect(screen.getByLabelText(T.sort)).toHaveValue(3);
-    // The hint is the new-colour screen's: here an emptied „Ordine” is saved as 0, as before.
+    // The hint is the new-colour screen's: here an emptied „Ordine” is refused (saveMaterial).
     expect(screen.queryByText(T.sortHint)).toBeNull();
     expect(screen.getByLabelText(T.sort)).not.toHaveAttribute("aria-describedby");
     expect(hidden(PHOTO_FIELDS.path)).toHaveValue(PHOTO);
@@ -420,6 +421,29 @@ describe("MaterialForm for an existing material", () => {
     expect(formData.get(PHOTO_FIELDS.before)).toBe(PHOTO);
     expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
     expect(screen.getByLabelText(T.name)).toHaveValue("Verde închis");
+  });
+
+  it("posts an emptied „Ordine” as empty, and marks and focuses the box when the action refuses it", async () => {
+    // What saveMaterial answers to an emptied „Ordine” on an existing colour.
+    saveMaterial.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: { sort: ADMIN_MESSAGES.required } });
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const sort = screen.getByLabelText(T.sort);
+    fireEvent.change(sort, { target: { value: "" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(saveMaterial).toHaveBeenCalledTimes(1));
+    // Empty, not 0: the action can tell an emptied box from a typed 0.
+    expect(saveMaterial.mock.calls[0][1].get("sort")).toBe("");
+    expect(saveMaterial.mock.calls[0][1].get("id")).toBe("ct-verde");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Verifică câmpurile marcate.");
+    expect(sort).toHaveAttribute("aria-invalid", "true");
+    expect(sort).toHaveAccessibleDescription("Completează acest câmp.");
+    await waitFor(() => expect(document.activeElement).toBe(sort));
+    // Nothing was saved, and nothing says so.
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(sort).toHaveValue(null);
   });
 
   it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
@@ -479,6 +503,36 @@ describe("MaterialForm for an existing material", () => {
     expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
     await waitFor(() => expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument());
     expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+  });
+
+  it("stops saying „…apare pe site după ce salvezi” once the save went through and the page hands back the stored photo", async () => {
+    const { rerender } = render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+    pickPhoto();
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument();
+    const [path] = upload.mock.calls[0];
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    expect(saveMaterial.mock.calls[0][1].get(PHOTO_FIELDS.path)).toBe(path);
+    // The action ends with refresh(): the screen gets the saved row with the action's answer.
+    rerender(<MaterialForm material={{ ...MATERIAL, photo_path: path }} families={FAMILIES} />);
+
+    // „Salvat.” stands alone: the sentence about a save still to come would now be stale.
+    expect(screen.getByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    expect(screen.queryByText(PHOTO_TEXTS.uploaded)).toBeNull();
+    expect(hidden(PHOTO_FIELDS.path)).toHaveValue(path);
+    expect(hidden(PHOTO_FIELDS.before)).toHaveValue(path);
+
+    // The same for a removal: said until the save, not after it.
+    fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+    expect(screen.getByText(PHOTO_TEXTS.removed)).toBeInTheDocument();
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    rerender(<MaterialForm material={{ ...MATERIAL, photo_path: null }} families={FAMILIES} />);
+    expect(screen.getByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    expect(screen.queryByText(PHOTO_TEXTS.removed)).toBeNull();
   });
 
   it("keeps the error notice, the field errors and the focus while the form is edited", async () => {

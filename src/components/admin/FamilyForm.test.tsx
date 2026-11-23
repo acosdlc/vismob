@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { redirect } from "next/navigation";
 import { Component, type ReactElement, type ReactNode } from "react";
 import { renderToString } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CATALOG_MESSAGES, parseFamilyForm, SPEC_ROWS } from "@/lib/admin/catalog-schemas";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 
@@ -13,6 +13,10 @@ vi.mock("@/actions/admin/save-family", () => ({
 }));
 
 import { FamilyForm, FAMILY_TEXTS } from "./FamilyForm";
+
+/** An action the test answers by hand (`answers.shift()?.(state)`), to stand between a submit and its answer. */
+const answers: Array<(state: AdminActionState) => void> = [];
+const held = () => new Promise<AdminActionState>((resolve) => answers.push(resolve));
 
 /** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
 class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
@@ -74,6 +78,14 @@ function shownRows(): string[] {
   });
 }
 
+/** The grid's twelve boxes as they are on screen now, row by row. */
+function gridBoxes(): HTMLInputElement[] {
+  return Array.from({ length: SPEC_ROWS }, (_, i) => [
+    screen.getByLabelText<HTMLInputElement>(`Rând ${i + 1}, nume`),
+    screen.getByLabelText<HTMLInputElement>(`Rând ${i + 1}, valoare`),
+  ]).flat();
+}
+
 /** What a submit posts for the grid, in the same shape as shownRows(). */
 function postedRows(formData: FormData): string[] {
   return Array.from({ length: SPEC_ROWS }, (_, i) => {
@@ -86,6 +98,11 @@ function postedRows(formData: FormData): string[] {
 beforeEach(() => {
   saveFamily.mockReset();
   saveFamily.mockResolvedValue({ status: "ok", message: ADMIN_MESSAGES.saved });
+});
+
+afterEach(() => {
+  // A held action that a failed test left unanswered would keep every later save waiting behind it.
+  for (const answer of answers.splice(0)) answer({ status: "idle" });
 });
 
 describe("FamilyForm", () => {
@@ -370,6 +387,131 @@ describe("FamilyForm when the page hands back the stored rows", () => {
     expect(screen.getByLabelText("Rând 2, valoare")).toBe(box);
     expect(shownRows()).toEqual([row(A), row(B), "", "", "", ""]);
     expect(screen.getByLabelText("Nume")).toHaveValue("Catifea fină");
+  });
+
+  it("holds the grid's boxes read-only while the save is on its way: a row typed then would be thrown away by the rebuild", async () => {
+    saveFamily.mockImplementationOnce(held);
+    const family = { ...FAMILY, specs: [A, B] };
+    const { rerender } = render(<FamilyForm family={family} />);
+    for (const box of gridBoxes()) expect(box).not.toHaveAttribute("readonly");
+    fireEvent.change(screen.getByLabelText("Rând 3, nume"), { target: { value: C.k } });
+    fireEvent.change(screen.getByLabelText("Rând 3, valoare"), { target: { value: C.v } });
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(submit).toBeDisabled();
+    // Row 4 cannot be started now: it was not in this submit and the answer's rows would replace its boxes.
+    for (const box of gridBoxes()) expect(box).toHaveAttribute("readonly");
+    // Read-only, not disabled: a box keeps the focus, and a post without JavaScript would still carry it.
+    for (const box of gridBoxes()) expect(box).toBeEnabled();
+    // The name and the description are never rebuilt, so they stay open.
+    expect(screen.getByLabelText("Nume")).not.toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Descriere")).not.toHaveAttribute("readonly");
+    expect(postedRows(saveFamily.mock.calls[0][1])).toEqual([row(A), row(B), row(C), "", "", ""]);
+
+    answers.shift()?.({ status: "ok", message: ADMIN_MESSAGES.saved });
+    await waitFor(() => expect(submit).toBeEnabled());
+    rerender(<FamilyForm family={{ ...family, specs: [A, B, C] }} />);
+
+    expect(shownRows()).toEqual([row(A), row(B), row(C), "", "", ""]);
+    for (const box of gridBoxes()) expect(box).not.toHaveAttribute("readonly");
+    expect(screen.getByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+  });
+
+  it("opens the boxes again after a refused save, with what was typed still in them", async () => {
+    saveFamily.mockImplementationOnce(held);
+    render(<FamilyForm family={{ ...FAMILY, specs: [A, B] }} />);
+    fireEvent.change(screen.getByLabelText("Rând 4, nume"), { target: { value: C.k } });
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    for (const box of gridBoxes()) expect(box).toHaveAttribute("readonly");
+    answers.shift()?.({ status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: { specs: CATALOG_MESSAGES.specs } });
+    await screen.findByRole("alert");
+
+    for (const box of gridBoxes()) expect(box).not.toHaveAttribute("readonly");
+    expect(shownRows()).toEqual([row(A), row(B), "", `${C.k}: `, "", ""]);
+  });
+
+  it("puts the focus back in the box of the same name when a save sent with Enter from the grid rebuilds it", async () => {
+    const family = { ...FAMILY, specs: [A, B] };
+    const { rerender } = render(<FamilyForm family={family} />);
+    fireEvent.change(screen.getByLabelText("Rând 3, nume"), { target: { value: C.k } });
+    const typed = screen.getByLabelText("Rând 3, valoare");
+    fireEvent.change(typed, { target: { value: C.v } });
+    typed.focus();
+
+    // Enter in a text box submits the form and leaves the focus in the box.
+    fireEvent.submit(typed.closest("form")!);
+    await screen.findByRole("status");
+    expect(typed).toHaveFocus();
+    rerender(<FamilyForm family={{ ...family, specs: [A, B, C] }} />);
+
+    // The box she was in is gone with the old grid; its successor has the focus, not the page.
+    const rebuilt = screen.getByLabelText("Rând 3, valoare");
+    expect(rebuilt).not.toBe(typed);
+    expect(typed.isConnected).toBe(false);
+    expect(rebuilt).toHaveFocus();
+    expect(rebuilt).toHaveValue(C.v);
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it("leaves the focus where it is after a rebuild when something else took it meanwhile", async () => {
+    const family = { ...FAMILY, specs: [A, B] };
+    const { rerender } = render(<FamilyForm family={family} />);
+    const typed = screen.getByLabelText("Rând 3, nume");
+    fireEvent.change(typed, { target: { value: C.k } });
+    fireEvent.change(screen.getByLabelText("Rând 3, valoare"), { target: { value: C.v } });
+    typed.focus();
+
+    fireEvent.submit(typed.closest("form")!);
+    await screen.findByRole("status");
+    // She went on to the name before the rows came back.
+    const name = screen.getByLabelText("Nume");
+    name.focus();
+    rerender(<FamilyForm family={{ ...family, specs: [A, B, C] }} />);
+
+    expect(name).toHaveFocus();
+  });
+
+  it("does not pull the focus into the grid after a save sent with the button, also when an earlier Enter left no rebuild", async () => {
+    const family = { ...FAMILY, specs: [A, B] };
+    const { rerender } = render(<FamilyForm family={family} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+    const box = screen.getByLabelText("Rând 2, valoare");
+
+    // Enter in a grid box with nothing changed: saved, the stored rows are the same, no rebuild.
+    box.focus();
+    fireEvent.submit(box.closest("form")!);
+    await screen.findByRole("status");
+    rerender(<FamilyForm family={{ ...family, specs: [{ ...A }, { ...B }] }} />);
+    expect(screen.getByLabelText("Rând 2, valoare")).toBe(box);
+    expect(box).toHaveFocus();
+
+    // Then a row is added and saved with the button. The click takes the focus out of the box:
+    // to the page, in the browsers that do not focus a button on a click.
+    fireEvent.change(screen.getByLabelText("Rând 3, nume"), { target: { value: C.k } });
+    fireEvent.change(screen.getByLabelText("Rând 3, valoare"), { target: { value: C.v } });
+    box.blur();
+    fireEvent.click(submit);
+    await waitFor(() => expect(saveFamily).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(submit).toBeEnabled());
+    rerender(<FamilyForm family={{ ...family, specs: [A, B, C] }} />);
+
+    // The box remembered from the earlier Enter is not this save's: nothing is focused for her.
+    expect(screen.getByLabelText("Rând 2, valoare")).not.toBe(box);
+    expect(document.body).toHaveFocus();
+
+    // And in the browsers that do focus it, the button keeps the focus through the rebuild.
+    fireEvent.change(screen.getByLabelText("Rând 4, nume"), { target: { value: "Întreținere" } });
+    fireEvent.change(screen.getByLabelText("Rând 4, valoare"), { target: { value: "aspirare" } });
+    submit.focus();
+    fireEvent.click(submit);
+    await waitFor(() => expect(saveFamily).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(submit).toBeEnabled());
+    rerender(<FamilyForm family={{ ...family, specs: [A, B, C, { k: "Întreținere", v: "aspirare" }] }} />);
+
+    expect(submit).toHaveFocus();
   });
 
   // The whole loop, with the server's own rule for what is stored (parseFamilyForm): one

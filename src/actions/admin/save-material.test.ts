@@ -305,6 +305,14 @@ describe("saveMaterial", () => {
       expect(insertedSort(calls)).toBe(6);
     });
 
+    it("does not ask a new colour for its „Ordine”, also when another field is refused", async () => {
+      // The empty box is an error only on an existing colour.
+      const state = await saveMaterial(ADMIN_INITIAL_STATE, form({ name: "", sort: "" }));
+
+      expect(state).toEqual({ status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: { name: ADMIN_MESSAGES.required } });
+      expect(mocks.createClient).not.toHaveBeenCalled();
+    });
+
     it("keeps a typed „Ordine”, 0 included", async () => {
       const zero = fakeClient({ existing: { data: SEEDED, error: null } });
       mocks.createClient.mockResolvedValue(zero.client);
@@ -456,11 +464,51 @@ describe("saveMaterial", () => {
       expect(console.error).not.toHaveBeenCalled();
     });
 
-    it("stores 0 for an „Ordine” emptied on an existing colour, as before: last-in-family is for new colours only", async () => {
+    it("refuses an „Ordine” emptied on an existing colour, before touching data: last-in-family is for new colours only", async () => {
+      const { client, calls, removed } = fakeClient();
+      mocks.createClient.mockResolvedValue(client);
+
+      // Stored as the schema's 0 it would tie with the family's first colour and could take
+      // its place, under „Salvat.” and with the box still empty.
+      const state = await saveMaterial(ADMIN_INITIAL_STATE, edit({ sort: "" }));
+
+      expect(state).toEqual({
+        status: "error",
+        message: ADMIN_MESSAGES.invalid,
+        fieldErrors: { sort: ADMIN_MESSAGES.required },
+      });
+      expect(state).toMatchObject({ message: "Verifică câmpurile marcate.", fieldErrors: { sort: "Completează acest câmp." } });
+      expect(mocks.createClient).not.toHaveBeenCalled();
+      expect(calls).toEqual([]);
+      expect(removed).toEqual([]);
+      expect(mocks.updateTag).not.toHaveBeenCalled();
+      expect(mocks.refresh).not.toHaveBeenCalled();
+    });
+
+    it("refuses it the same way when „Ordine” holds only spaces or was not posted at all", async () => {
+      const refused = { status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: { sort: ADMIN_MESSAGES.required } };
+
+      expect(await saveMaterial(ADMIN_INITIAL_STATE, edit({ sort: "   " }))).toEqual(refused);
+      expect(await saveMaterial(ADMIN_INITIAL_STATE, edit({ sort: undefined }))).toEqual(refused);
+      expect(mocks.createClient).not.toHaveBeenCalled();
+    });
+
+    it("names the emptied „Ordine” together with the other invalid fields, in one answer", async () => {
+      const state = await saveMaterial(ADMIN_INITIAL_STATE, edit({ name: "", hex: "verde", sort: "" }));
+
+      expect(state).toEqual({
+        status: "error",
+        message: ADMIN_MESSAGES.invalid,
+        fieldErrors: { name: ADMIN_MESSAGES.required, hex: MATERIAL_MESSAGES.hex, sort: ADMIN_MESSAGES.required },
+      });
+      expect(mocks.createClient).not.toHaveBeenCalled();
+    });
+
+    it("keeps a typed „Ordine” on an existing colour, 0 included: first place is a choice when it is typed", async () => {
       const { client, calls } = fakeClient();
       mocks.createClient.mockResolvedValue(client);
 
-      const state = await saveMaterial(ADMIN_INITIAL_STATE, edit({ sort: "" }));
+      const state = await saveMaterial(ADMIN_INITIAL_STATE, edit({ sort: "0" }));
 
       expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
       // The row read and the update, nothing about the family's other colours.

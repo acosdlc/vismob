@@ -6,10 +6,13 @@ import type { Json } from "@/lib/supabase/database.types";
 
 vi.mock("server-only", () => ({}));
 
-const mocks = vi.hoisted(() => ({ sendLeadNotification: vi.fn(), sendEmail: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sendLeadNotification: vi.fn(), sendEmail: vi.fn(), cannotSendReason: vi.fn() }));
 // The dispatcher builds and sends the lead email; here it only has to succeed or fail.
 vi.mock("@/lib/notify/dispatch", () => ({ sendLeadNotification: mocks.sendLeadNotification }));
-vi.mock("@/lib/notify/email", () => ({ sendEmail: mocks.sendEmail }));
+// These tests run as production with neither RESEND_API_KEY nor EMAIL_FROM: the real
+// cannotSendReason would end every run before its first retry. It answers null (the
+// deployment can send) unless a test says otherwise.
+vi.mock("@/lib/notify/email", () => ({ sendEmail: mocks.sendEmail, cannotSendReason: mocks.cannotSendReason }));
 
 import { NotificationAlert } from "@/emails/NotificationAlert";
 import { siteUrl } from "@/lib/site-url";
@@ -100,6 +103,8 @@ beforeEach(() => {
   mocks.sendLeadNotification.mockResolvedValue({ ok: true, id: "re_retry" });
   mocks.sendEmail.mockReset();
   mocks.sendEmail.mockResolvedValue({ ok: true, id: "re_alert" });
+  mocks.cannotSendReason.mockReset();
+  mocks.cannotSendReason.mockReturnValue(null);
 });
 
 afterEach(() => {
@@ -178,6 +183,60 @@ describe("retryNotifications", () => {
     const report = await retryNotifications(fake.client, NOW);
     expect(report.ok).toBe(true);
     expect(report.counts).toEqual({ retried: 0, succeeded: 0, alerted: 0, skipped: 0, deferred: 0 });
+    expect(fake.queries).toHaveLength(1);
+  });
+
+  it("waits, spending no attempt, while the deployment cannot send at all, and retries once it can", async () => {
+    // Production without RESEND_API_KEY (or EMAIL_FROM): every send fails on the same
+    // variable. Retried, the pairs would use up their three attempts in half an hour
+    // and nothing would be sent once the variable is added.
+    const MISSING_KEY = "Missing environment variable RESEND_API_KEY. Add it on the Vercel project's Environment Variables page.";
+    const fake = fakeCronAdmin({
+      respond: respond({
+        // The workshop pair failed once; the client pair is one failure away from the alert.
+        failed: [...failed(LEAD.id, "email_workshop", 1), ...failed(LEAD.id, "email_client", 2)],
+        leads: { [LEAD.id]: LEAD },
+        latest: { id: 9, detail: null },
+      }),
+    });
+    mocks.cannotSendReason.mockReturnValue(MISSING_KEY);
+    mocks.sendLeadNotification.mockResolvedValue({ ok: false, error: MISSING_KEY });
+
+    // Two ticks without the variable: the same single error, and only the first read.
+    for (let tick = 1; tick <= 2; tick += 1) {
+      await expect(retryNotifications(fake.client, NOW)).resolves.toEqual({
+        job: "retry-notifications",
+        ok: false,
+        counts: { retried: 0, succeeded: 0, alerted: 0, skipped: 0, deferred: 0 },
+        errors: [MISSING_KEY],
+      });
+      expect(fake.queries).toHaveLength(tick);
+    }
+    expect(fake.queries.every((query) => query.table === "lead_events" && query.op === "select" && !query.single)).toBe(true);
+    expect(mocks.sendLeadNotification).not.toHaveBeenCalled();
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+
+    // The variable is there: both pairs go out with the attempt they were left at.
+    mocks.cannotSendReason.mockReturnValue(null);
+    mocks.sendLeadNotification.mockResolvedValue({ ok: true, id: "re_retry" });
+
+    const report = await retryNotifications(fake.client, NOW);
+
+    expect(report.ok).toBe(true);
+    expect(report.counts).toEqual({ retried: 2, succeeded: 2, alerted: 0, skipped: 0, deferred: 0 });
+    expect(mocks.sendLeadNotification.mock.calls.map((call) => [call[2], call[3]])).toEqual([
+      ["email_workshop", { attempt: 2 }],
+      ["email_client", { attempt: 3 }],
+    ]);
+    expect(updates(fake.queries)).toEqual([]);
+  });
+
+  it("stays green on a deployment that cannot send while nothing failed", async () => {
+    mocks.cannotSendReason.mockReturnValue("Missing environment variable EMAIL_FROM. Add it on the Vercel project's Environment Variables page.");
+    const fake = fakeCronAdmin({ respond: respond({}) });
+    const report = await retryNotifications(fake.client, NOW);
+    expect(report.ok).toBe(true);
+    expect(report.errors).toEqual([]);
     expect(fake.queries).toHaveLength(1);
   });
 

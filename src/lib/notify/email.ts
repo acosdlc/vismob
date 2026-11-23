@@ -37,6 +37,24 @@ export function fromAddress(): string {
   return FALLBACK_FROM;
 }
 
+/**
+ * Why no email at all can leave this deployment, or null. Only production without
+ * RESEND_API_KEY or EMAIL_FROM is in that state (NOTIFY_DRY_RUN=1 needs neither),
+ * and the text is the one every `sendEmail` call fails with there: the same two
+ * reads, in the same order. The retry cron asks before it spends an attempt, since
+ * a retry would fail on the same variable whatever the email.
+ */
+export function cannotSendReason(): string | null {
+  if (environment() !== "production" || optionalEnv("NOTIFY_DRY_RUN") === "1") return null;
+  try {
+    requireEnv("RESEND_API_KEY");
+    fromAddress();
+    return null;
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   try {
     // NOTIFY_DRY_RUN=1 is asked for, so it holds in every environment. A missing

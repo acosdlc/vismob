@@ -186,6 +186,10 @@ describe("parseSettingsForm", () => {
     for (const value of [
       "sunați după 9",
       "0722 123 456 / 0733 111 222",
+      // The landline as a business card writes it: a valid number to libphonenumber, but the tel:
+      // link would carry the slash. The field's hint names the three refusals (settings-fields.ts).
+      "0264/123.456",
+      "021/312.45.67",
       // libphonenumber alone finds the number inside these two; the tel: link would carry the rest.
       "Tel: 0722 123 456",
       "0722 123 456 (Alex)",
@@ -241,16 +245,48 @@ describe("parseSettingsForm", () => {
     }
   });
 
-  it("lets a „Telefon” or „Email” that still carries „[” through untouched: it is the placeholder", () => {
+  it("lets a „Telefon” or „Email” that is one whole bracket through untouched: it is the placeholder", () => {
     const values = { phone_public: "[07xx xxx xxx]", email_public: "[contact@domeniu.ro]" };
     expect(values).toEqual({ phone_public: SEED_SETTINGS.phone_public, email_public: SEED_SETTINGS.email_public });
     const seed = parseSettingsForm(formFor({ ...SEED_SETTINGS, ...values }));
     expect(seed.ok && seed.data).toMatchObject(values);
 
-    // Any text with „[” counts, as on the site and in the launch gate, not only the seed's own.
+    // Any whole bracket counts, not only the seed's own; the spaces around it are trimmed first.
     const own = { phone_public: "[telefonul atelierului]", email_public: "[adresa de email]" };
-    const result = parseSettingsForm(formFor({ ...SEED_SETTINGS, ...own }));
+    const result = parseSettingsForm(
+      formFor({ ...SEED_SETTINGS, phone_public: ` ${own.phone_public} `, email_public: ` ${own.email_public} ` }),
+    );
     expect(result.ok && result.data).toMatchObject(own);
+  });
+
+  it("checks a „Telefon” or „Email” that carries a bracket without being one whole bracket: the site links it as typed", () => {
+    // „Contains [” is what the emails and the JSON-LD take for a placeholder; here it would switch
+    // the check off, and the header, the footer and the contact section link the value whatever
+    // it holds: tel:0722123456[Alex], mailto:contact@atelier.ro [birou].
+    for (const value of [
+      "0722 123 456 [Alex]",
+      "[Alex] 0722 123 456",
+      "[",
+      "abc [",
+      // It opens and closes with a bracket, but it is two of them.
+      "[07xx xxx xxx] sau [07yy yyy yyy]",
+    ]) {
+      expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, phone_public: value })), value).toEqual({
+        ok: false,
+        fieldErrors: { phone_public: SETTINGS_MESSAGES.phone },
+      });
+    }
+    for (const value of [
+      "contact@atelier.ro [birou]",
+      "[birou] contact@atelier.ro",
+      "[",
+      "[contact@domeniu.ro] sau [birou@domeniu.ro]",
+    ]) {
+      expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, email_public: value })), value).toEqual({
+        ok: false,
+        fieldErrors: { email_public: ADMIN_MESSAGES.email },
+      });
+    }
   });
 
   it("takes the workshop photo as empty or a PhotoField path in the site folder", () => {

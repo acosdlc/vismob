@@ -7,7 +7,9 @@
 // the I/O, the tests use in-memory workbooks), and every validation that the admin
 // already has is reused from src/lib (materialSchema, parsePricingForm,
 // materialIdFor, nextMaterialCode), so the import can refuse nothing the admin
-// accepts and accept nothing it refuses.
+// accepts and accept nothing it refuses. The one exception is a thousands-separator
+// slip in a base or an extra amount: the panel tells it by the typed text, which a
+// number cell does not have (see LEI_FLOOR below).
 import type { Cell, Workbook, Worksheet } from "exceljs";
 import { SPEC_ROWS } from "@/lib/admin/catalog-schemas";
 import { materialIdFor, materialSchema, nextMaterialCode, PRICE_CATEGORIES } from "@/lib/admin/materials";
@@ -157,7 +159,9 @@ const NOTES = {
     "Cele două opționale sunt fixate în configurator, cu textele de mai jos. Prețul lor se scrie în foaia „Prețuri”. Alte opționale cer o modificare a configuratorului: scrieți-le la „Observații”.",
   rules:
     "Scrieți „da” sau „nu” în fiecare celulă; o celulă goală înseamnă „nu”. „nu” înseamnă că familia nu se poate alege la acel model (de exemplu: bouclé nu se face capitonat). Fiecare model are nevoie de cel puțin un „da”.",
-  grid: "Numere, fără „lei” și fără punct la mii (3450, nu 3.450). O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate. Prețurile pot fi aproximative: pe site apar ca „preț orientativ”, iar prețul final îl dați voi în scris.",
+  // The second sentence is also the second one of the hint above the grid of /admin/preturi
+  // (PRICING_MESSAGES.grid): both say what estimatePrice() does with an empty cell.
+  grid: "Numere, fără „lei” și fără punct la mii (3450, nu 3.450). O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate sau, dacă nu e niciuna mai lată, al celei mai late completate. Prețurile pot fi aproximative: pe site apar ca „preț orientativ”, iar prețul final îl dați voi în scris.",
   params:
     "Completați coloana „Valoare”: procentele ca numere (12, nu 12 %), prețurile în lei. „Rotunjire” e pasul la care se rotunjește prețul orientativ (de exemplu 50). Nu schimbați coloana „Cheie”.",
   leadTimes:
@@ -503,7 +507,10 @@ const LIMITS = { name: 80, note: 120, description: 1000, spec: 80 } as const;
 /**
  * Below this, a lei price in the sheet is read as a thousands-separator slip (see parsePricing).
  * The constant is the Prețuri form's own (pricing-schema.ts), so the import and
- * /admin/preturi refuse the same amounts.
+ * /admin/preturi refuse the same grid prices. For a base and an extra the two differ:
+ * the panel refuses only the typed shape of the slip ("1.200"), so it saves a base of
+ * 50 lei; a number cell has no typed shape left (Excel hands over 1.2), so here a base
+ * is still held to the floor and an extra is not checked for the slip.
  */
 export { LEI_FLOOR };
 
@@ -955,7 +962,9 @@ function parsePricing(data: WorkbookData, catalog: Catalog, problems: Problems):
   }
   // A lei price under LEI_FLOOR is a formatting slip, not a price: „3.450” typed as text or in an
   // English-locale Excel reads as 3.45 lei. The percentages and roundTo are small by nature.
-  // /admin/preturi refuses the same amounts (fieldsUnderLeiFloor in pricing-schema.ts).
+  // /admin/preturi refuses the same grid prices (fieldsUnderLeiFloor in pricing-schema.ts); a
+  // base it refuses for the typed shape of the slip only, so a base above 0 and under the
+  // floor, refused here, can still be saved there. The two extras are not checked for the slip here.
   const implausible: string[] = [];
   for (const [model, widths] of Object.entries(checked.data.grid)) {
     for (const [width, lei] of Object.entries(widths)) {

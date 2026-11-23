@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, startTransition, useEffect, useId, useRef, type FormEvent } from "react";
+import { Fragment, startTransition, useEffect, useId, useLayoutEffect, useRef, type FormEvent } from "react";
 import { saveFamily } from "@/actions/admin/save-family";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
 import { useSavedNotice } from "@/components/admin/useSavedNotice";
@@ -36,6 +36,9 @@ export const FAMILY_TEXTS = {
 /** The focus goes to the first invalid field in form order (DESIGN §3.16). */
 const FIELD_ORDER: readonly string[] = ["name", "description", "specs"];
 
+/** The names of the grid's boxes: `spec_k_1`, `spec_v_1` … */
+const SPEC_BOX_NAMES: ReadonlySet<string> = new Set(SPEC_ROW_NUMBERS.flatMap((row) => Object.values(specFieldNames(row))));
+
 /** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
 const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.generic };
 
@@ -63,8 +66,12 @@ export function FamilyForm({ family }: FamilyFormProps) {
   // follows its new default, so the grid would show a row twice or leave one out, and the
   // next save would store what it shows. Keyed on the stored rows, the grid is rebuilt
   // from them whenever a save changes them, and left alone, typed text included, when it
-  // does not (a refused save, a save of the name or the description).
+  // does not (a refused save, a save of the name or the description). A rebuild throws
+  // away whatever its boxes hold, so they are read-only while a save runs: a row typed
+  // then was not in the submit and would be gone, without a word, when the answer came.
   const specsKey = JSON.stringify(family.specs);
+  // The name of the grid box the last submit was sent from (Enter in it); null for any other submit.
+  const submittedFrom = useRef<string | null>(null);
 
   useEffect(() => {
     if (state.status === "error" && state.fieldErrors && formRef.current) {
@@ -72,8 +79,23 @@ export function FamilyForm({ family }: FamilyFormProps) {
     }
   }, [state]);
 
+  // A rebuild replaces the box a save was sent from with Enter, and the focus falls to the
+  // page: the next keystroke would go nowhere. It is put back in the box of the same name,
+  // unless something else has taken it meanwhile. A layout effect, so that it happens in
+  // the same commit as the rebuild, before a keystroke can land on the page.
+  useLayoutEffect(() => {
+    const name = submittedFrom.current;
+    submittedFrom.current = null;
+    if (!name || document.activeElement !== document.body) return;
+    const box = formRef.current?.elements.namedItem(name);
+    if (box instanceof HTMLElement) box.focus();
+  }, [specsKey]);
+
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const active = document.activeElement;
+    const inGrid = active instanceof HTMLInputElement && active.form === event.currentTarget && SPEC_BOX_NAMES.has(active.name);
+    submittedFrom.current = inGrid ? active.name : null;
     const formData = new FormData(event.currentTarget);
     startTransition(() => submit(formData));
   }
@@ -137,6 +159,7 @@ export function FamilyForm({ family }: FamilyFormProps) {
                       aria-label={FAMILY_TEXTS.rowName(row)}
                       defaultValue={spec?.k ?? ""}
                       maxLength={80}
+                      readOnly={pending}
                       aria-invalid={specsInvalid || undefined}
                       aria-describedby={specsDescribedBy}
                       data-field={row === 1 ? "specs" : undefined}
@@ -146,6 +169,7 @@ export function FamilyForm({ family }: FamilyFormProps) {
                       aria-label={FAMILY_TEXTS.rowValue(row)}
                       defaultValue={spec?.v ?? ""}
                       maxLength={80}
+                      readOnly={pending}
                       aria-invalid={specsInvalid || undefined}
                       aria-describedby={specsDescribedBy}
                     />

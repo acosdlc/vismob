@@ -314,6 +314,14 @@ create policy "public_read" on public.projects          for select to anon, auth
 create policy "public_read" on public.project_photos    for select to anon, authenticated using (
   exists (select 1 from public.projects p where p.id = project_id and p.published and p.client_consent));
 
+-- PR-13: o culoare sau o bază dezactivată rămâne citibilă cât timp o folosește un proiect
+-- publicat cu acord, ca legenda proiectului să-și păstreze numele. Cititorul catalogului
+-- filtrează el însuși pe `active`, deci rândurile acestea nu ajung în configurator.
+create policy "public_read_in_project" on public.materials for select to anon, authenticated using (
+  exists (select 1 from public.projects p where p.material_id = materials.id and p.published and p.client_consent));
+create policy "public_read_in_project" on public.bases for select to anon, authenticated using (
+  exists (select 1 from public.projects p where p.base_id = bases.id and p.published and p.client_consent));
+
 -- ───────────── Storage ─────────────
 insert into storage.buckets (id, name, public)
 values ('media', 'media', true)

@@ -2,7 +2,7 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import { SEED_CATALOG, SIZES } from "@/lib/configurator/catalog.seed";
-import { LEI_FLOOR as PANEL_LEI_FLOOR, pricingSchema } from "@/lib/configurator/pricing-schema";
+import { LEI_FLOOR as PANEL_LEI_FLOOR, PRICING_MESSAGES, pricingSchema } from "@/lib/configurator/pricing-schema";
 import {
   catalogSql,
   COLUMNS,
@@ -242,15 +242,18 @@ describe("fillTemplate", () => {
 
   it("says under the price grid what an empty cell does, and nowhere that an empty width is not offered", () => {
     // An empty cell does not take a width out of the configurator: the bed is still
-    // priced, from another cell of the row (estimatePrice). No note may tell the
-    // workshop to leave empty the widths it does not make.
+    // priced, from another cell of the row (estimatePrice): the next filled width or,
+    // with none wider, the widest filled one. No note may tell the workshop to leave
+    // empty the widths it does not make. The sentence is the one above the grid of
+    // /admin/preturi (PRICING_MESSAGES.grid).
     const data = sheetsFromWorkbook(template());
     /** Row 2 of a sheet: the note under its first table's title. */
     const note = (name: string) => data.get(name)![1][0];
+    const emptyCell =
+      "O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate sau, dacă nu e niciuna mai lată, al celei mai late completate.";
     expect(note(SHEETS.pricing)).toContain("fără punct la mii (3450, nu 3.450)");
-    expect(note(SHEETS.pricing)).toContain(
-      "O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate.",
-    );
+    expect(note(SHEETS.pricing)).toContain(emptyCell);
+    expect(PRICING_MESSAGES.grid.endsWith(emptyCell)).toBe(true);
     for (const [name, grid] of data) {
       for (const row of grid) for (const text of row) expect(text, name).not.toMatch(/nu le oferiți/);
     }
@@ -384,7 +387,9 @@ describe("parseWorkbook", () => {
   });
 
   it("shares that floor with the Prețuri form and holds a base amount to it too", () => {
-    // One constant (pricing-schema.ts): the import refuses what /admin/preturi refuses.
+    // One constant (pricing-schema.ts), so a grid price is refused by the import exactly when
+    // /admin/preturi refuses it. A base is held to the floor only here; the panel refuses a
+    // base for the typed shape of the slip alone (fieldsUnderLeiFloor). Both refuse „1.200”.
     expect(LEI_FLOOR).toBe(PANEL_LEI_FLOOR);
     const workbook = filled();
     putParam(sheet(workbook, SHEETS.pricing), "base.lada", "1.200");
