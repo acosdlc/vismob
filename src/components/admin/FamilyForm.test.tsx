@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CATALOG_MESSAGES, SPEC_ROWS } from "@/lib/admin/catalog-schemas";
+import { CATALOG_MESSAGES, parseFamilyForm, SPEC_ROWS } from "@/lib/admin/catalog-schemas";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 
 // The Server Action is replaced: the test drives the form, not the write (src/actions/admin).
@@ -22,6 +24,41 @@ const FAMILY = {
     { k: "Frecare", v: "40.000 cicluri Martindale" },
   ],
 };
+
+/**
+ * A full page load (address bar, reload, new tab): the server's HTML first, then React
+ * attaches to inputs it did not create. A browser treats those as untouched until they
+ * are typed in, unlike the inputs of a screen opened by a link inside the panel.
+ */
+function hydrate(ui: ReactElement) {
+  const container = document.createElement("div");
+  container.innerHTML = renderToString(ui);
+  document.body.appendChild(container);
+  const served = container.querySelector("input");
+  expect(served).toBeInstanceOf(HTMLInputElement);
+  const view = render(ui, { container, hydrate: true });
+  // React kept the server's inputs: a mismatch would have made it render them anew.
+  expect(container.querySelector("input")).toBe(served);
+  return view;
+}
+
+/** The grid as it is on screen: one „name: value” per row, "" for an empty row. */
+function shownRows(): string[] {
+  return Array.from({ length: SPEC_ROWS }, (_, i) => {
+    const k = screen.getByLabelText<HTMLInputElement>(`Rând ${i + 1}, nume`).value;
+    const v = screen.getByLabelText<HTMLInputElement>(`Rând ${i + 1}, valoare`).value;
+    return k === "" && v === "" ? "" : `${k}: ${v}`;
+  });
+}
+
+/** What a submit posts for the grid, in the same shape as shownRows(). */
+function postedRows(formData: FormData): string[] {
+  return Array.from({ length: SPEC_ROWS }, (_, i) => {
+    const k = formData.get(`spec_k_${i + 1}`);
+    const v = formData.get(`spec_v_${i + 1}`);
+    return k === "" && v === "" ? "" : `${k}: ${v}`;
+  });
+}
 
 beforeEach(() => {
   saveFamily.mockReset();
@@ -92,6 +129,59 @@ describe("FamilyForm", () => {
     expect(screen.getByLabelText("Rând 2, nume")).toHaveValue("Animale");
   });
 
+  it("hides the saved notice as soon as a box is edited after a save, and shows it again after the next save", async () => {
+    render(<FamilyForm family={FAMILY} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Typed after the save: „Salvat.” would speak for a row that is not saved.
+    fireEvent.change(screen.getByLabelText("Rând 3, nume"), { target: { value: "Animale" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByLabelText("Rând 3, nume")).toHaveValue("Animale");
+
+    fireEvent.change(screen.getByLabelText("Rând 3, valoare"), { target: { value: "potrivit" } });
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveFamily.mock.calls[1][1].get("spec_k_3")).toBe("Animale");
+
+    // The description is an edit as well.
+    fireEvent.change(screen.getByLabelText("Descriere"), { target: { value: "Paragraf nou." } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("keeps the alert, the specification error and the focus while the boxes are edited", async () => {
+    saveFamily.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { specs: CATALOG_MESSAGES.specs },
+    });
+    render(<FamilyForm family={FAMILY} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(screen.getByLabelText("Rând 1, nume")).toHaveFocus());
+
+    // The row is being corrected: nothing the refused save left on screen moves.
+    const value = screen.getByLabelText("Rând 2, valoare");
+    value.focus();
+    fireEvent.change(value, { target: { value: "40.000 cicluri" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(screen.getByText(CATALOG_MESSAGES.specs)).toBeInTheDocument();
+    expect(screen.getByLabelText("Rând 1, nume")).toHaveAttribute("aria-invalid", "true");
+    expect(value).toHaveFocus();
+  });
+
   it("shows the server's message and marks the spec rows when they are named", async () => {
     saveFamily.mockResolvedValue({
       status: "error",
@@ -120,5 +210,124 @@ describe("FamilyForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText("Rând 1, nume")).not.toHaveAttribute("aria-invalid");
+  });
+});
+
+// The server drops the empty rows and stores the rest in order, and the page hands the
+// stored rows back to the same form with the save's answer (updateTag re-renders the
+// route). `rerender` plays the page here: the grid has to show what is stored, or the
+// next „Salvează” writes what the grid shows.
+describe("FamilyForm when the page hands back the stored rows", () => {
+  const A = { k: "Compoziție", v: "100% poliester" };
+  const B = { k: "Frecare", v: "40.000 cicluri Martindale" };
+  const C = { k: "Animale", v: "potrivit" };
+  const row = (spec: { k: string; v: string }) => `${spec.k}: ${spec.v}`;
+
+  it("moves a row typed under an empty one up to where it is stored, and the next save posts it once", async () => {
+    const family = { ...FAMILY, specs: [] };
+    const { rerender } = render(<FamilyForm family={family} />);
+    fireEvent.change(screen.getByLabelText("Rând 2, nume"), { target: { value: C.k } });
+    fireEvent.change(screen.getByLabelText("Rând 2, valoare"), { target: { value: C.v } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("status");
+    expect(postedRows(saveFamily.mock.calls[0][1])).toEqual(["", row(C), "", "", "", ""]);
+    // Row 1 was empty, so the one row is stored first.
+    rerender(<FamilyForm family={{ ...family, specs: [C] }} />);
+
+    expect(shownRows()).toEqual([row(C), "", "", "", "", ""]);
+    // The rebuilt grid is what was saved: the notice still stands.
+    expect(screen.getByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await waitFor(() => expect(saveFamily).toHaveBeenCalledTimes(2));
+    expect(postedRows(saveFamily.mock.calls[1][1])).toEqual([row(C), "", "", "", "", ""]);
+  });
+
+  it("after a full page load, closes the gap of an emptied middle row instead of losing the row under it", async () => {
+    const { rerender } = hydrate(<FamilyForm family={{ ...FAMILY, specs: [A, B, C] }} />);
+    expect(shownRows()).toEqual([row(A), row(B), row(C), "", "", ""]);
+    fireEvent.change(screen.getByLabelText("Rând 2, nume"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Rând 2, valoare"), { target: { value: "" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("status");
+    expect(postedRows(saveFamily.mock.calls[0][1])).toEqual([row(A), "", row(C), "", "", ""]);
+    rerender(<FamilyForm family={{ ...FAMILY, specs: [A, C] }} />);
+
+    expect(shownRows()).toEqual([row(A), row(C), "", "", "", ""]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await waitFor(() => expect(saveFamily).toHaveBeenCalledTimes(2));
+    expect(postedRows(saveFamily.mock.calls[1][1])).toEqual([row(A), row(C), "", "", "", ""]);
+  });
+
+  it("keeps what was typed after a refused save: the stored rows did not change", async () => {
+    saveFamily.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { specs: CATALOG_MESSAGES.specs },
+    });
+    const family = { ...FAMILY, specs: [A, B] };
+    const { rerender } = render(<FamilyForm family={family} />);
+    // A half-filled row under an empty one: the server refuses the save and stores nothing.
+    fireEvent.change(screen.getByLabelText("Rând 4, nume"), { target: { value: C.k } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(screen.getByLabelText("Rând 1, nume")).toHaveFocus());
+    // The page reads the row again: equal rows, in a new array.
+    rerender(<FamilyForm family={{ ...family, specs: [{ ...A }, { ...B }] }} />);
+
+    expect(shownRows()).toEqual([row(A), row(B), "", `${C.k}: `, "", ""]);
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(screen.getByLabelText("Rând 1, nume")).toHaveFocus();
+  });
+
+  it("leaves the grid alone when a save does not change the stored rows (the name alone)", async () => {
+    const family = { ...FAMILY, specs: [A, B] };
+    const { rerender } = render(<FamilyForm family={family} />);
+    const box = screen.getByLabelText("Rând 2, valoare");
+    fireEvent.change(screen.getByLabelText("Nume"), { target: { value: "Catifea fină" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("status");
+    rerender(<FamilyForm family={{ ...family, name: "Catifea fină", specs: [{ ...A }, { ...B }] }} />);
+
+    // Equal rows in a new array are the same rows: no box is replaced (a replaced box loses the cursor).
+    expect(screen.getByLabelText("Rând 2, valoare")).toBe(box);
+    expect(shownRows()).toEqual([row(A), row(B), "", "", "", ""]);
+    expect(screen.getByLabelText("Nume")).toHaveValue("Catifea fină");
+  });
+
+  // The whole loop, with the server's own rule for what is stored (parseFamilyForm): one
+  // edit, then „Salvează” three times with nothing typed in between. Every save has to
+  // store the same rows; a grid out of step stores a row twice or one row fewer each time.
+  describe.each([
+    ["a screen opened inside the panel", (ui: ReactElement) => render(ui)],
+    ["a full page load", hydrate],
+  ])("on %s", (_screen, open) => {
+    it.each<[string, { k: string; v: string }[], [label: string, value: string][], { k: string; v: string }[]]>([
+      ["a row typed under an empty row", [A, B], [["Rând 4, nume", C.k], ["Rând 4, valoare", C.v]], [A, B, C]],
+      ["a middle row emptied", [A, B, C], [["Rând 2, nume", ""], ["Rând 2, valoare", ""]], [A, C]],
+      ["a row typed right under the last one", [A, B], [["Rând 3, nume", C.k], ["Rând 3, valoare", C.v]], [A, B, C]],
+    ])("stores the same rows save after save: %s", async (_edit, initial, edits, expected) => {
+      const view = open(<FamilyForm family={{ ...FAMILY, specs: initial }} />);
+      for (const [label, value] of edits) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      const submit = screen.getByRole("button", { name: "Salvează" });
+      const blanks = Array.from({ length: SPEC_ROWS - expected.length }, () => "");
+
+      for (let save = 1; save <= 3; save++) {
+        fireEvent.click(submit);
+        await waitFor(() => expect(saveFamily).toHaveBeenCalledTimes(save));
+        await waitFor(() => expect(submit).toBeEnabled());
+        const parsed = parseFamilyForm(saveFamily.mock.calls[save - 1][1]);
+        const stored = parsed.ok ? parsed.data.specs : null;
+        expect(stored, `save ${save}`).toEqual(expected);
+        // The page passes the stored rows back with the save's answer.
+        view.rerender(<FamilyForm family={{ ...FAMILY, specs: stored ?? [] }} />);
+        expect(shownRows(), `after save ${save}`).toEqual([...expected.map(row), ...blanks]);
+      }
+    });
   });
 });

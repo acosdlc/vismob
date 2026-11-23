@@ -87,7 +87,9 @@ describe("signIn", () => {
     mocks.getClaims.mockResolvedValue(claims({ app_metadata: {} }));
     const state = await signIn(IDLE, form(VALID));
     expect(state).toEqual({ status: "error", message: ADMIN_MESSAGES.notAdmin });
+    // Only the session this attempt opened: the account's other devices stay signed in.
     expect(mocks.signOut).toHaveBeenCalledTimes(1);
+    expect(mocks.signOut).toHaveBeenCalledWith({ scope: "local" });
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 

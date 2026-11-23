@@ -47,7 +47,7 @@ interface FakeQuery {
 interface Scenario {
   /** `from("material_families").select("id, code").eq("id", …).maybeSingle()` */
   family?: Result;
-  /** `from("materials").select("id, code")` */
+  /** `from("materials").select("id, code, family_id, sort")` */
   existing?: Result;
   /** `from("materials").insert(…).select("id")` */
   insert?: Result;
@@ -69,7 +69,8 @@ function respond(scenario: Scenario, call: Call): Result {
     if (method === "update") return scenario.update ?? { data: [{ id: ROW.id }], error: null };
     if (method === "select") {
       if (options && typeof options === "object" && "count" in options) return scenario.others ?? { count: 1, data: null, error: null };
-      if (columns === "id, code") return scenario.existing ?? { data: [], error: null };
+      // The read of every material starts with these two columns; the row read does not.
+      if (typeof columns === "string" && columns.startsWith("id, code")) return scenario.existing ?? { data: [], error: null };
       return scenario.row ?? { data: ROW, error: null };
     }
   }
@@ -151,6 +152,20 @@ function form(overrides: Record<string, string | undefined> = {}): FormData {
 /** The chains as `[table, first method, …its arguments]`, for a quick look at the order. */
 const summary = (calls: Call[]) => calls.map((call) => [call.table, ...(call.ops[0] ?? [])]);
 
+/** The catifea colours of the seed, numbered from 0 as the seed and the Excel import number them, and one of another family. */
+const SEEDED = [
+  { id: "ct-verde", code: "CT01", family_id: "catifea", sort: 0 },
+  { id: "ct-bleumarin", code: "CT02", family_id: "catifea", sort: 1 },
+  { id: "ct-mustar", code: "CT03", family_id: "catifea", sort: 2 },
+  { id: "ct-roz", code: "CT04", family_id: "catifea", sort: 3 },
+  { id: "ct-antracit", code: "CT05", family_id: "catifea", sort: 4 },
+  { id: "ct-caramiziu", code: "CT06", family_id: "catifea", sort: 5 },
+  { id: "lm-negru", code: "LM05", family_id: "lemn", sort: 40 },
+];
+
+/** The `sort` of the row the action inserted. */
+const insertedSort = (calls: Call[]) => (calls.find((call) => call.ops[0]?.[0] === "insert")?.ops[0][1] as { sort: number }).sort;
+
 beforeEach(() => {
   mocks.session = ADMIN;
   mocks.refresh.mockReset();
@@ -201,7 +216,7 @@ describe("saveMaterial", () => {
   });
 
   describe("a new material", () => {
-    it("gets its id and code from the family, is inserted, expires the catalog tag and opens its screen", async () => {
+    it("gets its id and code from the family, is inserted, expires the catalog and projects tags and opens its screen", async () => {
       const { client, calls, removed } = fakeClient({ insert: { data: [{ id: "ct-verde-sticla" }], error: null } });
       mocks.createClient.mockResolvedValue(client);
 
@@ -213,7 +228,8 @@ describe("saveMaterial", () => {
         table: "material_families",
         ops: [["select", "id, code"], ["eq", "id", "catifea"], ["maybeSingle"]],
       });
-      expect(calls[1]).toEqual({ table: "materials", ops: [["select", "id, code"]] });
+      // One read of every material serves the id, the code and the family's last order.
+      expect(calls[1]).toEqual({ table: "materials", ops: [["select", "id, code, family_id, sort"]] });
       expect(calls[2]).toEqual({
         table: "materials",
         ops: [
@@ -239,8 +255,8 @@ describe("saveMaterial", () => {
       });
       expect(calls).toHaveLength(3);
       expect(removed).toEqual([]);
-      expect(mocks.updateTag).toHaveBeenCalledTimes(1);
-      expect(mocks.updateTag).toHaveBeenCalledWith("catalog");
+      // "projects" too: the project captions and the hero ticket cache the colour's name under it.
+      expect(mocks.updateTag.mock.calls).toEqual([["catalog"], ["projects"]]);
       expect(mocks.redirect).toHaveBeenCalledWith("/admin/catalog/materiale/ct-verde-sticla?creat=1");
       expect(console.error).not.toHaveBeenCalled();
     });
@@ -249,9 +265,9 @@ describe("saveMaterial", () => {
       const { client, calls } = fakeClient({
         existing: {
           data: [
-            { id: "ct-verde-sticla", code: "CT01" },
-            { id: "ct-verde-sticla-2", code: "CT05" },
-            { id: "bc-alb", code: "BC09" },
+            { id: "ct-verde-sticla", code: "CT01", family_id: "catifea", sort: 0 },
+            { id: "ct-verde-sticla-2", code: "CT05", family_id: "catifea", sort: 1 },
+            { id: "bc-alb", code: "BC09", family_id: "boucle", sort: 0 },
           ],
           error: null,
         },
@@ -263,6 +279,72 @@ describe("saveMaterial", () => {
       const insert = calls[2].ops[0][1] as { id: string; code: string };
       expect(insert.id).toBe("ct-verde-sticla-3");
       expect(insert.code).toBe("CT06");
+    });
+
+    it("puts a colour whose „Ordine” was left empty after the last colour of its family, ignoring other families", async () => {
+      const { client, calls } = fakeClient({ existing: { data: SEEDED, error: null } });
+      mocks.createClient.mockResolvedValue(client);
+
+      // Stored as 0 it would tie with ct-verde, and `ct-albastru` sorts before it: the new
+      // colour would become the family's first, the one the configurator selects.
+      await expect(saveMaterial(ADMIN_INITIAL_STATE, form({ name: "Albastru", sort: "" }))).rejects.toThrow(
+        "NEXT_REDIRECT:/admin/catalog/materiale/ct-albastru?creat=1",
+      );
+
+      expect(insertedSort(calls)).toBe(6);
+      // No extra read for it.
+      expect(calls).toHaveLength(3);
+    });
+
+    it("treats an „Ordine” that was not posted at all as left empty", async () => {
+      const { client, calls } = fakeClient({ existing: { data: SEEDED, error: null } });
+      mocks.createClient.mockResolvedValue(client);
+
+      await expect(saveMaterial(ADMIN_INITIAL_STATE, form({ sort: undefined }))).rejects.toThrow("NEXT_REDIRECT");
+
+      expect(insertedSort(calls)).toBe(6);
+    });
+
+    it("keeps a typed „Ordine”, 0 included", async () => {
+      const zero = fakeClient({ existing: { data: SEEDED, error: null } });
+      mocks.createClient.mockResolvedValue(zero.client);
+      await expect(saveMaterial(ADMIN_INITIAL_STATE, form({ sort: "0" }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(insertedSort(zero.calls)).toBe(0);
+
+      const typed = fakeClient({ existing: { data: SEEDED, error: null } });
+      mocks.createClient.mockResolvedValue(typed.client);
+      await expect(saveMaterial(ADMIN_INITIAL_STATE, form({ sort: "2" }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(insertedSort(typed.calls)).toBe(2);
+    });
+
+    it("counts the family's inactive colours too, and never stores an order past 999", async () => {
+      // The signed-in admin reads every row, the switched-off ones included (RLS: admin_all).
+      const inactive = fakeClient({
+        existing: { data: [...SEEDED, { id: "ct-vechi", code: "CT07", family_id: "catifea", sort: 30 }], error: null },
+      });
+      mocks.createClient.mockResolvedValue(inactive.client);
+      await expect(saveMaterial(ADMIN_INITIAL_STATE, form({ sort: "" }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(insertedSort(inactive.calls)).toBe(31);
+      // The read carries no filter, on `active` or anything else.
+      expect(inactive.calls[1].ops).toEqual([["select", "id, code, family_id, sort"]]);
+
+      const full = fakeClient({
+        existing: { data: [...SEEDED, { id: "ct-ultim", code: "CT07", family_id: "catifea", sort: 999 }], error: null },
+      });
+      mocks.createClient.mockResolvedValue(full.client);
+      await expect(saveMaterial(ADMIN_INITIAL_STATE, form({ sort: "" }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(insertedSort(full.calls)).toBe(999);
+    });
+
+    it("starts a family that has no colour yet at 0", async () => {
+      const { client, calls } = fakeClient({
+        existing: { data: SEEDED.filter((row) => row.family_id !== "catifea"), error: null },
+      });
+      mocks.createClient.mockResolvedValue(client);
+
+      await expect(saveMaterial(ADMIN_INITIAL_STATE, form({ sort: "" }))).rejects.toThrow("NEXT_REDIRECT");
+
+      expect(insertedSort(calls)).toBe(0);
     });
 
     it("stores an empty supplier as null and an unticked box as false", async () => {
@@ -330,7 +412,7 @@ describe("saveMaterial", () => {
     const edit = (overrides: Record<string, string | undefined> = {}) =>
       form({ id: ROW.id, family_id: "boucle", [PHOTO_FIELDS.path]: NEW_PHOTO, [PHOTO_FIELDS.before]: OLD_PHOTO, ...overrides });
 
-    it("updates the editable columns only, removes the replaced photo and expires the catalog tag", async () => {
+    it("updates the editable columns only, removes the replaced photo and expires the catalog and projects tags", async () => {
       const { client, calls, removed } = fakeClient();
       mocks.createClient.mockResolvedValue(client);
 
@@ -367,10 +449,23 @@ describe("saveMaterial", () => {
       });
       expect(calls).toHaveLength(2);
       expect(removed).toEqual([["media", [OLD_PHOTO]]]);
-      expect(mocks.updateTag).toHaveBeenCalledTimes(1);
-      expect(mocks.updateTag).toHaveBeenCalledWith("catalog");
+      // "projects" too: a renamed or switched-off colour must reach the project captions and
+      // the hero ticket now, not when their one-day cache runs out.
+      expect(mocks.updateTag.mock.calls).toEqual([["catalog"], ["projects"]]);
       expect(mocks.redirect).not.toHaveBeenCalled();
       expect(console.error).not.toHaveBeenCalled();
+    });
+
+    it("stores 0 for an „Ordine” emptied on an existing colour, as before: last-in-family is for new colours only", async () => {
+      const { client, calls } = fakeClient();
+      mocks.createClient.mockResolvedValue(client);
+
+      const state = await saveMaterial(ADMIN_INITIAL_STATE, edit({ sort: "" }));
+
+      expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+      // The row read and the update, nothing about the family's other colours.
+      expect(summary(calls).map((c) => c[1])).toEqual(["select", "update"]);
+      expect(calls[1].ops[0][1]).toMatchObject({ sort: 0 });
     });
 
     it("removes nothing when the photo did not change, and the old one when it was cleared", async () => {

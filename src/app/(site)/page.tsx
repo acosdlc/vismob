@@ -12,6 +12,8 @@ import { Process } from "@/components/home/Process";
 import { Reviews } from "@/components/home/Reviews";
 import { Facts } from "@/components/site/Facts";
 import { JsonLd } from "@/components/site/JsonLd";
+import { formatPrice } from "@/lib/configurator/format";
+import { lowestStartingPrice } from "@/lib/configurator/pricing";
 import { getCatalog } from "@/lib/data/catalog";
 import { mediaUrl } from "@/lib/data/media";
 import { getStartingPrices } from "@/lib/data/pricing";
@@ -35,6 +37,8 @@ export default async function Home() {
   ]);
   // The grid stays on the server while prices are not public (ARHITECTURA §7).
   const startingPrices = settings.show_prices ? await getStartingPrices() : {};
+  // 08's „pornește de la … lei” is the cheapest of the model cards' prices; without one the question stays hidden.
+  const lowestPrice = lowestStartingPrice(startingPrices);
 
   return (
     <>
@@ -59,7 +63,7 @@ export default async function Home() {
       {/* FOTO 08 is uploaded from Setări (PR-9); without a path the placeholder stays. */}
       <Atelier settings={settings} photoSrc={mediaUrl(settings.atelier_photo_path)} />
       <Reviews reviews={reviews} settings={settings} />
-      <FaqSection settings={settings} />
+      <FaqSection settings={settings} startingPrice={lowestPrice === null ? undefined : formatPrice(lowestPrice)} />
       <ContactSection settings={settings} form={<ContactForm responseTime={settings.response_time} page="/" />} />
     </>
   );

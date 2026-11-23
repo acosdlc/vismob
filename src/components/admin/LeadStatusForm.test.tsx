@@ -74,6 +74,56 @@ describe("LeadStatusForm", () => {
     expect(screen.getByRole("button", { name: "Salvează" })).toBeEnabled();
   });
 
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<LeadStatusForm leadId={LEAD_ID} status="nou" notes={null} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Chosen after the save: „Salvat.” would speak for a status that is not saved.
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "ofertat" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByLabelText("Status")).toHaveValue("ofertat");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(updateLead.mock.calls[1][1].get("status")).toBe("ofertat");
+
+    // Typed notes are an edit as well.
+    fireEvent.change(screen.getByLabelText("Note interne"), { target: { value: "Ofertă trimisă." } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    expect(updateLead).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps the error notice and the field error while the form is edited", async () => {
+    updateLead.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { notes: ADMIN_MESSAGES.tooLong },
+    });
+    render(<LeadStatusForm leadId={LEAD_ID} status="nou" notes={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+
+    // The notes are being shortened: nothing the refused save left on screen moves.
+    const notes = screen.getByLabelText("Note interne");
+    fireEvent.change(notes, { target: { value: "Mai scurt." } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(notes).toHaveAttribute("aria-invalid", "true");
+    expect(notes).toHaveAccessibleDescription(`${NOTES_HINT} ${ADMIN_MESSAGES.tooLong}`);
+  });
+
   it("shows the server's message and marks the field it names", async () => {
     updateLead.mockResolvedValue({
       status: "error",

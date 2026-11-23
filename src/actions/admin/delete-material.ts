@@ -27,7 +27,10 @@ const refused = (message: string): Outcome => ({ ok: false, state: { status: "er
  * drops the family). Otherwise it removes the row, then the photo, through the
  * signed-in user's cookie client (RLS: `admin_all`, `admin_all_media`), expires the
  * "catalog" tag and redirects to the overview; only an error ever comes back as state.
- * The code of a deleted material is never reused (nextMaterialCode()).
+ * The "projects" tag goes with "catalog", as after every catalogue write (the projects
+ * are cached with the catalogue names they print, src/lib/data/projects.ts); a material
+ * that could be deleted was in no project, so here the rule is kept rather than a
+ * caption changed. The code of a deleted material is never reused (nextMaterialCode()).
  */
 export async function deleteMaterial(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
@@ -55,6 +58,7 @@ export async function deleteMaterial(_prev: AdminActionState, formData: FormData
   if (!outcome.ok) return outcome.state;
 
   updateTag("catalog");
+  updateTag("projects");
   // redirect() throws to perform the navigation, so it stays outside the try.
   redirect(CATALOG_PATH);
 }

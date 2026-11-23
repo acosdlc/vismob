@@ -3,6 +3,7 @@
 import { startTransition, useActionState, useId, type FormEvent } from "react";
 import { updateLead } from "@/actions/admin/update-lead";
 import { AdminCard, Notice } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Field, FieldError, Label, Select, Textarea, formStackClasses } from "@/components/site/form";
 import { ADMIN_INITIAL_STATE, LEAD_STATUSES, LEAD_STATUS_LABELS, type LeadStatus } from "@/lib/admin/types";
@@ -23,6 +24,7 @@ export const NOTES_HINT = "Doar pentru atelier; clientul nu le vede.";
 // JavaScript the `<form action>` posts to the action.
 export function LeadStatusForm({ leadId, status, notes }: LeadStatusFormProps) {
   const [state, formAction, pending] = useActionState(updateLead, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const id = useId();
   const errors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
   const statusId = `${id}-status`;
@@ -37,7 +39,7 @@ export function LeadStatusForm({ leadId, status, notes }: LeadStatusFormProps) {
 
   return (
     <AdminCard>
-      <form action={formAction} onSubmit={onSubmit} className={formStackClasses}>
+      <form action={formAction} onSubmit={onSubmit} onChange={markEdited} className={formStackClasses}>
         <h2 className="h3-card">Status și note</h2>
         <input type="hidden" name="leadId" value={leadId} />
 
@@ -74,7 +76,8 @@ export function LeadStatusForm({ leadId, status, notes }: LeadStatusFormProps) {
           <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
             {pending ? "Se salvează…" : "Salvează"}
           </Button>
-          {!pending && state.status !== "idle" && (
+          {/* „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice). */}
+          {!pending && state.status !== "idle" && !(state.status === "ok" && edited) && (
             <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
               {state.message}
             </Notice>

@@ -3,7 +3,15 @@
 import { refresh, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/admin/auth";
-import { MATERIAL_MESSAGES, materialIdFor, nextMaterialCode, parseMaterialForm, type MaterialInput } from "@/lib/admin/materials";
+import {
+  MATERIAL_MESSAGES,
+  materialIdFor,
+  nextMaterialCode,
+  nextMaterialSort,
+  parseMaterialForm,
+  sortLeftBlank,
+  type MaterialInput,
+} from "@/lib/admin/materials";
 import { photoChange, removeMediaObject } from "@/lib/admin/media";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { createClient, type ServerClient } from "@/lib/supabase/server";
@@ -20,11 +28,14 @@ const failed = (state: AdminActionState): Outcome => ({ kind: "failed", state })
  * `useActionState` (PLAN PR-8 „Materiale”). Re-checks the admin role, validates the
  * whole form, reads the PhotoField's hidden inputs, then writes through the signed-in
  * user's cookie client (RLS: `admin_all`). A new material (hidden `id` empty) gets its
- * id and its code from the family and lands on its own screen; an existing one keeps
- * its family and its code whatever the form posts, and cannot be the last active colour
- * of its family (catalogFromRows() would drop the family and the models that allow only
- * it). A successful write expires the "catalog" tag, so the site reads the new rows on
- * its next request (ARHITECTURA §8).
+ * id and its code from the family, comes last in the family when „Ordine” was left
+ * empty, and lands on its own screen; an existing one keeps its family and its code
+ * whatever the form posts, and cannot be the last active colour of its family
+ * (catalogFromRows() would drop the family and the models that allow only it). A
+ * successful write expires the "catalog" tag, so the site reads the new rows on its next
+ * request (ARHITECTURA §8), and the "projects" tag with it: the project captions and
+ * the hero ticket are cached under that one with the colour's name, for a day
+ * (src/lib/data/projects.ts).
  */
 export async function saveMaterial(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
@@ -53,7 +64,7 @@ export async function saveMaterial(_prev: AdminActionState, formData: FormData):
   try {
     outcome =
       materialId === ""
-        ? await createMaterial(supabase, parsed.data, change.path)
+        ? await createMaterial(supabase, parsed.data, change.path, sortLeftBlank(formData))
         : await updateMaterial(supabase, materialId, parsed.data, change.path, change.remove);
   } catch (err) {
     console.error("saveMaterial", err);
@@ -62,6 +73,7 @@ export async function saveMaterial(_prev: AdminActionState, formData: FormData):
   if (outcome.kind === "failed") return outcome.state;
 
   updateTag("catalog");
+  updateTag("projects");
   // redirect() throws to perform the navigation, so it stays outside the try.
   if (outcome.kind === "created") redirect(materialPath(outcome.id));
   // The edit screen re-reads the row in the action's own response: the title and the
@@ -70,7 +82,12 @@ export async function saveMaterial(_prev: AdminActionState, formData: FormData):
   return { status: "ok", message: ADMIN_MESSAGES.saved };
 }
 
-async function createMaterial(supabase: ServerClient, input: MaterialInput, photoPath: string | null): Promise<Outcome> {
+async function createMaterial(
+  supabase: ServerClient,
+  input: MaterialInput,
+  photoPath: string | null,
+  sortBlank: boolean,
+): Promise<Outcome> {
   const family = await supabase.from("material_families").select("id, code").eq("id", input.family_id).maybeSingle();
   if (family.error) {
     console.error(`saveMaterial: material_families: ${family.error.message}`);
@@ -85,8 +102,9 @@ async function createMaterial(supabase: ServerClient, input: MaterialInput, phot
   }
 
   // Every material, not only the family's: the id is the table's primary key and the
-  // code is unique across families, so both are chosen against the whole table.
-  const existing = await supabase.from("materials").select("id, code");
+  // code is unique across families, so both are chosen against the whole table. The
+  // same read gives the family's last order (inactive colours included).
+  const existing = await supabase.from("materials").select("id, code, family_id, sort");
   if (existing.error) {
     console.error(`saveMaterial: materials: ${existing.error.message}`);
     return failed({ status: "error", message: ADMIN_MESSAGES.generic });
@@ -100,12 +118,18 @@ async function createMaterial(supabase: ServerClient, input: MaterialInput, phot
     family.data.code,
     existing.data.map((row) => row.code),
   );
+  // „Ordine” left empty means last in the family; a typed number, 0 included, is kept.
+  // The schema has already turned the empty value into 0, hence the flag.
+  const familyId = family.data.id;
+  const sort = sortBlank
+    ? nextMaterialSort(existing.data.filter((row) => row.family_id === familyId).map((row) => row.sort))
+    : input.sort;
 
   const { data, error } = await supabase
     .from("materials")
     .insert({
       id,
-      family_id: family.data.id,
+      family_id: familyId,
       name: input.name,
       code,
       hex: input.hex,
@@ -115,7 +139,7 @@ async function createMaterial(supabase: ServerClient, input: MaterialInput, phot
       photo_path: photoPath,
       featured: input.featured,
       active: input.active,
-      sort: input.sort,
+      sort,
     })
     .select("id");
   if (error) {

@@ -5,9 +5,9 @@ import { cx } from "@/components/site/cx";
 // DESIGN §4.2 step 03 and §3.10: family tabs (15px, active 600 with an inset 0 -2px accent
 // underline, min-height 44px) filtered by model.families (§5.2); the 48×48 swatch buttons
 // (aria-label = colour name, aria-pressed; selected: outline 2px ink, offset 3px); the row
-// „{Familie} · {Culoare} [cod furnizor]” and the link to /materiale.
-
-export const SUPPLIER_CODE_PLACEHOLDER = "[cod furnizor]";
+// „{Familie} · {Culoare}” and the link to /materiale. DESIGN ends the row with the supplier's
+// code; it is the catalogue's value (materials.supplier_code), so a colour saved without one
+// shows nothing there (docs/PLAN.md, principle 2: a line whose value is empty hides itself).
 
 export interface StepMaterialProps {
   model: Model;
@@ -69,8 +69,13 @@ export function StepMaterial({ model, families, resolved, onFamilyChange, onColo
       </div>
 
       <p className="text-[15px] leading-[1.5]">
-        <strong className="font-semibold">{resolved.family.name}</strong> · {resolved.color.name}{" "}
-        <span className="font-mono text-[12px] text-muted">{resolved.color.supplierCode ?? SUPPLIER_CODE_PLACEHOLDER}</span>
+        <strong className="font-semibold">{resolved.family.name}</strong> · {resolved.color.name}
+        {resolved.color.supplierCode && (
+          <>
+            {" "}
+            <span className="font-mono text-[12px] text-muted">{resolved.color.supplierCode}</span>
+          </>
+        )}
       </p>
 
       <Button variant="link" href="/materiale" className="self-start">

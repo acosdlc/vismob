@@ -15,6 +15,7 @@ import { ADMIN_MESSAGES } from "@/lib/admin/types";
 import { CUSTOM_L, CUSTOM_W, HEIGHTS, SEED_CATALOG, SIZES } from "@/lib/configurator/catalog.seed";
 import type { Pricing } from "@/lib/configurator/pricing";
 import {
+  LEI_FLOOR,
   parsePricingForm,
   PRICING_BASE_IDS,
   PRICING_CATEGORIES,
@@ -141,7 +142,7 @@ const NOTES = {
   models:
     "Cele patru modele sunt fixate în configurator (au desene și reguli în cod). Completați doar ce vreți să schimbați pe site; o celulă goală păstrează textul de acum. „Observații” nu apare pe site.",
   sizes:
-    "Dimensiunile standard și limitele celor nestandard sunt fixate în configurator. Lățimile pe care nu le oferiți le lăsați fără preț în foaia „Prețuri”. Dacă vreți alte dimensiuni sau alte limite, scrieți la „Observații”.",
+    "Dimensiunile standard și limitele celor nestandard sunt fixate în configurator. Dacă vreți alte dimensiuni sau alte limite, scrieți la „Observații”.",
   headboards:
     "Cele trei înălțimi sunt fixate în configurator. Adaosul pe înălțime se scrie în foaia „Prețuri”. Dacă vreți alte înălțimi, scrieți la „Observații”.",
   bases:
@@ -156,7 +157,7 @@ const NOTES = {
     "Cele două opționale sunt fixate în configurator, cu textele de mai jos. Prețul lor se scrie în foaia „Prețuri”. Alte opționale cer o modificare a configuratorului: scrieți-le la „Observații”.",
   rules:
     "Scrieți „da” sau „nu” în fiecare celulă; o celulă goală înseamnă „nu”. „nu” înseamnă că familia nu se poate alege la acel model (de exemplu: bouclé nu se face capitonat). Fiecare model are nevoie de cel puțin un „da”.",
-  grid: "Numere, fără „lei” și fără punct la mii (3450, nu 3.450). Lăsați gol lățimile pe care nu le oferiți la acel model. Prețurile pot fi aproximative: pe site apar ca „preț orientativ”, iar prețul final îl dați voi în scris.",
+  grid: "Numere, fără „lei” și fără punct la mii (3450, nu 3.450). O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate. Prețurile pot fi aproximative: pe site apar ca „preț orientativ”, iar prețul final îl dați voi în scris.",
   params:
     "Completați coloana „Valoare”: procentele ca numere (12, nu 12 %), prețurile în lei. „Rotunjire” e pasul la care se rotunjește prețul orientativ (de exemplu 50). Nu schimbați coloana „Cheie”.",
   leadTimes:
@@ -499,8 +500,12 @@ export type ParseOutcome = { ok: true; catalog: ImportedCatalog } | { ok: false;
 // The admin's limits (src/lib/admin/catalog-schemas.ts, materials.ts), so a text the
 // import accepts can also be saved from /admin.
 const LIMITS = { name: 80, note: 120, description: 1000, spec: 80 } as const;
-/** Below this, a lei price in the sheet is read as a thousands-separator slip (see parsePricing). */
-export const LEI_FLOOR = 100;
+/**
+ * Below this, a lei price in the sheet is read as a thousands-separator slip (see parsePricing).
+ * The constant is the Prețuri form's own (pricing-schema.ts), so the import and
+ * /admin/preturi refuse the same amounts.
+ */
+export { LEI_FLOOR };
 
 const MODEL_IDS: readonly ModelId[] = ["capitonat", "arcuit", "canale", "lamele"];
 const FAMILY_IDS: readonly FamilyId[] = ["catifea", "boucle", "stofa", "piele", "lemn"];
@@ -950,6 +955,7 @@ function parsePricing(data: WorkbookData, catalog: Catalog, problems: Problems):
   }
   // A lei price under LEI_FLOOR is a formatting slip, not a price: „3.450” typed as text or in an
   // English-locale Excel reads as 3.45 lei. The percentages and roundTo are small by nature.
+  // /admin/preturi refuses the same amounts (fieldsUnderLeiFloor in pricing-schema.ts).
   const implausible: string[] = [];
   for (const [model, widths] of Object.entries(checked.data.grid)) {
     for (const [width, lei] of Object.entries(widths)) {

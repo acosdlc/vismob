@@ -5,6 +5,7 @@ import { saveMaterial } from "@/actions/admin/save-material";
 import { DeleteMaterialButton } from "@/components/admin/DeleteMaterialButton";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Select } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
@@ -42,6 +43,8 @@ export const MATERIAL_FORM_TEXTS = {
   featured: "Apare pe Acasă (grila de 8 mostre)",
   active: "Activ (apare în configurator și pe Materiale)",
   sort: "Ordine",
+  /** Only on the new-material screen: there an empty „Ordine” means last, on an edit it is saved as 0. */
+  sortHint: "Lasă gol ca să apară ultima în familie.",
   photo: "Poză (pătrată)",
   photoHint: "Mostra fotografiată de aproape, cel puțin 600 × 600 px.",
   submit: "Salvează",
@@ -80,6 +83,7 @@ function draftSlug(): string {
 // server's field errors.
 export function MaterialForm({ material, families }: MaterialFormProps) {
   const [state, formAction, pending] = useActionState(saveMaterial, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const [hex, setHex] = useState(material?.hex ?? "");
   const [uploading, setUploading] = useState(false);
   const [slug] = useState(() => material?.id ?? draftSlug());
@@ -113,13 +117,22 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
   const featuredId = `${id}-featured`;
   const activeId = `${id}-active`;
   const sortId = `${id}-sort`;
+  const sortHintId = `${id}-sort-hint`;
   const photoId = `${id}-photo`;
   const held = pending || uploading;
 
   return (
     <div className="flex flex-col gap-8">
       <AdminCard>
-        <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-6">
+        <form
+          ref={formRef}
+          action={formAction}
+          onSubmit={onSubmit}
+          onChange={markEdited}
+          noValidate
+          autoComplete="off"
+          className="flex flex-col gap-6"
+        >
           <input type="hidden" name="id" value={material?.id ?? ""} />
           {editing && <input type="hidden" name="family_id" value={material.family_id} />}
 
@@ -237,6 +250,8 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
 
             <Field>
               <Label htmlFor={sortId}>{MATERIAL_FORM_TEXTS.sort}</Label>
+              {/* A new colour starts empty, not at 0: the action then puts it last in its family
+                  (nextMaterialSort), where a 0 would tie with the family's first colour. */}
               <Input
                 id={sortId}
                 name="sort"
@@ -245,9 +260,15 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
                 min={0}
                 max={999}
                 step={1}
-                defaultValue={material?.sort ?? 0}
+                defaultValue={material?.sort ?? ""}
                 invalid={Boolean(errors.sort)}
+                aria-describedby={editing ? undefined : sortHintId}
               />
+              {!editing && (
+                <p id={sortHintId} className={HINT}>
+                  {MATERIAL_FORM_TEXTS.sortHint}
+                </p>
+              )}
               <FieldError fieldId={sortId}>{errors.sort}</FieldError>
             </Field>
 
@@ -276,6 +297,7 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
                 id={photoId}
                 error={errors[PHOTO_FIELDS.path]}
                 onUploadingChange={setUploading}
+                onRemove={markEdited}
               />
             </div>
           </div>
@@ -284,7 +306,7 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
             <Button type="submit" variant="primary" disabled={held} aria-busy={pending || undefined}>
               {pending ? MATERIAL_FORM_TEXTS.submitting : MATERIAL_FORM_TEXTS.submit}
             </Button>
-            <SaveNotice state={state} pending={pending} />
+            <SaveNotice state={state} pending={pending} edited={edited} />
           </div>
         </form>
       </AdminCard>
@@ -294,8 +316,9 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

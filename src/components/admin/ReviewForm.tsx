@@ -4,6 +4,7 @@ import { startTransition, useActionState, useEffect, useId, useRef, type FormEve
 import { saveReview } from "@/actions/admin/save-review";
 import { DeleteReviewButton } from "@/components/admin/DeleteReviewButton";
 import { AdminCard, Notice, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Select, Textarea } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
@@ -53,6 +54,7 @@ const HINT = "text-[14px] leading-[1.4] text-muted";
 // rule included (it lands on the „Publicată” checkbox).
 export function ReviewForm({ review }: ReviewFormProps) {
   const [state, formAction, pending] = useActionState(saveReview, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
@@ -85,7 +87,15 @@ export function ReviewForm({ review }: ReviewFormProps) {
   return (
     <div className="flex flex-col gap-8">
       <AdminCard>
-        <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-6">
+        <form
+          ref={formRef}
+          action={formAction}
+          onSubmit={onSubmit}
+          onChange={markEdited}
+          noValidate
+          autoComplete="off"
+          className="flex flex-col gap-6"
+        >
           <input type="hidden" name="id" value={review?.id ?? ""} />
 
           <div className={fieldGridClasses}>
@@ -198,7 +208,7 @@ export function ReviewForm({ review }: ReviewFormProps) {
             <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
               {pending ? REVIEW_FORM_TEXTS.submitting : REVIEW_FORM_TEXTS.submit}
             </Button>
-            <SaveNotice state={state} pending={pending} />
+            <SaveNotice state={state} pending={pending} edited={edited} />
           </div>
         </form>
       </AdminCard>
@@ -208,8 +218,9 @@ export function ReviewForm({ review }: ReviewFormProps) {
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

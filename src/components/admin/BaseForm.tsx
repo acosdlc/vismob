@@ -4,6 +4,7 @@ import { startTransition, useActionState, useEffect, useId, useRef, useState, ty
 import { saveBase } from "@/actions/admin/save-base";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
@@ -17,7 +18,7 @@ export interface BaseFormProps {
 }
 
 export const BASE_TEXTS = {
-  noteHint: "Apare sub nume în configurator și pe Materiale.",
+  noteHint: "Apare sub nume în configurator.",
   photoLabel: "Poză (4:3)",
   photoHint: "Piciorul sau baza, fotografiate pe fundal neutru.",
   active: "Activ (apare pe site și în configurator)",
@@ -33,6 +34,7 @@ const FIELD_ORDER: readonly string[] = ["name", "note", PHOTO_FIELDS.path, "acti
 // Without JavaScript the `<form action>` posts to the action, keeping the photo it had.
 export function BaseForm({ base }: BaseFormProps) {
   const [state, formAction, pending] = useActionState(saveBase, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
@@ -54,7 +56,7 @@ export function BaseForm({ base }: BaseFormProps) {
   }
 
   return (
-    <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-6">
+    <form ref={formRef} action={formAction} onSubmit={onSubmit} onChange={markEdited} noValidate autoComplete="off" className="flex flex-col gap-6">
       <input type="hidden" name="id" value={base.id} />
       <AdminCard>
         <div className={fieldGridClasses}>
@@ -98,6 +100,7 @@ export function BaseForm({ base }: BaseFormProps) {
               id={ids.photo}
               error={errors[PHOTO_FIELDS.path]}
               onUploadingChange={setUploading}
+              onRemove={markEdited}
             />
           </div>
 
@@ -130,14 +133,15 @@ export function BaseForm({ base }: BaseFormProps) {
         <Button type="submit" variant="primary" disabled={pending || uploading} aria-busy={pending || undefined}>
           {pending ? "Se salvează…" : "Salvează"}
         </Button>
-        <SaveNotice state={state} pending={pending} />
+        <SaveNotice state={state} pending={pending} edited={edited} />
       </div>
     </form>
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

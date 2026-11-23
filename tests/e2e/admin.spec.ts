@@ -17,6 +17,21 @@ for (const path of ["/admin", "/admin/cereri", "/admin/setari", "/admin/catalog"
   });
 }
 
+// The proxy redirects navigations only. A Server Action is a POST to the page's own
+// address, and a redirect in its place leaves the form with the framework's error
+// screen instead of the action's answer. This id names no action, so Next refuses the
+// call itself (4xx) before any app code runs; a real one reaches the action, whose
+// first step is its own session check.
+test("an anonymous POST to an admin screen is not answered with a redirect", async ({ request }) => {
+  const response = await request.post("/admin/setari", {
+    headers: { "next-action": "not-an-action" },
+    maxRedirects: 0,
+  });
+  expect(response.headers()["location"]).toBeUndefined();
+  expect(response.status()).toBeGreaterThanOrEqual(400);
+  expect(response.status()).toBeLessThan(500);
+});
+
 test("/admin/login: the form, noindex, accessible and captured", async ({ page }, testInfo) => {
   const response = await page.goto("/admin/login");
   expect(response, "no response for /admin/login").not.toBeNull();

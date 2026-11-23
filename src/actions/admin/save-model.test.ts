@@ -163,7 +163,7 @@ describe("saveModel", () => {
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
-  it("updates the columns, replaces the rules (upsert the ticked pairs, then delete the rest) and expires the catalog tag", async () => {
+  it("updates the columns, replaces the rules (upsert the ticked pairs, then delete the rest) and expires the catalog and projects tags", async () => {
     const { client, calls } = fakeClient(happy);
     mocks.createClient.mockResolvedValue(client);
 
@@ -200,8 +200,8 @@ describe("saveModel", () => {
         ops: [["delete"], ["eq", "model_id", "capitonat"], ["not", "family_id", "in", "(catifea,piele)"]],
       },
     ]);
-    expect(mocks.updateTag).toHaveBeenCalledTimes(1);
-    expect(mocks.updateTag).toHaveBeenCalledWith("catalog");
+    // Every catalogue write expires "projects" as well, the tag the projects are cached under.
+    expect(mocks.updateTag.mock.calls).toEqual([["catalog"], ["projects"]]);
   });
 
   it("refuses to deactivate the last active model, before any write", async () => {

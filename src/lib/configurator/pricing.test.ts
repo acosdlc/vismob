@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, SEED_CATALOG } from "./catalog.seed";
-import { estimatePrice, priceFor, startingPrices, type Pricing } from "./pricing";
+import { estimatePrice, lowestStartingPrice, priceFor, startingPrices, type Pricing } from "./pricing";
 import { resolve } from "./rules";
 import type { Config } from "./types";
 
@@ -145,5 +145,20 @@ describe("startingPrices", () => {
     };
     expect(startingPrices(noColors, PRICING)).toEqual({});
     expect(startingPrices({ ...SEED_CATALOG, bases: [] }, PRICING)).toEqual({});
+  });
+});
+
+describe("lowestStartingPrice", () => {
+  it("is the lowest of the models' starting prices", () => {
+    expect(lowestStartingPrice({ capitonat: 3000, arcuit: 3200 })).toBe(3000);
+    expect(lowestStartingPrice({ canale: 3300, capitonat: 3050, arcuit: 3200 })).toBe(3050);
+    expect(lowestStartingPrice(startingPrices(SEED_CATALOG, PRICING))).toBe(3000);
+  });
+
+  it("is null when no model has a starting price, so nothing is shown", () => {
+    expect(lowestStartingPrice({})).toBeNull();
+    // A key without a price is a model without one (the map is a Partial).
+    expect(lowestStartingPrice({ lamele: undefined })).toBeNull();
+    expect(lowestStartingPrice({ lamele: undefined, arcuit: 3200 })).toBe(3200);
   });
 });

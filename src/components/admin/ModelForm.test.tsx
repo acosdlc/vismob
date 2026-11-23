@@ -109,6 +109,58 @@ describe("ModelForm", () => {
     expect(checkbox(/Lemn masiv/)).toBeChecked();
   });
 
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<ModelForm model={MODEL} families={FAMILIES} selected={["catifea", "boucle"]} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // A family ticked after the save: „Salvat.” would speak for a rule that is not saved.
+    fireEvent.click(checkbox(/Lemn masiv/));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(checkbox(/Lemn masiv/)).toBeChecked();
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveModel.mock.calls[1][1].getAll("families")).toEqual(["catifea", "boucle", "lemn"]);
+
+    // Typing is an edit as well.
+    fireEvent.change(screen.getByLabelText("Descriere"), { target: { value: "Text nou." } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("keeps the error notice, the field errors and the focus while the form is edited", async () => {
+    saveModel.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { families: CATALOG_MESSAGES.noFamily },
+    });
+    render(<ModelForm model={MODEL} families={FAMILIES} selected={[]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(checkbox(/Catifea/)).toHaveFocus());
+
+    // Another field is edited: nothing the refused save left on screen moves.
+    const name = screen.getByLabelText("Nume");
+    name.focus();
+    fireEvent.change(name, { target: { value: "Capitonat nou" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(screen.getByText(CATALOG_MESSAGES.noFamily)).toBeInTheDocument();
+    expect(checkbox(/Catifea/)).toHaveAttribute("aria-invalid", "true");
+    expect(name).toHaveFocus();
+  });
+
   it("shows the server's message and marks the fields it names, the family group included", async () => {
     saveModel.mockResolvedValue({
       status: "error",

@@ -3,6 +3,7 @@
 import { Fragment, startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
 import { saveFamily } from "@/actions/admin/save-family";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Field, FieldError, Input, Label, Textarea, fieldErrorId } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
@@ -26,7 +27,7 @@ export const FAMILY_TEXTS = {
   fixedHint: "Codul și tab-ul sunt fixe: intră în codurile de configurare și în regulile paginii Materiale.",
   descriptionHint: "Paragraful de pe pagina Materiale.",
   specsLegend: "Specificații",
-  specsHint: "Rândurile goale nu apar. Pagina Materiale arată patru rânduri.",
+  specsHint: "Rândurile goale nu apar. Pagina Materiale arată toate rândurile completate, în ordinea de aici.",
   rowName: (row: number) => `Rând ${row}, nume`,
   rowValue: (row: number) => `Rând ${row}, valoare`,
 } as const;
@@ -37,10 +38,13 @@ const FIELD_ORDER: readonly string[] = ["name", "description", "specs"];
 // PLAN PR-8 „Familii”: the name, the description and the specification rows of one
 // material family, in the site's card (DESIGN §4.8). `useActionState` drives the
 // `saveFamily` Server Action; the submit goes through `onSubmit` so what the admin
-// typed stays in place after a save. Without JavaScript the `<form action>` posts to
-// the action. The code and the tab are structural and only shown.
+// typed stays in place after a save (React resets a form it submitted itself). The
+// specification grid is the one part that follows the database instead: see `specsKey`.
+// Without JavaScript the `<form action>` posts to the action. The code and the tab are
+// structural and only shown.
 export function FamilyForm({ family }: FamilyFormProps) {
   const [state, formAction, pending] = useActionState(saveFamily, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
@@ -48,6 +52,14 @@ export function FamilyForm({ family }: FamilyFormProps) {
   const specsInvalid = Boolean(errors.specs);
   const specsHintId = `${ids.specs}-hint`;
   const specsDescribedBy = [specsHintId, specsInvalid ? fieldErrorId(ids.specs) : undefined].filter(Boolean).join(" ");
+  // The server drops the empty rows, so a save that left a gap stores the rows in other
+  // positions than the boxes they were typed in, and the page hands the stored rows back
+  // with the action's answer. The boxes are uncontrolled: one that was typed in never
+  // follows its new default, so the grid would show a row twice or leave one out, and the
+  // next save would store what it shows. Keyed on the stored rows, the grid is rebuilt
+  // from them whenever a save changes them, and left alone, typed text included, when it
+  // does not (a refused save, a save of the name or the description).
+  const specsKey = JSON.stringify(family.specs);
 
   useEffect(() => {
     if (state.status === "error" && state.fieldErrors && formRef.current) {
@@ -62,7 +74,7 @@ export function FamilyForm({ family }: FamilyFormProps) {
   }
 
   return (
-    <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-6">
+    <form ref={formRef} action={formAction} onSubmit={onSubmit} onChange={markEdited} noValidate autoComplete="off" className="flex flex-col gap-6">
       <input type="hidden" name="id" value={family.id} />
       <AdminCard>
         <div className={fieldGridClasses}>
@@ -98,7 +110,7 @@ export function FamilyForm({ family }: FamilyFormProps) {
 
           <fieldset className="col-span-full flex min-w-0 flex-col gap-[6px]">
             <legend className="text-[14px] leading-[1.4] font-semibold text-ink">{FAMILY_TEXTS.specsLegend}</legend>
-            <div className="grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 gap-y-2 pt-[6px]">
+            <div key={specsKey} className="grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 gap-y-2 pt-[6px]">
               {/* The column heads are decoration: every input carries its own „Rând n, …” label. */}
               <span aria-hidden="true" />
               <span aria-hidden="true" className="eyebrow">
@@ -146,7 +158,7 @@ export function FamilyForm({ family }: FamilyFormProps) {
         <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
           {pending ? "Se salvează…" : "Salvează"}
         </Button>
-        <SaveNotice state={state} pending={pending} />
+        <SaveNotice state={state} pending={pending} edited={edited} />
       </div>
     </form>
   );
@@ -160,8 +172,9 @@ function Hint({ id, children }: { id: string; children: string }) {
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

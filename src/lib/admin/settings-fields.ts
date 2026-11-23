@@ -9,7 +9,7 @@ import type { Settings } from "@/lib/data/settings.seed";
 export type SettingsKey = keyof Settings;
 
 /** How the form shows a key and how settings-schema.ts validates it. */
-export type SettingsFieldKind = "text" | "textarea" | "url" | "boolean" | "digits" | "photo";
+export type SettingsFieldKind = "text" | "textarea" | "url" | "boolean" | "digits" | "photo" | "phone" | "email";
 
 export interface SettingsField {
   key: SettingsKey;
@@ -37,6 +37,9 @@ export const SETTINGS_MAX = {
   boolean: 2,
   /** A media bucket path posted by PhotoField (`site/<slug>-<stamp>.webp`). */
   photo: 200,
+  /** „Telefon” and „Email” keep the bound of a text: a "[...]" placeholder may still stand in for either. */
+  phone: 200,
+  email: 200,
 } as const satisfies Record<SettingsFieldKind, number>;
 
 const text = (key: SettingsKey, label: string, hint?: string): SettingsField => ({
@@ -55,10 +58,15 @@ const textarea = (key: SettingsKey, label: string, hint?: string): SettingsField
   maxLength: SETTINGS_MAX.textarea,
 });
 
-const url = (key: SettingsKey, label: string): SettingsField => ({
+/** The default hint holds for a link the site shows when filled in; a link no page shows gets its own. */
+const url = (
+  key: SettingsKey,
+  label: string,
+  hint = "Linkul complet, cu https://. Gol: nu apare pe site.",
+): SettingsField => ({
   key,
   label,
-  hint: "Linkul complet, cu https://. Gol: nu apare pe site.",
+  hint,
   kind: "url",
   maxLength: SETTINGS_MAX.url,
 });
@@ -74,7 +82,9 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       textarea("registered_office", "Sediul social"),
       textarea("address", "Adresa atelierului"),
       text("city", "Localitatea"),
-      text("phone_public", "Telefon"),
+      // „Telefon” and, below, „Email”: the site links them (tel:, mailto:) wherever it shows
+      // them, so the schema requires both and checks them as a number and an address.
+      { key: "phone_public", label: "Telefon", kind: "phone", maxLength: SETTINGS_MAX.phone },
       {
         key: "whatsapp_number",
         label: "WhatsApp",
@@ -82,12 +92,17 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
         kind: "digits",
         maxLength: SETTINGS_MAX.digits,
       },
-      text("email_public", "Email"),
+      { key: "email_public", label: "Email", kind: "email", maxLength: SETTINGS_MAX.email },
       textarea("hours", "Program"),
       text("visits_note", "Vizite", "Completează „În atelier, …” și „vizite …”, de exemplu „cu programare”."),
       url("instagram_url", "Instagram"),
       url("facebook_url", "Facebook"),
-      url("google_profile_url", "Profil Google"),
+      // Only the JSON-LD reads it (src/lib/seo/json-ld.ts): no page links to the profile.
+      url(
+        "google_profile_url",
+        "Profil Google",
+        "Linkul complet, cu https://. Nu apare pe site: îl citesc doar motoarele de căutare.",
+      ),
       text("google_rating", "Nota Google", "Apare doar când sunt completate și nota, și numărul de recenzii."),
       text(
         "google_reviews_count",

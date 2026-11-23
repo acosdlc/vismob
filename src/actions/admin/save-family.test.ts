@@ -124,7 +124,7 @@ describe("saveFamily", () => {
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
-  it("writes name, description and the specs as a JSON array (empty rows dropped), then expires the catalog tag", async () => {
+  it("writes name, description and the specs as a JSON array (empty rows dropped), then expires the catalog and projects tags", async () => {
     const { client, calls } = fakeClient(happy);
     mocks.createClient.mockResolvedValue(client);
 
@@ -152,8 +152,9 @@ describe("saveFamily", () => {
         ],
       },
     ]);
-    expect(mocks.updateTag).toHaveBeenCalledTimes(1);
-    expect(mocks.updateTag).toHaveBeenCalledWith("catalog");
+    // "projects" too: the project captions and the hero ticket cache the family's name
+    // („Catifea, verde sticlă”) under that tag, for a day.
+    expect(mocks.updateTag.mock.calls).toEqual([["catalog"], ["projects"]]);
   });
 
   it("never writes the code or the tab, even when posted", async () => {

@@ -5,9 +5,9 @@ import { formValues, zodFieldErrors } from "@/lib/validation/form-values";
 import { ADMIN_MESSAGES } from "./types";
 
 // Pure helpers of the Materiale screens (docs/PLAN.md PR-8, ARHITECTURA §8
-// „Catalog”): the form's schema, the id and the code a new material gets, and the
-// texts the actions answer with. No Supabase, no React: the actions and the form
-// call these and only write or display.
+// „Catalog”): the form's schema, the id, the code and the order a new material gets,
+// and the texts the actions answer with. No Supabase, no React: the actions and the
+// form call these and only write or display.
 
 /** The three categories of `materials.price_category`, in the select's order. */
 export const PRICE_CATEGORIES = ["A", "B", "C"] as const satisfies readonly PriceCategory[];
@@ -82,6 +82,33 @@ export function nextMaterialCode(familyCode: string, existingCodes: readonly str
   return `${familyCode}${String(highest + 1).padStart(2, "0")}`;
 }
 
+/** The highest `sort` the form accepts. */
+export const SORT_MAX = 999;
+
+/**
+ * Whether „Ordine” was left empty in the posted form, or not posted at all. Read from the
+ * raw value, as the schema below receives it: the schema turns an empty sort into 0, and
+ * a new colour has to tell that from a typed 0 (nextMaterialSort).
+ */
+export function sortLeftBlank(formData: FormData): boolean {
+  const posted = formValues(formData).sort;
+  return posted === undefined || posted.trim() === "";
+}
+
+/**
+ * The `sort` of a new colour whose „Ordine” was left empty: one past the highest of its
+ * family, so it comes last. Stored as 0 it would tie with the family's first colour
+ * (the seed and the Excel import number each family from 0) and the id would decide:
+ * the new colour could become the first, which is the one the configurator selects for
+ * the family. `familySorts` holds the `sort` of every colour of the family, the inactive
+ * ones too. Never past SORT_MAX: a family already there gets a tie at its end.
+ */
+export function nextMaterialSort(familySorts: readonly number[]): number {
+  let highest = -1;
+  for (const sort of familySorts) highest = Math.max(highest, sort);
+  return Math.min(highest + 1, SORT_MAX);
+}
+
 /** A checkbox posts "on" when ticked and nothing when not. */
 const checkbox = z
   .string()
@@ -119,7 +146,7 @@ export const materialSchema = z.object({
     .number({ error: ADMIN_MESSAGES.invalid })
     .int(ADMIN_MESSAGES.invalid)
     .min(0, ADMIN_MESSAGES.invalid)
-    .max(999, ADMIN_MESSAGES.invalid)
+    .max(SORT_MAX, ADMIN_MESSAGES.invalid)
     .default(0),
 });
 

@@ -246,6 +246,63 @@ describe("ReviewForm for an existing review", () => {
     expect(screen.getByLabelText(T.body)).toHaveValue("Text corectat.");
   });
 
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<ReviewForm review={REVIEW} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Typed after the save: „Salvat.” would speak for a text that is not saved.
+    fireEvent.change(screen.getByLabelText(T.body), { target: { value: "Text corectat." } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByLabelText(T.body)).toHaveValue("Text corectat.");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveReview.mock.calls[1][1].get("body")).toBe("Text corectat.");
+
+    // A select and a tick are edits as well.
+    fireEvent.change(screen.getByLabelText(T.source), { target: { value: "whatsapp" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: T.published }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("keeps the error notice, the field errors and the focus while the form is edited", async () => {
+    saveReview.mockResolvedValue({
+      status: "error",
+      message: REVIEW_MESSAGES.consent,
+      fieldErrors: { published: REVIEW_MESSAGES.consent },
+    });
+    render(<ReviewForm review={REVIEW} />);
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    await screen.findByRole("alert");
+    const published = screen.getByRole("checkbox", { name: T.published });
+    await waitFor(() => expect(document.activeElement).toBe(published));
+
+    // Another field is edited: nothing the refused save left on screen moves.
+    const body = screen.getByLabelText(T.body);
+    body.focus();
+    fireEvent.change(body, { target: { value: "Text corectat." } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(REVIEW_MESSAGES.consent);
+    expect(published).toHaveAttribute("aria-invalid", "true");
+    expect(published).toHaveAccessibleDescription(REVIEW_MESSAGES.consent);
+    expect(document.activeElement).toBe(body);
+  });
+
   it("shows a plain error without field errors", async () => {
     saveReview.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.forbidden });
     render(<ReviewForm review={REVIEW} />);

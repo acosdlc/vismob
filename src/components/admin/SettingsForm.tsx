@@ -4,6 +4,7 @@ import { startTransition, useActionState, useEffect, useId, useRef, useState, ty
 import { saveSettings } from "@/actions/admin/save-settings";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, AdminSection, Notice, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Textarea } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
@@ -42,6 +43,7 @@ const LOCKED = "Salvarea este oprită: formularul nu arată valorile salvate. Re
 // submit is held while the workshop photo (PR-9, a PhotoField) is still uploading.
 export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
   const [state, formAction, pending] = useActionState(saveSettings, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
@@ -67,6 +69,7 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
       ref={formRef}
       action={formAction}
       onSubmit={onSubmit}
+      onChange={markEdited}
       noValidate
       autoComplete="off"
       className="flex flex-col gap-8"
@@ -84,6 +87,7 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
                   error={errors[field.key]}
                   locked={locked}
                   onUploadingChange={setUploading}
+                  onPhotoRemove={markEdited}
                 />
               ))}
             </div>
@@ -100,15 +104,16 @@ export function SettingsForm({ settings, locked = false }: SettingsFormProps) {
             {LOCKED}
           </Notice>
         ) : (
-          <SaveNotice state={state} pending={pending} />
+          <SaveNotice state={state} pending={pending} edited={edited} />
         )}
       </div>
     </form>
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}
@@ -125,9 +130,11 @@ interface SettingsControlProps {
   locked?: boolean;
   /** From the photo field: the form holds its submit while an upload runs. */
   onUploadingChange: (uploading: boolean) => void;
+  /** From the photo field: „Șterge poza” is a click, so the form hears of it here, not through its `onChange`. */
+  onPhotoRemove: () => void;
 }
 
-function SettingsControl({ field, id, value, error, onUploadingChange, locked = false }: SettingsControlProps) {
+function SettingsControl({ field, id, value, error, onUploadingChange, onPhotoRemove, locked = false }: SettingsControlProps) {
   const invalid = Boolean(error);
   const hintId = field.hint ? `${id}-hint` : undefined;
   const hint = field.hint && (
@@ -155,6 +162,7 @@ function SettingsControl({ field, id, value, error, onUploadingChange, locked = 
           names={photoFieldNames(field.key)}
           disabled={locked}
           onUploadingChange={onUploadingChange}
+          onRemove={onPhotoRemove}
         />
       </div>
     );

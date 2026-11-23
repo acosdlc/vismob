@@ -127,7 +127,10 @@ describe("MaterialForm for a new material", () => {
     expect(sort).toHaveAttribute("name", "sort");
     expect(sort).toHaveAttribute("type", "number");
     expect(sort).toHaveAttribute("min", "0");
-    expect(sort).toHaveValue(0);
+    // Empty, not 0: a 0 would tie with the family's first colour and could take its place.
+    expect(sort).toHaveValue(null);
+    expect(sort).toHaveAccessibleDescription(T.sortHint);
+    expect(T.sortHint).toBe("Lasă gol ca să apară ultima în familie.");
 
     const photo = screen.getByLabelText(T.photo);
     expect(photo).toHaveAttribute("type", "file");
@@ -188,6 +191,29 @@ describe("MaterialForm for a new material", () => {
     expect(screen.getByLabelText(T.hex)).toHaveValue("#cdbfa6");
     expect(screen.getByLabelText(T.priceCategory)).toHaveValue("C");
     expect(screen.getByRole("button", { name: T.submit })).toBeEnabled();
+  });
+
+  it("posts an empty „Ordine” when it is left alone, so the action can put the colour last in its family", async () => {
+    render(<MaterialForm material={null} families={FAMILIES} />);
+    fireEvent.change(screen.getByLabelText(T.name), { target: { value: "Nisip" } });
+    fireEvent.change(screen.getByLabelText(T.hex), { target: { value: "#cdbfa6" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(saveMaterial).toHaveBeenCalledTimes(1));
+    expect(saveMaterial.mock.calls[0][1].get("sort")).toBe("");
+  });
+
+  it("keeps the „Ordine” hint beside a field error of the same box", async () => {
+    saveMaterial.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: { sort: ADMIN_MESSAGES.invalid } });
+    render(<MaterialForm material={null} families={FAMILIES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await screen.findByRole("alert");
+    const sort = screen.getByLabelText(T.sort);
+    expect(sort).toHaveAttribute("aria-invalid", "true");
+    expect(sort).toHaveAccessibleDescription(`${T.sortHint} ${ADMIN_MESSAGES.invalid}`);
   });
 
   it("shows the server's message and field errors, and focuses the first invalid field in form order", async () => {
@@ -278,6 +304,9 @@ describe("MaterialForm for an existing material", () => {
     expect(screen.getByRole("checkbox", { name: T.featured })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: T.active })).toBeChecked();
     expect(screen.getByLabelText(T.sort)).toHaveValue(3);
+    // The hint is the new-colour screen's: here an emptied „Ordine” is saved as 0, as before.
+    expect(screen.queryByText(T.sortHint)).toBeNull();
+    expect(screen.getByLabelText(T.sort)).not.toHaveAttribute("aria-describedby");
     expect(hidden(PHOTO_FIELDS.path)).toHaveValue(PHOTO);
     expect(hidden(PHOTO_FIELDS.before)).toHaveValue(PHOTO);
 
@@ -306,6 +335,89 @@ describe("MaterialForm for an existing material", () => {
     expect(formData.get(PHOTO_FIELDS.before)).toBe(PHOTO);
     expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
     expect(screen.getByLabelText(T.name)).toHaveValue("Verde închis");
+  });
+
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Typed after the save: „Salvat.” would speak for a name that is not saved.
+    fireEvent.change(screen.getByLabelText(T.name), { target: { value: "Verde închis" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByLabelText(T.name)).toHaveValue("Verde închis");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveMaterial.mock.calls[1][1].get("name")).toBe("Verde închis");
+
+    // The colour field keeps its own handler (the preview) and is an edit as well.
+    fireEvent.change(screen.getByLabelText(T.hex), { target: { value: "#B98A2E" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByTestId("hex-preview")).toHaveStyle({ backgroundColor: "#B98A2E" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    // So are a select and a tick.
+    fireEvent.change(screen.getByLabelText(T.priceCategory), { target: { value: "C" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: T.featured }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("hides the saved notice when the photo is removed or replaced after a save", async () => {
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    // „Șterge poza” is a click: no change event reaches the form, the photo field reports it.
+    fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(hidden(PHOTO_FIELDS.path)).toHaveValue("");
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    pickPhoto();
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    await waitFor(() => expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument());
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+  });
+
+  it("keeps the error notice, the field errors and the focus while the form is edited", async () => {
+    saveMaterial.mockResolvedValue({
+      status: "error",
+      message: MATERIAL_MESSAGES.lastColor,
+      fieldErrors: { active: MATERIAL_MESSAGES.lastColor },
+    });
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    await screen.findByRole("alert");
+    const active = screen.getByRole("checkbox", { name: T.active });
+    await waitFor(() => expect(document.activeElement).toBe(active));
+
+    // Another field is edited: nothing the refused save left on screen moves.
+    const name = screen.getByLabelText(T.name);
+    name.focus();
+    fireEvent.change(name, { target: { value: "Verde închis" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(MATERIAL_MESSAGES.lastColor);
+    expect(active).toHaveAttribute("aria-invalid", "true");
+    expect(active).toHaveAccessibleDescription(MATERIAL_MESSAGES.lastColor);
+    expect(document.activeElement).toBe(name);
   });
 
   it("shows a plain error without field errors", async () => {

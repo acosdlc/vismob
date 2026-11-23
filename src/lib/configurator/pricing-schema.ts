@@ -1,8 +1,9 @@
 // The price grid as data: its Zod schema (shared by the site's reader and the admin),
-// the names of the inputs the Prețuri form posts, the parser of that form and the
-// three typical configurations the form previews (docs/ARHITECTURA.md §7, §8;
-// docs/PLAN.md PR-8). Pure: no React, no Supabase, so the Client Component, the
-// Server Action and the `src/lib/data` reader all import it.
+// the names of the inputs the Prețuri form posts, the parser of that form, the floor
+// under its lei amounts (shared with the Excel import) and the three typical
+// configurations the form previews (docs/ARHITECTURA.md §7, §8; docs/PLAN.md PR-8).
+// Pure: no React, no Supabase, so the Client Component, the Server Action and the
+// `src/lib/data` reader all import it.
 import { z } from "zod";
 import { DEFAULT_CONFIG, SIZES } from "./catalog.seed";
 import type { FieldErrors } from "@/lib/leads/types";
@@ -40,7 +41,11 @@ export const pricingSchema = z.object({
  * `Pricing`, joined with dots, so a Zod issue's path is the field it belongs to.
  */
 export const PRICING_FIELDS = {
-  /** A grid cell; empty means the width is not offered and the cell is left out of the grid. */
+  /**
+   * A grid cell; an empty one is left out of the grid. The width stays in the configurator
+   * (it offers every SIZES width) and is priced from another cell of the row: the next
+   * wider one, or the widest (estimatePrice() in pricing.ts).
+   */
   grid: (model: ModelId, width: PricingWidth) => `grid.${model}.${width}` as const,
   categoryPct: (category: PriceCategory) => `categoryPct.${category}` as const,
   hbPct: (height: `${HeadboardHeight}`) => `hbPct.${height}` as const,
@@ -62,16 +67,31 @@ export const PRICING_FIELD_ORDER: readonly string[] = [
   PRICING_FIELDS.roundTo,
 ];
 
+/**
+ * Below this, a lei amount is taken for a thousands-separator slip, not a price: the
+ * site and the panel print „3.450 lei” (formatPrice, ro-RO), and "3.450" typed back
+ * is a number to the parser, 3.45. One constant for the Prețuri form's Server Action
+ * (fieldsUnderLeiFloor) and the Excel import (scripts/catalog-workbook.ts), so both
+ * refuse the same amounts.
+ */
+export const LEI_FLOOR = 100;
+
 /** Texts of the Prețuri form that ADMIN_MESSAGES does not carry. */
 export const PRICING_MESSAGES = {
   number: "Scrie un număr.",
   positive: "Scrie un număr mai mare ca zero.",
-  grid: "Scrie prețul în lei pe lățime; lasă gol lățimile pe care nu le oferi.",
+  /** Under a grid cell or a base amount above zero and under LEI_FLOOR. */
+  floor: `Preț sub ${LEI_FLOOR} lei. Scrie suma fără punct la mii: 3450, nu 3.450.`,
+  /** Above the grid. It says what an empty cell does: the width is still offered and priced (PRICING_FIELDS.grid). */
+  grid: "Scrie prețul în lei pentru fiecare lățime, fără punct la mii: 3450, nu 3.450. O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate.",
 } as const;
 
 export type ParsePricingResult = { ok: true; data: Pricing } | { ok: false; fieldErrors: FieldErrors };
 
-/** Plain digits with an optional decimal point: "3450", "3450.50". No sign, no thousands separator. */
+/**
+ * Plain digits with an optional decimal point: "3450", "3450.50". No sign. A point is
+ * always the decimal point, so "3.450" is 3.45: LEI_FLOOR catches that slip.
+ */
 const NUMBER = /^\d+(\.\d+)?$/;
 const INTEGER = /^\d+$/;
 
@@ -82,7 +102,7 @@ const amount = z
   .regex(NUMBER, PRICING_MESSAGES.number)
   .transform(Number);
 
-/** A grid price: "" (or not posted) when the width is not offered, otherwise a number above zero. */
+/** A grid price: "" (or not posted) for a cell left empty, otherwise a number above zero. */
 const gridPrice = z
   .string()
   .trim()
@@ -170,6 +190,27 @@ export function parsePricingForm(formData: FormData): ParsePricingResult {
     fieldErrors[field] = issue.message || PRICING_MESSAGES.number;
   }
   return { ok: false, fieldErrors };
+}
+
+/**
+ * The inputs of the posted Prețuri form (PRICING_FIELDS names, in form order) that
+ * carry a lei amount above zero and under LEI_FLOOR: the grid cells and the bases,
+ * the rule of the Excel import (parsePricing in scripts/catalog-workbook.ts). 0 is a
+ * real amount for a base, an extra may cost less than the floor, and the percentages
+ * and the rounding step are small by nature, so none of those is flagged. It reads
+ * the post, not parsePricingForm's output, so the action can mark these inputs in the
+ * same answer as the parser's errors; an input the parser refuses is never flagged.
+ */
+export function fieldsUnderLeiFloor(formData: FormData): string[] {
+  const posted = values(formData);
+  const lei = [
+    ...PRICING_MODEL_IDS.flatMap((model) => PRICING_WIDTHS.map((width) => PRICING_FIELDS.grid(model, width))),
+    ...PRICING_BASE_IDS.map((base) => PRICING_FIELDS.base(base)),
+  ];
+  return lei.filter((name) => {
+    const parsed = amount.safeParse(posted[name]);
+    return parsed.success && parsed.data > 0 && parsed.data < LEI_FLOOR;
+  });
 }
 
 export interface PreviewConfig {

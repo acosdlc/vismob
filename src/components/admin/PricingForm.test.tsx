@@ -204,6 +204,58 @@ describe("PricingForm", () => {
     expect(screen.getByRole("button", { name: "Salvează" })).not.toBeDisabled();
   });
 
+  it("hides the saved notice as soon as a price is edited after a save, the preview still following, and shows it again after the next save", async () => {
+    render(<PricingForm pricing={PRICING} catalog={SEED_CATALOG} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Capitonat 160 → 4000: the preview follows (4000 × 1.05 = 4200) and the bar no longer says „Salvat.”.
+    fireEvent.change(screen.getByLabelText("Capitonat, 160 cm"), { target: { value: "4000" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(previewCells()[0]).toBe(shown(4200));
+    expect(screen.getByLabelText("Capitonat, 160 cm")).toHaveValue("4000");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(savePricing.mock.calls[1][1].get("grid.capitonat.160")).toBe("4000");
+
+    // A field outside the grid hides it too; saved with nothing changed in between, the
+    // notice goes while the save runs and is back with its answer.
+    fireEvent.change(screen.getByLabelText("Categoria B"), { target: { value: "12.5" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("keeps the error notice and the field errors while the form is edited", async () => {
+    savePricing.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { roundTo: PRICING_MESSAGES.number },
+    });
+    render(<PricingForm pricing={PRICING} catalog={SEED_CATALOG} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+    const roundTo = screen.getByLabelText("Rotunjire (lei)");
+    await waitFor(() => expect(document.activeElement).toBe(roundTo));
+
+    const cell = screen.getByLabelText("Capitonat, 160 cm");
+    cell.focus();
+    fireEvent.change(cell, { target: { value: "4000" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(roundTo).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText(PRICING_MESSAGES.number)).toBeInTheDocument();
+    expect(document.activeElement).toBe(cell);
+    expect(previewCells()[0]).toBe(shown(4200));
+  });
+
   it("shows the server's message and field errors, and focuses the first invalid field in form order", async () => {
     savePricing.mockResolvedValue({
       status: "error",

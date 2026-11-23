@@ -16,7 +16,8 @@ const PROJECT_ID = "9a1b2c3d-0000-4000-8000-00000000abcd";
 const UPLOADED = `projects/${PROJECT_ID}-1792569600000.webp`;
 
 // PhotoField has its own test; here a stub posts the hidden inputs it would, lets the
-// test flip the uploading state the form must honour and "finish" an upload with a path.
+// test flip the uploading state the form must honour, "finish" an upload with a path and
+// press „Șterge poza”.
 const photoProps = vi.fn<(props: PhotoFieldProps) => void>();
 vi.mock("@/components/admin/PhotoField", () => ({
   PhotoField: (props: PhotoFieldProps) => {
@@ -41,6 +42,15 @@ vi.mock("@/components/admin/PhotoField", () => ({
           }}
         >
           end upload
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setPath("");
+            props.onRemove?.();
+          }}
+        >
+          remove photo
         </button>
       </div>
     );
@@ -155,6 +165,82 @@ describe("ProjectPhotosForm", () => {
     expect(notice).toHaveTextContent(ADMIN_MESSAGES.saved);
     expect(notice.className).toContain("border-accent");
     expect(altA).toHaveValue("Patul, din față");
+  });
+
+  it("hides the saved notice as soon as a row is edited after a save, and shows it again after the next save", async () => {
+    render(<ProjectPhotosForm projectId={PROJECT_ID} photos={[PHOTO_A, PHOTO_B]} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+    const [altA] = screen.getAllByLabelText(T.alt);
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Typed after the save: „Salvat.” would speak for an alt text that is not saved.
+    fireEvent.change(altA, { target: { value: "Patul, din față" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(altA).toHaveValue("Patul, din față");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveProjectPhotos.mock.calls[1][1].get(photoRowFields(PHOTO_A.id).alt)).toBe("Patul, din față");
+
+    // A ticked „Șterge” and the new photo's alt text are edits as well.
+    fireEvent.click(screen.getAllByRole("checkbox", { name: T.delete })[1]);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(T.newAlt), { target: { value: "Patul în cameră" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("hides the saved notice when a new photo is picked or removed after a save", async () => {
+    render(<ProjectPhotosForm projectId={PROJECT_ID} photos={[PHOTO_A]} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    // A picked file is a change of the file input, which reaches the form by itself.
+    fireEvent.change(screen.getByLabelText(T.newPhoto), {
+      target: { files: [new File([new Uint8Array(10)], "poza.jpg", { type: "image/jpeg" })] },
+    });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    // „Șterge poza” is a click: no change event reaches the form, the photo field reports it.
+    fireEvent.click(screen.getByRole("button", { name: "remove photo" }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+  });
+
+  it("keeps the error notice, the field errors and the focus while the form is edited", async () => {
+    saveProjectPhotos.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { [photoRowFields(PHOTO_B.id).alt]: PROJECT_MESSAGES.photos },
+    });
+    render(<ProjectPhotosForm projectId={PROJECT_ID} photos={[PHOTO_A, PHOTO_B]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    await screen.findByRole("alert");
+    const [altA, altB] = screen.getAllByLabelText(T.alt);
+    await waitFor(() => expect(document.activeElement).toBe(altB));
+
+    // Another row is edited: nothing the refused save left on screen moves.
+    altA.focus();
+    fireEvent.change(altA, { target: { value: "Patul, din față" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(altB).toHaveAttribute("aria-invalid", "true");
+    expect(altB).toHaveAccessibleDescription(PROJECT_MESSAGES.photos);
+    expect(document.activeElement).toBe(altA);
   });
 
   it("holds the submit while a photo is uploading, then posts the uploaded path with its alt", async () => {

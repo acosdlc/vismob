@@ -3,6 +3,7 @@
 import { startTransition, useActionState, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { savePricing } from "@/actions/admin/save-pricing";
 import { AdminCard, AdminSection, Notice, Table, TableWrap, Tag, Td, Th, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Field, FieldError, Input, Label } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
@@ -51,6 +52,7 @@ const HINT_CLASSES = "text-[14px] leading-[1.4] text-muted";
 // when the form does not parse yet.
 export function PricingForm({ pricing, catalog }: PricingFormProps) {
   const [state, formAction, pending] = useActionState(savePricing, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
@@ -72,8 +74,9 @@ export function PricingForm({ pricing, catalog }: PricingFormProps) {
     startTransition(() => formAction(formData));
   }
 
-  /** Every change re-reads the whole form: the preview follows what the admin types. */
+  /** Every change hides the saved notice (useSavedNotice) and re-reads the whole form: the preview follows what the admin types. */
   function onChange() {
+    markEdited();
     if (!formRef.current) return;
     const parsed = parsePricingForm(new FormData(formRef.current));
     if (parsed.ok) {
@@ -299,14 +302,15 @@ export function PricingForm({ pricing, catalog }: PricingFormProps) {
         <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
           {pending ? "Se salvează…" : "Salvează"}
         </Button>
-        <SaveNotice state={state} pending={pending} />
+        <SaveNotice state={state} pending={pending} edited={edited} />
       </div>
     </form>
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

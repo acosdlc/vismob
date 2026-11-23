@@ -24,7 +24,11 @@ export const CATALOG_READ_FAILED = "Nu am putut citi înregistrarea. Reîncarcă
 /** The ids of models, families and bases: 'capitonat', 'catifea', 'lemn' (src/lib/configurator/types.ts). */
 export const CATALOG_ROW_ID = /^[a-z]+$/;
 
-/** How many specification rows the family form posts (the Materiale page shows four). */
+/**
+ * How many specification rows the family form posts, and the most the Excel import takes
+ * per family. The Materiale page prints every stored row; DESIGN §4.3 lists four per
+ * family as content, not as a limit.
+ */
 export const SPEC_ROWS = 6;
 
 /** The row numbers of the specification grid: 1 … SPEC_ROWS. */

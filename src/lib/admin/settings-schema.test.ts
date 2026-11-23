@@ -34,15 +34,32 @@ describe("parseSettingsForm", () => {
     expect(data).toEqual(SEED_SETTINGS);
   });
 
-  it("accepts empty texts, trims the rest and reads the checkbox", () => {
+  it("accepts empty texts except „Telefon” and „Email”, trims the rest and reads the checkbox", () => {
     const empty = Object.fromEntries(
       SETTINGS_FIELDS.map((f) => [f.key, f.kind === "boolean" ? true : ""]),
     ) as Record<keyof Settings, string | boolean>;
-    const result = parseSettingsForm(formFor({ ...empty, workshop_name: "  Atelierul  ", whatsapp_number: " 40722123456 " }));
+    const contact = { phone_public: "0722 123 456", email_public: "contact@atelier.ro" };
+    const result = parseSettingsForm(
+      formFor({ ...empty, ...contact, workshop_name: "  Atelierul  ", whatsapp_number: " 40722123456 " }),
+    );
     expect(result).toEqual({
       ok: true,
-      data: { ...Object.fromEntries(SETTINGS_FIELDS.map((f) => [f.key, ""])), show_prices: true, workshop_name: "Atelierul", whatsapp_number: "40722123456" },
+      data: {
+        ...Object.fromEntries(SETTINGS_FIELDS.map((f) => [f.key, ""])),
+        ...contact,
+        show_prices: true,
+        workshop_name: "Atelierul",
+        whatsapp_number: "40722123456",
+      },
     });
+
+    // The site always links the phone and the email, so these two, and only these, are required.
+    for (const blank of ["", "   "]) {
+      expect(parseSettingsForm(formFor({ ...empty, phone_public: blank, email_public: blank }))).toEqual({
+        ok: false,
+        fieldErrors: { phone_public: ADMIN_MESSAGES.required, email_public: ADMIN_MESSAGES.required },
+      });
+    }
   });
 
   it("reads an unticked checkbox as false", () => {
@@ -71,16 +88,125 @@ describe("parseSettingsForm", () => {
     });
   });
 
-  it("takes the WhatsApp number as 8 to 15 digits without +, or empty", () => {
-    for (const value of ["", "40722123456", "12345678", "123456789012345"]) {
-      expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, whatsapp_number: value })).ok).toBe(true);
-    }
-    for (const value of ["+40722123456", "0722 123 456", "1234567", "1234567890123456", "abc"]) {
+  it("stores the WhatsApp number as international digits, typed with the country code or the Romanian way", () => {
+    const stored = (value: string) => {
+      const result = parseSettingsForm(formFor({ ...SEED_SETTINGS, whatsapp_number: value }));
+      return result.ok ? result.data.whatsapp_number : result.fieldErrors;
+    };
+    // wa.me needs the country code first: the same mobile, however it was typed.
+    expect(stored("40722123456")).toBe("40722123456");
+    expect(stored("0722123456")).toBe("40722123456");
+    expect(stored(" 0722123456 ")).toBe("40722123456");
+    expect(stored("0040722123456")).toBe("40722123456");
+    expect(stored("722123456")).toBe("40722123456");
+    // A foreign number is read as international first, so it keeps its own country.
+    expect(stored("447911123456")).toBe("447911123456");
+    // Empty stays empty: it hides the buttons.
+    expect(stored("")).toBe("");
+  });
+
+  it("refuses a WhatsApp value that is not digits only, or is no real number in either reading", () => {
+    for (const value of [
+      "+40722123456",
+      "0722 123 456",
+      "1234567",
+      "12345678",
+      "123456789012345",
+      "1234567890123456",
+      "072212345",
+      "abc",
+    ]) {
       expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, whatsapp_number: value }))).toEqual({
         ok: false,
         fieldErrors: { whatsapp_number: SETTINGS_MESSAGES.digits },
       });
     }
+  });
+
+  it("takes „Telefon” as a valid number written with digits, spaces and + . - ( ), and stores it as typed", () => {
+    for (const value of [
+      "0722 123 456",
+      "+40 722 123 456",
+      "(+40) 722 123 456",
+      "0040 722 123 456",
+      "0256 123 456",
+      "(0256) 123-456",
+      "0722.123.456",
+      "+44 7911 123456",
+      // Pasted with no-break spaces: telHref drops every kind of space.
+      "0722 123 456",
+    ]) {
+      const result = parseSettingsForm(formFor({ ...SEED_SETTINGS, phone_public: ` ${value} ` }));
+      expect(result.ok && result.data.phone_public).toBe(value);
+    }
+    for (const value of [
+      "sunați după 9",
+      "0722 123 456 / 0733 111 222",
+      // libphonenumber alone finds the number inside these two; the tel: link would carry the rest.
+      "Tel: 0722 123 456",
+      "0722 123 456 (Alex)",
+      "0722 123 456 0733 111 222",
+      "0722 123 45",
+      "0722",
+    ]) {
+      expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, phone_public: value }))).toEqual({
+        ok: false,
+        fieldErrors: { phone_public: SETTINGS_MESSAGES.phone },
+      });
+    }
+    // The public forms' wording (FORM_MESSAGES.phone).
+    expect(SETTINGS_MESSAGES.phone).toBe("Scrie un număr de telefon valid.");
+  });
+
+  it("refuses a „Telefon” that only libphonenumber's repairs make valid: the tel: link dials what was typed", () => {
+    for (const value of [
+      // The country code without „+” or „00”: the format the WhatsApp hint shows, one field below.
+      "40722123456",
+      "40 722 123 456",
+      // No leading 0.
+      "722 123 456",
+      // The 0 kept after the country code.
+      "+40 (0) 722 123 456",
+      "+40 0722 123 456",
+      // A „+” anywhere but in front.
+      "+40722123456+",
+    ]) {
+      expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, phone_public: value }))).toEqual({
+        ok: false,
+        fieldErrors: { phone_public: SETTINGS_MESSAGES.phone },
+      });
+    }
+  });
+
+  it("takes „Email” as one well-formed address, and stores it as typed", () => {
+    for (const value of ["contact@atelier.ro", "Contact.Atelier+site@Atelier.ro"]) {
+      const result = parseSettingsForm(formFor({ ...SEED_SETTINGS, email_public: ` ${value} ` }));
+      expect(result.ok && result.data.email_public).toBe(value);
+    }
+    for (const value of [
+      "nu avem",
+      "contact@atelier",
+      "contact @atelier.ro",
+      "a@b.ro, c@d.ro",
+      "mailto:contact@atelier.ro",
+    ]) {
+      expect(parseSettingsForm(formFor({ ...SEED_SETTINGS, email_public: value }))).toEqual({
+        ok: false,
+        fieldErrors: { email_public: ADMIN_MESSAGES.email },
+      });
+    }
+  });
+
+  it("lets a „Telefon” or „Email” that still carries „[” through untouched: it is the placeholder", () => {
+    const values = { phone_public: "[07xx xxx xxx]", email_public: "[contact@domeniu.ro]" };
+    expect(values).toEqual({ phone_public: SEED_SETTINGS.phone_public, email_public: SEED_SETTINGS.email_public });
+    const seed = parseSettingsForm(formFor({ ...SEED_SETTINGS, ...values }));
+    expect(seed.ok && seed.data).toMatchObject(values);
+
+    // Any text with „[” counts, as on the site and in the launch gate, not only the seed's own.
+    const own = { phone_public: "[telefonul atelierului]", email_public: "[adresa de email]" };
+    const result = parseSettingsForm(formFor({ ...SEED_SETTINGS, ...own }));
+    expect(result.ok && result.data).toMatchObject(own);
   });
 
   it("takes the workshop photo as empty or a PhotoField path in the site folder", () => {
@@ -127,6 +253,8 @@ describe("parseSettingsForm", () => {
         workshop_name: "a".repeat(SETTINGS_MAX.text + 1),
         story_text: "b".repeat(SETTINGS_MAX.textarea + 1),
         instagram_url: `https://x.ro/${"c".repeat(SETTINGS_MAX.url)}`,
+        phone_public: `[${"d".repeat(SETTINGS_MAX.phone)}]`,
+        email_public: `${"e".repeat(SETTINGS_MAX.email)}@atelier.ro`,
       }),
     );
     expect(tooLong).toEqual({
@@ -135,6 +263,8 @@ describe("parseSettingsForm", () => {
         workshop_name: ADMIN_MESSAGES.tooLong,
         story_text: ADMIN_MESSAGES.tooLong,
         instagram_url: ADMIN_MESSAGES.tooLong,
+        phone_public: ADMIN_MESSAGES.tooLong,
+        email_public: ADMIN_MESSAGES.tooLong,
       },
     });
     expect(field("workshop_name").maxLength).toBe(SETTINGS_MAX.text);

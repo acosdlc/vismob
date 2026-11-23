@@ -1,5 +1,6 @@
 import "server-only";
 import { createElement } from "react";
+import { z } from "zod";
 import { LeadConfirmation } from "@/emails/LeadConfirmation";
 import { LeadToWorkshop } from "@/emails/LeadToWorkshop";
 import { configCode, formatPrice, ticketRows } from "@/lib/configurator/format";
@@ -116,10 +117,14 @@ async function renderAttachment(r: Resolved, lead: LeadRow): Promise<DrawingAtta
   }
 }
 
-/** A `settings` address is usable only when it is not a `[...]` placeholder. */
+/**
+ * A `settings` address is usable only when it is not a `[...]` placeholder and is
+ * well-formed: the check Setări and the public forms run. A typo or a note stored
+ * before Setări checked the field must not become the reply-to of a confirmation.
+ */
 function realAddress(value: string): string | undefined {
   const trimmed = value.trim();
-  return trimmed && !trimmed.includes("[") && trimmed.includes("@") ? trimmed : undefined;
+  return !trimmed.includes("[") && z.email().safeParse(trimmed).success ? trimmed : undefined;
 }
 
 /**

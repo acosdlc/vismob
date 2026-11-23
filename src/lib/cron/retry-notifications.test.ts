@@ -93,6 +93,8 @@ const updates = (queries: FakeQuery[]) => queries.filter((query) => query.op ===
 
 beforeEach(() => {
   nextId = 1;
+  // Vercel runs the crons on the production deployment; LEAD is a production request.
+  vi.stubEnv("VERCEL_ENV", "production");
   vi.stubEnv("NOTIFY_EMAIL", NOTIFY);
   mocks.sendLeadNotification.mockReset();
   mocks.sendLeadNotification.mockResolvedValue({ ok: true, id: "re_retry" });
@@ -304,6 +306,85 @@ describe("retryNotifications", () => {
     expect(report.ok).toBe(true);
     expect(report.counts).toEqual({ retried: 0, succeeded: 0, alerted: 0, skipped: 1, deferred: 0 });
     expect(mocks.sendLeadNotification).not.toHaveBeenCalled();
+  });
+
+  it("leaves a request made in another environment alone: skipped, nothing sent, no alert", async () => {
+    // One database for every environment: a test request made on a preview must not
+    // reach the workshop, from production's sender, through a retry.
+    for (const environment of ["preview", "development", "local"]) {
+      const lead: LeadRow = { ...LEAD, source: { page: "/contact", environment } };
+      const fake = fakeCronAdmin({
+        respond: respond({
+          // The client pair is one failure away from the alert.
+          failed: [...failed(LEAD.id, "email_workshop", 1), ...failed(LEAD.id, "email_client", 2)],
+          leads: { [LEAD.id]: lead },
+          latest: { id: 9, detail: null },
+        }),
+      });
+      mocks.sendLeadNotification.mockResolvedValue({ ok: false, error: "smtp down" });
+
+      const report = await retryNotifications(fake.client, NOW);
+
+      expect(report.ok).toBe(true);
+      expect(report.counts).toEqual({ retried: 0, succeeded: 0, alerted: 0, skipped: 2, deferred: 0 });
+      expect(mocks.sendLeadNotification).not.toHaveBeenCalled();
+      expect(mocks.sendEmail).not.toHaveBeenCalled();
+      expect(updates(fake.queries)).toEqual([]);
+    }
+  });
+
+  it("retries a request that carries no environment, as before", async () => {
+    const sources: Json[] = [null, "x", { page: "/contact" }, { page: "/contact", environment: "" }, { environment: 7 }];
+    for (const source of sources) {
+      mocks.sendLeadNotification.mockClear();
+      const lead: LeadRow = { ...LEAD, source };
+      const fake = fakeCronAdmin({ respond: respond({ failed: failed(LEAD.id, "email_client", 1), leads: { [LEAD.id]: lead } }) });
+
+      const report = await retryNotifications(fake.client, NOW);
+
+      expect(report.counts).toEqual({ retried: 1, succeeded: 1, alerted: 0, skipped: 0, deferred: 0 });
+      expect(mocks.sendLeadNotification).toHaveBeenCalledWith(fake.client, lead, "email_client", { attempt: 2 });
+    }
+  });
+
+  it("on a preview deployment retries the preview's own requests and leaves production's alone", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    const other = "22222222-2222-4222-8222-222222222222";
+    const previewLead: LeadRow = { ...LEAD, id: other, source: { page: "/contact", environment: "preview" } };
+    const fake = fakeCronAdmin({
+      respond: respond({
+        failed: [...failed(LEAD.id, "email_client", 1), ...failed(other, "email_client", 1)],
+        leads: { [LEAD.id]: LEAD, [other]: previewLead },
+      }),
+    });
+
+    const report = await retryNotifications(fake.client, NOW);
+
+    expect(report.ok).toBe(true);
+    expect(report.counts).toEqual({ retried: 1, succeeded: 1, alerted: 0, skipped: 1, deferred: 0 });
+    expect(mocks.sendLeadNotification).toHaveBeenCalledTimes(1);
+    expect(mocks.sendLeadNotification).toHaveBeenCalledWith(fake.client, previewLead, "email_client", { attempt: 2 });
+  });
+
+  it("does not let the skipped requests of another environment use up the run's 50 pairs", async () => {
+    // They stay failed, and first in line, for the whole window: counted against
+    // the limit they would hold back production's own retries for a week.
+    const leads: Record<string, LeadRow> = { [LEAD.id]: LEAD };
+    const events: FailedEvent[] = [];
+    for (let i = 0; i < 55; i += 1) {
+      const id = `${String(i).padStart(8, "0")}-0000-4000-8000-000000000000`;
+      leads[id] = { ...LEAD, id, source: { page: "/contact", environment: "preview" } };
+      events.push(...failed(id, "email_client", 1));
+    }
+    events.push(...failed(LEAD.id, "email_workshop", 1));
+    const fake = fakeCronAdmin({ respond: respond({ failed: events, leads }) });
+
+    const report = await retryNotifications(fake.client, NOW);
+
+    expect(report.ok).toBe(true);
+    expect(report.counts).toEqual({ retried: 1, succeeded: 1, alerted: 0, skipped: 55, deferred: 0 });
+    expect(mocks.sendLeadNotification).toHaveBeenCalledTimes(1);
+    expect(mocks.sendLeadNotification).toHaveBeenCalledWith(fake.client, LEAD, "email_workshop", { attempt: 2 });
   });
 
   it("retries at most 50 pairs per run and defers the rest", async () => {

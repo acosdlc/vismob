@@ -11,15 +11,21 @@ export function isGuardedPath(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");
 }
 
-// Refreshes the session on the signed-in areas and sends anonymous visitors of
-// /admin to the login screen before any page runs. A signed-in user without the
-// admin role passes: the (panel) layout's guard sends them to the login screen,
-// which explains the missing role. The layout and every Server Action check the
-// role again (ARHITECTURA §8: never rely on the proxy alone).
+// Refreshes the session on the signed-in areas and sends anonymous visitors who
+// open /admin to the login screen before any page runs. Only navigations (GET,
+// HEAD) are redirected. A Server Action is a POST to the page's own address: a
+// redirect here would answer in its place, and the form would show the
+// framework's error screen and lose what was typed. So every other method goes on
+// with the refreshed cookies, and the action answers with ADMIN_MESSAGES.forbidden.
+// Nothing here stops an anonymous POST, then: the layout and every Server Action
+// check the role themselves (ARHITECTURA §8: never rely on the proxy alone). A
+// signed-in user without the admin role passes too: the (panel) layout's guard
+// sends them to the login screen, which explains the missing role.
 export async function proxy(request: NextRequest) {
   const { response, session } = await updateSession(request);
 
-  if (session.kind === "anonymous" && isGuardedPath(request.nextUrl.pathname)) {
+  const navigation = request.method === "GET" || request.method === "HEAD";
+  if (navigation && session.kind === "anonymous" && isGuardedPath(request.nextUrl.pathname)) {
     const redirect = NextResponse.redirect(new URL(LOGIN_PATH, request.url));
     // Keep a session the refresh just rotated, even though this visitor is anonymous now.
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));

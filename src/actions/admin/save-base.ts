@@ -11,9 +11,11 @@ import { createClient, type ServerClient } from "@/lib/supabase/server";
  * „Salvează” on /admin/catalog/baze/[id] (PLAN PR-8), for `useActionState`. Re-checks
  * the admin role, validates, then writes the base's name, note, `active`, `sort` and
  * photo path through the signed-in user's cookie client (RLS: `admin_all`), removes
- * the photo the save replaced and expires the "catalog" tag. The photo itself was
- * uploaded by the browser (PhotoField); only its path arrives here. Deactivating the
- * last active base is refused: the configurator needs one to resolve a configuration.
+ * the photo the save replaced and expires the "catalog" tag, and the "projects" tag
+ * with it: the hero ticket is cached under that one with the base's name, for a day
+ * (src/lib/data/projects.ts). The photo itself was uploaded by the browser
+ * (PhotoField); only its path arrives here. Deactivating the last active base is
+ * refused: the configurator needs one to resolve a configuration.
  */
 export async function saveBase(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
@@ -77,5 +79,6 @@ export async function saveBase(_prev: AdminActionState, formData: FormData): Pro
   }
 
   updateTag("catalog");
+  updateTag("projects");
   return { status: "ok", message: ADMIN_MESSAGES.saved };
 }

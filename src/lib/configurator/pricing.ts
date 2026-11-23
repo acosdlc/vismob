@@ -90,3 +90,14 @@ export function startingPrices(catalog: Catalog, pricing: Pricing): Partial<Reco
   }
   return out;
 }
+
+/**
+ * The lowest of the models' starting prices: the figure of „Un pat de 160 × 200 cm
+ * pornește de la … lei” in the questions of Acasă 08 (DESIGN §4.1), which is thus
+ * the price on the cheapest model card of Acasă 02. Null when no model has a
+ * price: the question then stays hidden rather than show a figure nobody gave.
+ */
+export function lowestStartingPrice(prices: Partial<Record<ModelId, number>>): number | null {
+  const known = Object.values(prices).filter((price): price is number => price !== undefined);
+  return known.length ? Math.min(...known) : null;
+}

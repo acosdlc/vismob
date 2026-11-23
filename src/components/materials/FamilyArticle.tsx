@@ -27,8 +27,9 @@ export function FamilyArticle({ family, items }: FamilyArticleProps) {
         {family.description && <p className="text-[16px] leading-[1.55] text-ink-2">{family.description}</p>}
         {family.specs && family.specs.length > 0 && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-[6px] font-mono text-[12px] leading-[1.5]">
-            {family.specs.map((spec) => (
-              <Fragment key={spec.k}>
+            {/* Keyed by position: the panel accepts two rows with the same name, and a row has no other identity. */}
+            {family.specs.map((spec, i) => (
+              <Fragment key={i}>
                 <dt className="text-muted">{spec.k}</dt>
                 <dd>{spec.v}</dd>
               </Fragment>

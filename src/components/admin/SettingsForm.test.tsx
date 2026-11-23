@@ -198,6 +198,112 @@ describe("SettingsForm", () => {
     expect(screen.getByRole("button", { name: "Salvează" })).not.toBeDisabled();
   });
 
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<SettingsForm settings={SETTINGS} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Typed after the save: „Salvat.” in the pinned bar would speak for a text that is not saved.
+    fireEvent.change(screen.getByLabelText("Localitatea"), { target: { value: "Cluj-Napoca" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByLabelText("Localitatea")).toHaveValue("Cluj-Napoca");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveSettings.mock.calls[1][1].get("city")).toBe("Cluj-Napoca");
+
+    // A tick is an edit as well.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Arată prețurile orientative pe site" }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    expect(saveSettings).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not call saved what is changed while the save is still on its way", async () => {
+    // The action answers when the test says so, to stand between the submit and its answer.
+    const answers: Array<(state: AdminActionState) => void> = [];
+    const held = () => new Promise<AdminActionState>((resolve) => answers.push(resolve));
+    const saved: AdminActionState = { status: "ok", message: ADMIN_MESSAGES.saved };
+    render(<SettingsForm settings={SETTINGS} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    saveSettings.mockImplementationOnce(held);
+    fireEvent.click(submit);
+    expect(submit).toBeDisabled();
+    // The submit left with the old value; this is typed before its answer.
+    fireEvent.change(screen.getByLabelText("Localitatea"), { target: { value: "Cluj-Napoca" } });
+    answers.shift()?.(saved);
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(saveSettings.mock.calls[0][1].get("city")).toBe(SETTINGS.city);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // The next save carries it, and the notice is back.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    expect(saveSettings.mock.calls[1][1].get("city")).toBe("Cluj-Napoca");
+
+    // The same for the photo: removed while a save is on its way, it is not in that save.
+    saveSettings.mockImplementationOnce(held);
+    fireEvent.click(submit);
+    fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+    answers.shift()?.(saved);
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(saveSettings.mock.calls[2][1].get("atelier_photo_path")).toBe(PHOTO);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+  });
+
+  it("hides the saved notice when the photo is removed or replaced after a save", async () => {
+    render(<SettingsForm settings={SETTINGS} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    // „Șterge poza” is a click: no change event reaches the form, the photo field reports it.
+    fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(hidden("atelier_photo_path")).toHaveValue("");
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    pickPhoto();
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    await waitFor(() => expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument());
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+  });
+
+  it("keeps the error notice, the field errors and the focus while the form is edited", async () => {
+    saveSettings.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { instagram_url: "Scrie un link complet, cu https://" },
+    });
+    render(<SettingsForm settings={SETTINGS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+    const instagram = screen.getByLabelText("Instagram");
+    await waitFor(() => expect(document.activeElement).toBe(instagram));
+
+    // Another field is edited: nothing the refused save left on screen moves.
+    const city = screen.getByLabelText("Localitatea");
+    city.focus();
+    fireEvent.change(city, { target: { value: "Cluj-Napoca" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(instagram).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText("Scrie un link complet, cu https://")).toBeInTheDocument();
+    expect(document.activeElement).toBe(city);
+  });
+
   it("shows the server's message and field errors, and focuses the first invalid field", async () => {
     saveSettings.mockResolvedValue({
       status: "error",

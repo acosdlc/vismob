@@ -12,7 +12,7 @@ vi.mock("@/actions/admin/save-base", () => ({
 }));
 
 // PhotoField has its own test; here a stub posts the hidden inputs it would and lets
-// the test flip the uploading state the form must honour.
+// the test flip the uploading state the form must honour and press „Șterge poza”.
 const photoProps = vi.fn<(props: PhotoFieldProps) => void>();
 vi.mock("@/components/admin/PhotoField", () => ({
   PhotoField: (props: PhotoFieldProps) => {
@@ -30,6 +30,9 @@ vi.mock("@/components/admin/PhotoField", () => ({
         </button>
         <button type="button" onClick={() => props.onUploadingChange?.(false)}>
           end upload
+        </button>
+        <button type="button" onClick={() => props.onRemove?.()}>
+          remove photo
         </button>
       </div>
     );
@@ -107,6 +110,78 @@ describe("BaseForm", () => {
     const notice = await screen.findByRole("status");
     expect(notice).toHaveTextContent(ADMIN_MESSAGES.saved);
     expect(screen.getByLabelText("Notă")).toHaveValue("Stejar, 14 cm");
+  });
+
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<BaseForm base={BASE} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Typed after the save: „Salvat.” would speak for a note that is not saved.
+    fireEvent.change(screen.getByLabelText("Notă"), { target: { value: "Stejar, 14 cm" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByLabelText("Notă")).toHaveValue("Stejar, 14 cm");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveBase.mock.calls[1][1].get("note")).toBe("Stejar, 14 cm");
+
+    // A tick is an edit as well.
+    fireEvent.click(screen.getByLabelText(BASE_TEXTS.active));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("hides the saved notice when a photo is picked or removed after a save", async () => {
+    render(<BaseForm base={BASE} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    // „Șterge poza” is a click: no change event reaches the form, the photo field reports it.
+    fireEvent.click(screen.getByRole("button", { name: "remove photo" }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    // A picked file is a change of the file input, which reaches the form by itself.
+    fireEvent.change(screen.getByLabelText(BASE_TEXTS.photoLabel), {
+      target: { files: [new File([new Uint8Array(10)], "poza.jpg", { type: "image/jpeg" })] },
+    });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+  });
+
+  it("keeps the error notice and the field errors while the form is edited", async () => {
+    saveBase.mockResolvedValue({
+      status: "error",
+      message: CATALOG_MESSAGES.lastBase,
+      fieldErrors: { active: CATALOG_MESSAGES.lastBase },
+    });
+    render(<BaseForm base={BASE} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+    const active = screen.getByLabelText(BASE_TEXTS.active);
+    await waitFor(() => expect(document.activeElement).toBe(active));
+
+    // Another field is edited: nothing the refused save left on screen moves.
+    const name = screen.getByLabelText("Nume");
+    name.focus();
+    fireEvent.change(name, { target: { value: "Picioare din stejar" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(CATALOG_MESSAGES.lastBase);
+    expect(active).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getAllByText(CATALOG_MESSAGES.lastBase)).toHaveLength(2);
+    expect(document.activeElement).toBe(name);
   });
 
   it("shows the last-base refusal on the active box and hands a photo error to the photo field", async () => {

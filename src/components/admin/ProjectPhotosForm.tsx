@@ -4,6 +4,7 @@ import { startTransition, useActionState, useEffect, useId, useRef, useState, ty
 import { saveProjectPhotos } from "@/actions/admin/save-project-photos";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, EmptyState, Notice, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { cx } from "@/components/site/cx";
 import { Checkbox, Field, FieldError, Input, Label } from "@/components/site/form";
@@ -54,6 +55,7 @@ function sortedPhotos(photos: ProjectPhotosFormPhoto[]): ProjectPhotosFormPhoto[
 // Without JavaScript the `<form action>` posts to the action.
 export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps) {
   const [state, formAction, pending] = useActionState(saveProjectPhotos, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
@@ -96,7 +98,7 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
 
   return (
     <AdminCard>
-      <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-8">
+      <form ref={formRef} action={formAction} onSubmit={onSubmit} onChange={markEdited} noValidate autoComplete="off" className="flex flex-col gap-8">
         <input type="hidden" name="project_id" value={projectId} />
 
         {ordered.length === 0 ? (
@@ -123,6 +125,7 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
                 id={newPhotoId}
                 error={errors[PHOTO_FIELDS.path]}
                 onUploadingChange={setUploading}
+                onRemove={markEdited}
               />
             </div>
             <Field className="col-span-full">
@@ -147,7 +150,8 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
           <Button type="submit" variant="primary" disabled={held} aria-busy={pending || undefined}>
             {pending ? PROJECT_PHOTOS_TEXTS.submitting : PROJECT_PHOTOS_TEXTS.submit}
           </Button>
-          {!pending && state.status !== "idle" && (
+          {/* „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice). */}
+          {!pending && state.status !== "idle" && !(state.status === "ok" && edited) && (
             <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
               {state.message}
             </Notice>

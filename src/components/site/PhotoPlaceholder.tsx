@@ -23,9 +23,15 @@ export interface PhotoPlaceholderProps {
 
 // DESIGN §3.4: the hatched box, with the label (DM Mono 12px 500, .06em) and the frame text
 // (DM Mono 12px ink-2, line-height 1.45) 16px from the top-left corner.
+// `data-placeholder` is what the placeholder gate looks for (tests/e2e/no-placeholders.spec.ts):
+// a FOTO box has no `[` for its text check to find, and the class cannot be the mark, because
+// the click-to-load map box (MapEmbed) is hatched with it too.
 export function PhotoPlaceholder({ ratio, label, frame, className, children }: PhotoPlaceholderProps) {
   return (
-    <div className={cx("photo-placeholder relative overflow-hidden", RATIO_CLASS[ratio], className)}>
+    <div
+      className={cx("photo-placeholder relative overflow-hidden", RATIO_CLASS[ratio], className)}
+      data-placeholder="photo"
+    >
       {(label || frame) && (
         <div className="absolute top-4 right-4 left-4 flex flex-col gap-1 font-mono text-[12px] leading-[1.45]">
           {label && <span className="font-medium tracking-[.06em]">{label}</span>}

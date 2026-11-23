@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PHOTO_FIELDS } from "@/lib/admin/media";
+import { MEDIA_UPLOAD, PHOTO_FIELDS } from "@/lib/admin/media";
 import { ADMIN_MESSAGES } from "@/lib/admin/types";
 
 const upload = vi.fn();
@@ -93,11 +93,58 @@ describe("PhotoField", () => {
     });
     pick();
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.unavailable));
-
-    pick("huge.jpg", 11 * 1024 * 1024);
-    expect(screen.getByRole("alert")).toHaveTextContent(PHOTO_TEXTS.failed);
     // Only the first pick reached the bucket: the others stopped before the upload.
     expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a file over the limit with a message that names the limit, before any upload", () => {
+    const onUploadingChange = vi.fn();
+    const { container } = render(
+      <PhotoField folder="materials" slug="x" currentPath={CURRENT} label="Poză" onUploadingChange={onUploadingChange} />,
+    );
+
+    pick("huge.jpg", MEDIA_UPLOAD.maxBytes + 1);
+
+    // „Încearcă din nou” can never work for this file: the message says what is wrong with it.
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toBe("Poza are peste 10 MB. Alege un fișier mai mic.");
+    expect(alert.textContent).toBe(PHOTO_TEXTS.tooLarge);
+    // The number follows the limit the check uses.
+    expect(PHOTO_TEXTS.tooLarge).toContain(` ${MEDIA_UPLOAD.maxBytes / (1024 * 1024)} MB`);
+    expect(upload).not.toHaveBeenCalled();
+    expect(onUploadingChange).not.toHaveBeenCalled();
+    expect(hidden(container, PHOTO_FIELDS.path).value).toBe(CURRENT);
+  });
+
+  it("uploads a file of exactly the limit: only one over it is refused", async () => {
+    render(<PhotoField folder="materials" slug="x" currentPath={null} label="Poză" />);
+
+    pick("limit.jpg", MEDIA_UPLOAD.maxBytes);
+
+    await waitFor(() => expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument());
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("reports „Șterge poza” through onRemove: a click sends the form no change event, a pick does", async () => {
+    const onRemove = vi.fn();
+    const onFormChange = vi.fn();
+    render(
+      <form onChange={onFormChange}>
+        <PhotoField folder="bases" slug="lemn" currentPath="bases/lemn-1792569508760.webp" label="Poză" onRemove={onRemove} />
+      </form>,
+    );
+    expect(onRemove).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+    expect(onFormChange).not.toHaveBeenCalled();
+
+    // A picked file reaches the form by itself, so it needs no callback.
+    pick();
+    expect(onFormChange).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument());
+    expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
   it("posts under custom input names when given", () => {

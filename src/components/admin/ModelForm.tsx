@@ -3,6 +3,7 @@
 import { startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
 import { saveModel } from "@/actions/admin/save-model";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Textarea, fieldErrorId } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
@@ -19,7 +20,7 @@ export interface ModelFormProps {
 }
 
 export const MODEL_TEXTS = {
-  noteHint: "Apare sub nume pe cardul modelului, de exemplu „Tapițat, cu nasturi”.",
+  noteHint: "Apare sub nume pe butonul modelului din configurator, de exemplu „Tapițat, cu nasturi”.",
   descriptionHint: "Textul cardului de pe Acasă.",
   familiesLegend: "Familii de materiale permise",
   familiesHint: "Clientul alege doar dintre aceste familii pentru acest model.",
@@ -37,6 +38,7 @@ const FIELD_ORDER: readonly string[] = ["name", "note", "description", "families
 // of every configuration code.
 export function ModelForm({ model, families, selected }: ModelFormProps) {
   const [state, formAction, pending] = useActionState(saveModel, ADMIN_INITIAL_STATE);
+  const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
@@ -68,7 +70,7 @@ export function ModelForm({ model, families, selected }: ModelFormProps) {
   }
 
   return (
-    <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-6">
+    <form ref={formRef} action={formAction} onSubmit={onSubmit} onChange={markEdited} noValidate autoComplete="off" className="flex flex-col gap-6">
       <input type="hidden" name="id" value={model.id} />
       <AdminCard>
         <div className={fieldGridClasses}>
@@ -169,7 +171,7 @@ export function ModelForm({ model, families, selected }: ModelFormProps) {
         <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
           {pending ? "Se salvează…" : "Salvează"}
         </Button>
-        <SaveNotice state={state} pending={pending} />
+        <SaveNotice state={state} pending={pending} edited={edited} />
       </div>
     </form>
   );
@@ -183,8 +185,9 @@ function Hint({ id, children }: { id: string; children: string }) {
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

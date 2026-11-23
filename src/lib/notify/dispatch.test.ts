@@ -240,6 +240,27 @@ describe("dispatchLeadNotifications", () => {
     expect(sent()[1].replyTo).toBe("contact@atelier.ro");
   });
 
+  it("replies to NOTIFY_EMAIL when the stored public address is not a well-formed one", async () => {
+    // Stored before Setări checked the field: an @ was all the reply-to asked for.
+    const malformed = ["contact@atelier", "contact @atelier.ro", "a@b.ro, c@d.ro", "nu avem @"];
+    // An emptied field falls back the same way.
+    for (const email_public of [...malformed, "", "   "]) {
+      mocks.sendEmail.mockClear();
+      mocks.admin = fakeAdmin();
+      mocks.getSettings.mockResolvedValue({ ...SEED_SETTINGS, email_public });
+      await dispatchLeadNotifications(LEAD.id);
+      expect(sent()[1].to).toBe("stefan@example.com");
+      expect(sent()[1].replyTo).toBe("atelier-preview@example.com");
+    }
+
+    // A well-formed address is used as typed, apart from the spaces around it.
+    mocks.sendEmail.mockClear();
+    mocks.admin = fakeAdmin();
+    mocks.getSettings.mockResolvedValue({ ...SEED_SETTINGS, email_public: " Contact@Atelier.ro " });
+    await dispatchLeadNotifications(LEAD.id);
+    expect(sent()[1].replyTo).toBe("Contact@Atelier.ro");
+  });
+
   it("records a failed workshop event and still confirms to the client when NOTIFY_EMAIL is missing", async () => {
     vi.stubEnv("NOTIFY_EMAIL", "");
     const admin = fakeAdmin();

@@ -55,10 +55,26 @@ describe("SETTINGS_FIELDS", () => {
       expect(kind(key)).toBe("textarea");
     }
     expect(kind("workshop_name")).toBe("text");
+    // The two values the site links (tel:, mailto:) have kinds of their own, so the schema checks them.
+    expect(kind("phone_public")).toBe("phone");
+    expect(kind("email_public")).toBe("email");
+    const checked = SETTINGS_FIELDS.filter((field) => field.kind === "phone" || field.kind === "email");
+    expect(checked.map((field) => field.key)).toEqual(["phone_public", "email_public"]);
     // PR-9: the FOTO 08 photo is the only photo kind, last in the „Atelier” group.
     expect(kind("atelier_photo_path")).toBe("photo");
     expect(SETTINGS_FIELDS.filter((field) => field.kind === "photo").map((field) => field.key)).toEqual(["atelier_photo_path"]);
     expect(SETTINGS_GROUPS.find((group) => group.title === "Atelier")?.fields.at(-1)?.key).toBe("atelier_photo_path");
+  });
+
+  it("says of the Google profile link that the site never shows it, and keeps the hint of the two footer links", () => {
+    const hint = (key: string) => SETTINGS_FIELDS.find((field) => field.key === key)?.hint;
+    // Its only reader is the JSON-LD (src/lib/seo/json-ld.ts): „Gol: nu apare pe site.” promised a link.
+    expect(hint("google_profile_url")).toBe(
+      "Linkul complet, cu https://. Nu apare pe site: îl citesc doar motoarele de căutare.",
+    );
+    for (const key of ["instagram_url", "facebook_url"]) {
+      expect(hint(key)).toBe("Linkul complet, cu https://. Gol: nu apare pe site.");
+    }
   });
 
   it("bounds every field by its kind and keeps the texts in Romanian with comma-below diacritics", () => {

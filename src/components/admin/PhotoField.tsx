@@ -39,6 +39,8 @@ export interface PhotoFieldProps {
   disabled?: boolean;
   /** Tells the form while a photo is still uploading, so it can hold the submit. */
   onUploadingChange?: (uploading: boolean) => void;
+  /** Tells the form that „Șterge poza” was pressed: a click, so no change event reaches the form's own `onChange` (a picked file does). */
+  onRemove?: () => void;
 }
 
 export const PHOTO_TEXTS = {
@@ -46,6 +48,8 @@ export const PHOTO_TEXTS = {
   uploaded: "Poza e încărcată; apare pe site după ce salvezi.",
   removed: "Poza se șterge când salvezi.",
   failed: "Nu am putut încărca poza. Încearcă din nou.",
+  /** For a file over MEDIA_UPLOAD.maxBytes: trying again cannot help, so the message names the limit. */
+  tooLarge: `Poza are peste ${MEDIA_UPLOAD.maxBytes / (1024 * 1024)} MB. Alege un fișier mai mic.`,
   undecodable: "Nu am putut citi fișierul. Alege un JPEG, PNG, WebP sau AVIF.",
   remove: "Șterge poza",
   none: "Fără poză",
@@ -86,6 +90,7 @@ export function PhotoField({
   names = PHOTO_FIELDS,
   disabled = false,
   onUploadingChange,
+  onRemove,
 }: PhotoFieldProps) {
   const generatedId = useId();
   const fieldId = id ?? `${generatedId}-poza`;
@@ -102,7 +107,7 @@ export function PhotoField({
     if (!file) return;
     if (file.size > MEDIA_UPLOAD.maxBytes) {
       setStatus("error");
-      setMessage(PHOTO_TEXTS.failed);
+      setMessage(PHOTO_TEXTS.tooLarge);
       return;
     }
 
@@ -142,6 +147,7 @@ export function PhotoField({
     setPath(null);
     setStatus("removed");
     setMessage(PHOTO_TEXTS.removed);
+    onRemove?.();
   }
 
   const src = mediaUrl(path);
