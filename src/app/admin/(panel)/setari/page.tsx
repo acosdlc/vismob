@@ -20,14 +20,10 @@ const READ_FAILED = "Nu am putut citi setările salvate. Formularul pornește de
 //
 // The router renders this page again under a form that is already open: with the answer
 // of a save, and when the admin returns to the screen, which the router keeps mounted
-// meanwhile. The form fills its boxes and takes its fingerprint on its first render only,
-// so one first rendered without the row would go on showing the seed and posting an
-// empty fingerprint that no save gets past. Its key therefore says whether the row was
-// read, and nothing else: once the row is read, that form is replaced by one filled from
-// it. Every row that was read gives the same key, so a newer row never takes the open
-// form down. The key works the other way too: a form rendered again without the row
-// starts over from the seed, locked, as the notice above it then says, and text typed in
-// it and not yet saved goes with it.
+// meanwhile. The form fills its boxes and takes its fingerprint on its first render only
+// and decides for itself when to start over (SettingsForm): a form first rendered without
+// the row is replaced once the row is read, and a form filled from the row stays, with
+// what was typed in it, when a later read fails or brings a newer row.
 export default async function SetariPage() {
   const { settings, fingerprint, problem } = await readCurrentSettings();
 
@@ -35,12 +31,7 @@ export default async function SetariPage() {
     <AdminPage title="Setări" lead="Textele și datele care apar pe site. Salvarea se vede imediat.">
       {problem && <Notice tone="error">{problem}</Notice>}
       {/* A read failure locks the save: otherwise one click would put the seed on the site. */}
-      <SettingsForm
-        key={problem === null ? "read" : "unread"}
-        settings={settings}
-        fingerprint={fingerprint}
-        locked={problem !== null}
-      />
+      <SettingsForm settings={settings} fingerprint={fingerprint} locked={problem !== null} />
     </AdminPage>
   );
 }

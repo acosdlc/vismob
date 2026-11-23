@@ -62,7 +62,23 @@ const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES
 // submit is held while the workshop photo (PR-9, a PhotoField) is still uploading.
 // A hidden input posts the fingerprint of the stored row the fields stand on
 // (useRowFingerprint): saveSettings refuses the save of a copy that has gone stale.
-export function SettingsForm({ settings, fingerprint, locked = false }: SettingsFormProps) {
+//
+// The page is rendered again under an open form, and the form takes its boxes and its
+// fingerprint from the first render only. So the form itself decides when to start over,
+// here, where its history is known: one first rendered without the row (locked, the seed
+// in its boxes, an empty fingerprint no save gets past) is replaced by a new one as soon
+// as the row is read. A form that was filled from the row is never replaced: when a later
+// read fails it stays, with what was typed in it, holds the save for that render and
+// saves after the next good read.
+export function SettingsForm(props: SettingsFormProps) {
+  const locked = props.locked ?? false;
+  // Derived while rendering, as React documents for state that follows a changed prop.
+  const [form, setForm] = useState({ generation: 0, filledFromSeed: locked });
+  if (form.filledFromSeed && !locked) setForm({ generation: form.generation + 1, filledFromSeed: false });
+  return <SettingsFormFields key={form.generation} {...props} />;
+}
+
+function SettingsFormFields({ settings, fingerprint, locked = false }: SettingsFormProps) {
   const [state, formAction, pending, submit] = useGuardedActionState(saveSettings, ADMIN_INITIAL_STATE, CALL_FAILED);
   const rowFingerprint = useRowFingerprint(fingerprint, state);
   // The row the boxes are filled from: the one of the first render, like the fingerprint above.
@@ -158,7 +174,7 @@ export function SettingsForm({ settings, fingerprint, locked = false }: Settings
  * and when the admin returns to a screen the router kept, and its row may then be one someone
  * else saved meanwhile, while the boxes hold the older row and what was typed: posting the
  * newer row's fingerprint would let this copy write its old values over it. (A form first
- * rendered without a row is not kept at all: the page gives it another key once it is read.) The
+ * rendered without a row is not kept at all: SettingsForm replaces it once the row is read.) The
  * answer the form starts with is not followed either: there is one only on a page rendered
  * whole as the answer to a post made without JavaScript, and its fields and `loaded` come
  * from a read made after that save.

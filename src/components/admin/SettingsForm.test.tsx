@@ -707,7 +707,7 @@ describe("SettingsForm", () => {
 
 // The router keeps the Setări screen while she is on another one and renders the page again when
 // she comes back; an action's answer brings a render of the page too. The form under it is the
-// same form each time, unless the page gives it another key.
+// same form each time, unless it was first rendered without the row: that one starts over.
 describe("the Setări page, rendered again around SettingsForm", () => {
   it("starts the form over from the stored row when the page first could not read it and now can", async () => {
     const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -750,6 +750,36 @@ describe("the Setări page, rendered again around SettingsForm", () => {
     expect(city).toHaveValue("Cluj-Napoca");
     expect(screen.getByLabelText("Numele atelierului")).toHaveValue(SETTINGS.workshop_name);
     expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue(settingsFingerprint(SETTINGS));
+  });
+
+  it("keeps the open form and what was typed in it when one later read of the row fails, and lets it save after the next good read", async () => {
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    server.createClient.mockResolvedValue(settingsTable(SETTINGS).client);
+    const { rerender } = render(await SetariPage());
+    const city = screen.getByLabelText("Localitatea");
+    fireEvent.change(city, { target: { value: "Cluj-Napoca" } });
+
+    // One render of the page cannot read the row: she came back to the kept screen, or a
+    // refused save brought a new render, at a moment when the database did not answer.
+    server.createClient.mockResolvedValue(settingsTable(null).client);
+    rerender(await SetariPage());
+
+    // The same input with her text in it. Only the save is held, and the bar says why.
+    expect(screen.getByLabelText("Localitatea")).toBe(city);
+    expect(city).toHaveValue("Cluj-Napoca");
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeDisabled();
+
+    server.createClient.mockResolvedValue(settingsTable(SETTINGS).client);
+    rerender(await SetariPage());
+
+    // Still the same input: this form was filled from the row, so the row coming back is no
+    // reason to start over. It stands on the fingerprint it was opened with and can save.
+    expect(screen.getByLabelText("Localitatea")).toBe(city);
+    expect(city).toHaveValue("Cluj-Napoca");
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeEnabled();
+    expect(hidden(SETTINGS_FINGERPRINT_FIELD)).toHaveValue(settingsFingerprint(SETTINGS));
+    expect(screen.queryByRole("alert")).toBeNull();
+    reported.mockRestore();
   });
 });
 
