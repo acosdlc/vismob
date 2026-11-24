@@ -1,8 +1,10 @@
 // Site settings. In production the values come from `settings.data` in Supabase
 // (PR-5); until then every page reads this seed. Each `[...]` string is the exact
 // placeholder from docs/DESIGN.md §8 and is replaced with the workshop's value in
-// PR-7. Nothing here is invented: an empty string means "not provided yet" and
-// the component that shows it hides itself.
+// PR-7. Nothing here is invented. An empty string means "not provided yet"; the
+// site hides the piece only for whatsapp_number, instagram_url, facebook_url,
+// google_rating with google_reviews_count, google_profile_url and
+// atelier_photo_path. Every other value is printed inside a fixed sentence.
 export interface Settings {
   // Company and contact (docs/LISTA-ATELIER.md §1)
   workshop_name: string;
@@ -21,6 +23,7 @@ export interface Settings {
   visits_note: string;
   instagram_url: string;
   facebook_url: string;
+  /** Feeds the JSON-LD sameAs only (src/lib/seo/json-ld.ts); no page links to it. */
   google_profile_url: string;
   /** Shown only when both rating and count are filled in. */
   google_rating: string;

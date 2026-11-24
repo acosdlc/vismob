@@ -144,7 +144,9 @@ describe("Configurator", () => {
     expect(code()).toBe("CAP-160x200-BC01-H120-PL");
     expect(pressed("Alb lapte")).toHaveAttribute("aria-pressed", "true");
     expect(replaceState).toHaveBeenLastCalledWith(null, "", "?m=capitonat&s=160&f=boucle&c=bc-alb&h=120&b=lemn");
-    expect(screen.getByText("[cod furnizor]")).toBeInTheDocument();
+    // The seed colours have no supplier code, so the row ends after the colour's name.
+    expect(screen.getByText("Bouclé", { selector: "strong" }).parentElement).toHaveTextContent(/^Bouclé · Alb lapte$/);
+    expect(screen.queryByText("[cod furnizor]")).not.toBeInTheDocument();
   });
 
   it("„Altă dimensiune” reveals the two inputs and the code shows the custom size", () => {

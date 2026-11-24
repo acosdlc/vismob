@@ -35,10 +35,12 @@ export interface PhotoFieldProps {
   error?: string;
   /** The hidden inputs' names; the default PHOTO_FIELDS serves a form with one photo. */
   names?: PhotoFieldNames;
-  /** Blocks picking and removing (a locked form): an upload the form could never save would only orphan an object. */
+  /** Blocks picking and removing (a locked form, a block whose save is on its way): an upload the form could never save would only orphan an object. The hidden inputs still post. */
   disabled?: boolean;
   /** Tells the form while a photo is still uploading, so it can hold the submit. */
   onUploadingChange?: (uploading: boolean) => void;
+  /** Tells the form that „Șterge poza” was pressed: a click, so no change event reaches the form's own `onChange` (a picked file does). */
+  onRemove?: () => void;
 }
 
 export const PHOTO_TEXTS = {
@@ -46,6 +48,8 @@ export const PHOTO_TEXTS = {
   uploaded: "Poza e încărcată; apare pe site după ce salvezi.",
   removed: "Poza se șterge când salvezi.",
   failed: "Nu am putut încărca poza. Încearcă din nou.",
+  /** For a photo still over MEDIA_UPLOAD.maxBytes after the resize: trying again cannot help, so the message names the limit. */
+  tooLarge: `Poza are peste ${MEDIA_UPLOAD.maxBytes / (1024 * 1024)} MB. Alege un fișier mai mic.`,
   undecodable: "Nu am putut citi fișierul. Alege un JPEG, PNG, WebP sau AVIF.",
   remove: "Șterge poza",
   none: "Fără poză",
@@ -86,6 +90,7 @@ export function PhotoField({
   names = PHOTO_FIELDS,
   disabled = false,
   onUploadingChange,
+  onRemove,
 }: PhotoFieldProps) {
   const generatedId = useId();
   const fieldId = id ?? `${generatedId}-poza`;
@@ -100,11 +105,6 @@ export function PhotoField({
     // The selection lives in `path`, never in the input, so the input can be reused.
     input.value = "";
     if (!file) return;
-    if (file.size > MEDIA_UPLOAD.maxBytes) {
-      setStatus("error");
-      setMessage(PHOTO_TEXTS.failed);
-      return;
-    }
 
     setStatus("uploading");
     setMessage(null);
@@ -114,6 +114,13 @@ export function PhotoField({
       if (!resized) {
         setStatus("error");
         setMessage(PHOTO_TEXTS.undecodable);
+        return;
+      }
+      // The bucket's limit is on what it stores, so it is the resized file that is measured:
+      // a camera's original, often over that limit, comes out of the resize far under it.
+      if (resized.size > MEDIA_UPLOAD.maxBytes) {
+        setStatus("error");
+        setMessage(PHOTO_TEXTS.tooLarge);
         return;
       }
       const objectPath = mediaObjectPath(folder, slug, Date.now());
@@ -142,6 +149,7 @@ export function PhotoField({
     setPath(null);
     setStatus("removed");
     setMessage(PHOTO_TEXTS.removed);
+    onRemove?.();
   }
 
   const src = mediaUrl(path);
@@ -196,7 +204,12 @@ export function PhotoField({
               {PHOTO_TEXTS.uploading}
             </p>
           )}
-          {message && !uploading && <Notice tone={status === "error" ? "error" : "info"}>{message}</Notice>}
+          {/* „…după ce salvezi” and „…când salvezi” speak of a save still to come: once the stored
+              path is the field's own, that save went through and they have nothing left to say.
+              An error speaks of the file that was picked and stays until the field is used again. */}
+          {message && !uploading && (status === "error" || path !== currentPath) && (
+            <Notice tone={status === "error" ? "error" : "info"}>{message}</Notice>
+          )}
         </div>
       </div>
       <FieldError fieldId={fieldId}>{error}</FieldError>

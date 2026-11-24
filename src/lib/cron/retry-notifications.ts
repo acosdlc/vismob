@@ -1,10 +1,11 @@
 import "server-only";
 import { createElement } from "react";
 import { alertSubject, NotificationAlert } from "@/emails/NotificationAlert";
-import { optionalEnv } from "@/lib/env";
+import { leadSourceText } from "@/lib/admin/leads";
+import { environment, optionalEnv } from "@/lib/env";
 import type { LeadRow } from "@/lib/leads/types";
 import { sendLeadNotification, type EventDetail, type LeadEventType } from "@/lib/notify/dispatch";
-import { sendEmail, type SendEmailResult } from "@/lib/notify/email";
+import { cannotSendReason, sendEmail, type SendEmailResult } from "@/lib/notify/email";
 import { siteUrl } from "@/lib/site-url";
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database.types";
@@ -26,7 +27,11 @@ import {
 // event is marked `alerted` in its `detail`. Later runs read that mark back, so
 // the pair stays skipped while its older failures leave the window and is never
 // alerted twice. `lead_events.type` only allows the two email types, so the
-// alert leaves no event of its own.
+// alert leaves no event of its own. Every environment writes to the one database
+// (ARHITECTURA-NOTE), so the job only retries the requests of its own
+// deployment's environment: a test request made on a preview is skipped. While
+// the deployment cannot send at all (`cannotSendReason`) nothing is attempted
+// and no attempt is counted: the run only reports why.
 
 /** The two `lead_events.type` values; anything else in the column is left alone. */
 const LEAD_EVENT_TYPES: readonly LeadEventType[] = ["email_workshop", "email_client"];
@@ -116,14 +121,28 @@ async function markAlerted(admin: AdminClient, lead: LeadRow, type: LeadEventTyp
   if (updateError) throw new Error(`lead_events update: ${updateError.message}`);
 }
 
-async function retryPair(admin: AdminClient, pair: Pair, report: JobReport): Promise<void> {
+/**
+ * Retries one pair. Answers false only for a request of another environment,
+ * which is skipped: it stays failed, and first in line, for the whole window, so
+ * it must not count against the run's RETRY_MAX_PAIRS.
+ */
+async function retryPair(admin: AdminClient, pair: Pair, report: JobReport): Promise<boolean> {
   const label = `${pair.leadId}/${pair.type}`;
   try {
     const { data: lead, error } = await admin.from("leads").select("*").eq("id", pair.leadId).maybeSingle();
     if (error) throw new Error(`leads: ${error.message}`);
     if (!lead) {
       report.counts.skipped += 1;
-      return;
+      return true;
+    }
+
+    // The retry would go out with this deployment's sender, to its NOTIFY_EMAIL:
+    // production must not send the workshop a test request made on a preview.
+    // A row with no recorded environment is retried.
+    const madeOn = leadSourceText(lead.source).environment;
+    if (madeOn && madeOn !== environment()) {
+      report.counts.skipped += 1;
+      return false;
     }
 
     const attempt = pair.failures + 1;
@@ -131,9 +150,9 @@ async function retryPair(admin: AdminClient, pair: Pair, report: JobReport): Pro
     const result = await sendLeadNotification(admin, lead, pair.type, { attempt });
     if (result.ok) {
       report.counts.succeeded += 1;
-      return;
+      return true;
     }
-    if (attempt < MAX_NOTIFICATION_ATTEMPTS) return;
+    if (attempt < MAX_NOTIFICATION_ATTEMPTS) return true;
 
     const alert = await sendAlert(lead, pair.type, result.error, attempt);
     if (alert.ok) report.counts.alerted += 1;
@@ -142,6 +161,7 @@ async function retryPair(admin: AdminClient, pair: Pair, report: JobReport): Pro
   } catch (cause) {
     report.errors.push(`${label}: ${errorMessage(cause)}`);
   }
+  return true;
 }
 
 export async function retryNotifications(admin: AdminClient, now: Date = new Date()): Promise<JobReport> {
@@ -159,6 +179,18 @@ export async function retryNotifications(admin: AdminClient, now: Date = new Dat
 
     const pairs = groupPairs(failed);
     if (pairs.length === 0) return finishReport(report);
+
+    // Production without RESEND_API_KEY or EMAIL_FROM cannot send at all: every retry
+    // would fail on that variable, the alert with it, and the pairs would be out of
+    // attempts within two runs, with nothing sent once the variable is added. So the
+    // run ends here with that one error. No attempt is recorded, each run fails for
+    // as long as a failed email is in the window, and once the variable is set the
+    // pairs are retried from the attempt they were left at.
+    const cannotSend = cannotSendReason();
+    if (cannotSend) {
+      report.errors.push(cannotSend);
+      return finishReport(report);
+    }
 
     // A pair with a delivered email needs no retry, whatever failed before it.
     // The ids go in the URL, so they are asked for in slices.
@@ -186,8 +218,7 @@ export async function retryNotifications(admin: AdminClient, now: Date = new Dat
         report.counts.deferred += 1;
         continue;
       }
-      processed += 1;
-      await retryPair(admin, pair, report);
+      if (await retryPair(admin, pair, report)) processed += 1;
     }
   } catch (cause) {
     report.errors.push(errorMessage(cause));

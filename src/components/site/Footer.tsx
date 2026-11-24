@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Settings } from "@/lib/data/settings.seed";
+import { oneLine } from "@/lib/one-line";
 import { getCopyrightYear } from "./copyright-year";
 import { telHref } from "./links";
 
@@ -102,8 +103,9 @@ export async function Footer({ settings, variant = "full" }: FooterProps) {
           </div>
         </div>
         <div className="mono-12 mt-[clamp(40px,5vw,64px)] flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-dark-rule pt-4 text-on-dark-2">
+          {/* „Sediul social” is a multi-line box in Setări; this row is one line, so its lines are joined with commas. */}
           <p className="py-3">
-            © {year} {settings.legal_name} · CUI {settings.cui} · {settings.reg_com} · {settings.registered_office}
+            © {year} {settings.legal_name} · CUI {settings.cui} · {settings.reg_com} · {oneLine(settings.registered_office)}
           </p>
           <LegalLinks />
         </div>

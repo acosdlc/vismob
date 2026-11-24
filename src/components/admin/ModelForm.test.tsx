@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CATALOG_MESSAGES } from "@/lib/admin/catalog-schemas";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
@@ -10,6 +12,28 @@ vi.mock("@/actions/admin/save-model", () => ({
 }));
 
 import { ModelForm, MODEL_TEXTS } from "./ModelForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const MODEL = {
   id: "capitonat",
@@ -109,6 +133,58 @@ describe("ModelForm", () => {
     expect(checkbox(/Lemn masiv/)).toBeChecked();
   });
 
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<ModelForm model={MODEL} families={FAMILIES} selected={["catifea", "boucle"]} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // A family ticked after the save: „Salvat.” would speak for a rule that is not saved.
+    fireEvent.click(checkbox(/Lemn masiv/));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(checkbox(/Lemn masiv/)).toBeChecked();
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveModel.mock.calls[1][1].getAll("families")).toEqual(["catifea", "boucle", "lemn"]);
+
+    // Typing is an edit as well.
+    fireEvent.change(screen.getByLabelText("Descriere"), { target: { value: "Text nou." } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("keeps the error notice, the field errors and the focus while the form is edited", async () => {
+    saveModel.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { families: CATALOG_MESSAGES.noFamily },
+    });
+    render(<ModelForm model={MODEL} families={FAMILIES} selected={[]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(checkbox(/Catifea/)).toHaveFocus());
+
+    // Another field is edited: nothing the refused save left on screen moves.
+    const name = screen.getByLabelText("Nume");
+    name.focus();
+    fireEvent.change(name, { target: { value: "Capitonat nou" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(screen.getByText(CATALOG_MESSAGES.noFamily)).toBeInTheDocument();
+    expect(checkbox(/Catifea/)).toHaveAttribute("aria-invalid", "true");
+    expect(name).toHaveFocus();
+  });
+
   it("shows the server's message and marks the fields it names, the family group included", async () => {
     saveModel.mockResolvedValue({
       status: "error",
@@ -128,7 +204,7 @@ describe("ModelForm", () => {
     expect(checkbox(/Catifea/)).toHaveAttribute("aria-invalid", "true");
     expect(checkbox(/Catifea/)).toHaveAccessibleDescription(`${MODEL_TEXTS.familiesHint} ${CATALOG_MESSAGES.noFamily}`);
     expect(screen.getByLabelText("Notă scurtă")).not.toHaveAttribute("aria-invalid");
-    expect(screen.getByLabelText("Nume")).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText("Nume")).toHaveFocus());
   });
 
   it("shows a plain error without field errors", async () => {
@@ -139,5 +215,54 @@ describe("ModelForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText("Nume")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the form and what was typed when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: here a dropped connection (a laptop just back from sleep gives the same),
+    // which the next try can get past. After a deployment that retired the action's id only a reload helps.
+    saveModel.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ModelForm model={MODEL} families={FAMILIES} selected={["catifea"]} />);
+    const description = screen.getByLabelText("Descriere");
+    fireEvent.change(description, { target: { value: "Text nou pentru card." } });
+    fireEvent.click(checkbox(/Lemn masiv/));
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    // Not „Nu am putut salva…”, the server's word for a write that failed: this one may have gone through.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(alert.className).toContain("border-error");
+    // The same textarea, not a fresh one with the saved text: the form was never taken down.
+    expect(screen.getByLabelText("Descriere")).toBe(description);
+    expect(description).toHaveValue("Text nou pentru card.");
+    expect(checkbox(/Lemn masiv/)).toBeChecked();
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(saveModel.mock.calls[1][1].get("description")).toBe("Text nou pentru card.");
+    expect(saveModel.mock.calls[1][1].getAll("families")).toEqual(["catifea", "lemn"]);
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/admin/catalog");
+    saveModel.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <ModelForm model={MODEL} families={FAMILIES} selected={["catifea"]} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswer)).toBeNull();
   });
 });

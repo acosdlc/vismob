@@ -177,8 +177,8 @@ describe("deleteMaterial", () => {
       { table: "materials", ops: [["delete"], ["eq", "id", ROW.id], ["select", "id"]] },
     ]);
     expect(removed).toEqual([["media", [PHOTO]]]);
-    expect(mocks.updateTag).toHaveBeenCalledTimes(1);
-    expect(mocks.updateTag).toHaveBeenCalledWith("catalog");
+    // "projects" too, like every catalogue write: the projects are cached with catalogue names.
+    expect(mocks.updateTag.mock.calls).toEqual([["catalog"], ["projects"]]);
     expect(mocks.redirect).toHaveBeenCalledWith("/admin/catalog?sters=1");
     expect(console.error).not.toHaveBeenCalled();
   });

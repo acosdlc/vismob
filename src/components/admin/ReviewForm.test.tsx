@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REVIEW_MESSAGES } from "@/lib/admin/reviews";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
@@ -15,6 +17,28 @@ vi.mock("@/actions/admin/delete-review", () => ({
 
 import { deleteReviewConfirmText } from "./DeleteReviewButton";
 import { REVIEW_FORM_TEXTS, ReviewForm, type ReviewFormReview } from "./ReviewForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const REVIEW: ReviewFormReview = {
   id: "11111111-2222-4333-8444-555555555555",
@@ -196,6 +220,69 @@ describe("ReviewForm for a new review", () => {
     expect(screen.getByRole("checkbox", { name: T.consent })).not.toHaveAttribute("aria-invalid");
     await waitFor(() => expect(document.activeElement).toBe(published));
   });
+
+  it("keeps the form and the typed review when the call to the action fails, sends her to the list first, and posts it all again on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    // On this screen the call may have created the review all the same.
+    saveReview.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ReviewForm review={null} />);
+    const body = screen.getByLabelText(T.body);
+    fireEvent.change(screen.getByLabelText(T.firstName), { target: { value: "Maria" } });
+    fireEvent.change(body, { target: { value: "Foarte mulțumită." } });
+    fireEvent.change(screen.getByLabelText(T.source), { target: { value: "whatsapp" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: T.consent }));
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    // The create text, not the one that asks for another try: saveReview inserts on every post
+    // without an id, so a second „Salvează” after a first that did arrive adds the review twice.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswerNew);
+    // So the notice itself has to say where to look before that second try.
+    expect(alert).toHaveTextContent("Înainte să încerci din nou, verifică în listă, într-o filă nouă, dacă nu s-a adăugat deja.");
+    expect(alert.className).toContain("border-error");
+    // The same textarea, not a fresh empty one: the form was never taken down.
+    expect(screen.getByLabelText(T.body)).toBe(body);
+    expect(body).toHaveValue("Foarte mulțumită.");
+    expect(screen.getByLabelText(T.firstName)).toHaveValue("Maria");
+    expect(screen.getByLabelText(T.source)).toHaveValue("whatsapp");
+    expect(screen.getByRole("checkbox", { name: T.consent })).toBeChecked();
+    expect(submit).toBeEnabled();
+
+    // Nothing holds the form back once she has looked: the next try is a new call with everything in it.
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    const formData = saveReview.mock.calls[1][1];
+    expect(formData.get("id")).toBe("");
+    expect(formData.get("first_name")).toBe("Maria");
+    expect(formData.get("body")).toBe("Foarte mulțumită.");
+    expect(formData.get("source")).toBe("whatsapp");
+    expect(formData.get("consent")).toBe("on");
+    reported.mockRestore();
+  });
+
+  it("lets the redirect to the new review's screen through to the framework instead of calling it a failure", async () => {
+    // On a create the real action ends in redirect(), and the browser's call rejects with it.
+    const thrown = redirectTo(`/admin/recenzii/${REVIEW.id}?creat=1`);
+    saveReview.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <ReviewForm review={null} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+    fireEvent.change(screen.getByLabelText(T.firstName), { target: { value: "Maria" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswerNew)).toBeNull();
+  });
 });
 
 describe("ReviewForm for an existing review", () => {
@@ -246,6 +333,63 @@ describe("ReviewForm for an existing review", () => {
     expect(screen.getByLabelText(T.body)).toHaveValue("Text corectat.");
   });
 
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<ReviewForm review={REVIEW} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Typed after the save: „Salvat.” would speak for a text that is not saved.
+    fireEvent.change(screen.getByLabelText(T.body), { target: { value: "Text corectat." } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByLabelText(T.body)).toHaveValue("Text corectat.");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveReview.mock.calls[1][1].get("body")).toBe("Text corectat.");
+
+    // A select and a tick are edits as well.
+    fireEvent.change(screen.getByLabelText(T.source), { target: { value: "whatsapp" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: T.published }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("keeps the error notice, the field errors and the focus while the form is edited", async () => {
+    saveReview.mockResolvedValue({
+      status: "error",
+      message: REVIEW_MESSAGES.consent,
+      fieldErrors: { published: REVIEW_MESSAGES.consent },
+    });
+    render(<ReviewForm review={REVIEW} />);
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    await screen.findByRole("alert");
+    const published = screen.getByRole("checkbox", { name: T.published });
+    await waitFor(() => expect(document.activeElement).toBe(published));
+
+    // Another field is edited: nothing the refused save left on screen moves.
+    const body = screen.getByLabelText(T.body);
+    body.focus();
+    fireEvent.change(body, { target: { value: "Text corectat." } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(REVIEW_MESSAGES.consent);
+    expect(published).toHaveAttribute("aria-invalid", "true");
+    expect(published).toHaveAccessibleDescription(REVIEW_MESSAGES.consent);
+    expect(document.activeElement).toBe(body);
+  });
+
   it("shows a plain error without field errors", async () => {
     saveReview.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.forbidden });
     render(<ReviewForm review={REVIEW} />);
@@ -254,6 +398,35 @@ describe("ReviewForm for an existing review", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText(T.firstName)).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("asks for another try, not for a look in the list, when the call fails on an existing review, and saves on that try", async () => {
+    // No answer comes back: here a dropped connection (a laptop just back from sleep gives the same),
+    // which the next try can get past. After a deployment that retired the action's id only a reload helps.
+    saveReview.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ReviewForm review={REVIEW} />);
+    const body = screen.getByLabelText(T.body);
+    fireEvent.change(body, { target: { value: "Text corectat." } });
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    // Saving this row twice writes the same values twice: there is nothing to look for in the list.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(alert.className).toContain("border-error");
+    // The same textarea, not a fresh one with the saved text: the form was never taken down.
+    expect(screen.getByLabelText(T.body)).toBe(body);
+    expect(body).toHaveValue("Text corectat.");
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(saveReview.mock.calls[1][1].get("id")).toBe(REVIEW.id);
+    expect(saveReview.mock.calls[1][1].get("body")).toBe("Text corectat.");
+    reported.mockRestore();
   });
 });
 

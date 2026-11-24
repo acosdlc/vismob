@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { SEED_CATALOG } from "@/lib/configurator/catalog.seed";
@@ -14,6 +16,28 @@ vi.mock("@/actions/admin/save-pricing", () => ({
 }));
 
 import { PricingForm } from "./PricingForm";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 // A fixture only (the style of src/lib/configurator/pricing.test.ts): never a real price.
 const PRICING: Pricing = {
@@ -204,6 +228,58 @@ describe("PricingForm", () => {
     expect(screen.getByRole("button", { name: "Salvează" })).not.toBeDisabled();
   });
 
+  it("hides the saved notice as soon as a price is edited after a save, the preview still following, and shows it again after the next save", async () => {
+    render(<PricingForm pricing={PRICING} catalog={SEED_CATALOG} />);
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Capitonat 160 → 4000: the preview follows (4000 × 1.05 = 4200) and the bar no longer says „Salvat.”.
+    fireEvent.change(screen.getByLabelText("Capitonat, 160 cm"), { target: { value: "4000" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(previewCells()[0]).toBe(shown(4200));
+    expect(screen.getByLabelText("Capitonat, 160 cm")).toHaveValue("4000");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(savePricing.mock.calls[1][1].get("grid.capitonat.160")).toBe("4000");
+
+    // A field outside the grid hides it too; saved with nothing changed in between, the
+    // notice goes while the save runs and is back with its answer.
+    fireEvent.change(screen.getByLabelText("Categoria B"), { target: { value: "12.5" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("keeps the error notice and the field errors while the form is edited", async () => {
+    savePricing.mockResolvedValue({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { roundTo: PRICING_MESSAGES.number },
+    });
+    render(<PricingForm pricing={PRICING} catalog={SEED_CATALOG} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    await screen.findByRole("alert");
+    const roundTo = screen.getByLabelText("Rotunjire (lei)");
+    await waitFor(() => expect(document.activeElement).toBe(roundTo));
+
+    const cell = screen.getByLabelText("Capitonat, 160 cm");
+    cell.focus();
+    fireEvent.change(cell, { target: { value: "4000" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.invalid);
+    expect(roundTo).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText(PRICING_MESSAGES.number)).toBeInTheDocument();
+    expect(document.activeElement).toBe(cell);
+    expect(previewCells()[0]).toBe(shown(4200));
+  });
+
   it("shows the server's message and field errors, and focuses the first invalid field in form order", async () => {
     savePricing.mockResolvedValue({
       status: "error",
@@ -240,5 +316,52 @@ describe("PricingForm", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText("Capitonat, 160 cm")).not.toHaveAttribute("aria-invalid");
     expect(screen.getByLabelText("Rotunjire (lei)")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("keeps the form and every typed price when the call to the action fails, and saves on the next try", async () => {
+    // No answer comes back: here a dropped connection (a laptop just back from sleep gives the same),
+    // which the next try can get past. After a deployment that retired the action's id only a reload helps.
+    savePricing.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<PricingForm pricing={PRICING} catalog={SEED_CATALOG} />);
+    const cell = screen.getByLabelText("Capitonat, 160 cm");
+    fireEvent.change(cell, { target: { value: "4000" } });
+    const submit = screen.getByRole("button", { name: "Salvează" });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    // Not „Nu am putut salva…”, the server's word for a write that failed: this one may have gone through.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh one with the saved price: the form was never taken down.
+    expect(screen.getByLabelText("Capitonat, 160 cm")).toBe(cell);
+    expect(cell).toHaveValue("4000");
+    expect(previewCells()[0]).toBe(shown(4200));
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(savePricing.mock.calls[1][1].get("grid.capitonat.160")).toBe("4000");
+    reported.mockRestore();
+  });
+
+  it("lets a redirect thrown by the action through to the framework instead of calling it a failure", async () => {
+    const thrown = redirectTo("/admin/preturi");
+    savePricing.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <PricingForm pricing={PRICING} catalog={SEED_CATALOG} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswer)).toBeNull();
   });
 });

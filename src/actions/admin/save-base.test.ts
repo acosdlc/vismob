@@ -149,7 +149,7 @@ describe("saveBase", () => {
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
-  it("writes the columns with an unchanged photo, removes nothing and expires the catalog tag", async () => {
+  it("writes the columns with an unchanged photo, removes nothing and expires the catalog and projects tags", async () => {
     const { client, calls, removed } = fakeClient(happyWith({ active: true, photo_path: OLD_PHOTO }));
     mocks.createClient.mockResolvedValue(client);
 
@@ -161,8 +161,8 @@ describe("saveBase", () => {
       { table: "bases", ops: [["update", UPDATE], ["eq", "id", "lemn"], ["select", "id"]] },
     ]);
     expect(removed).toEqual([]);
-    expect(mocks.updateTag).toHaveBeenCalledTimes(1);
-    expect(mocks.updateTag).toHaveBeenCalledWith("catalog");
+    // "projects" too: the hero ticket caches the base's name („Bază”) under that tag, for a day.
+    expect(mocks.updateTag.mock.calls).toEqual([["catalog"], ["projects"]]);
   });
 
   it("stores the new photo path and removes the replaced object from the media bucket, after the write", async () => {

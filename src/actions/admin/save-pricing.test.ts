@@ -115,6 +115,86 @@ describe("savePricing", () => {
     expect(mocks.updateTag).not.toHaveBeenCalled();
   });
 
+  it("refuses lei amounts under the floor, the thousands-separator slip, on each such field and before any write", async () => {
+    // The panel prints „3.450 lei”; typed back, "3.450" parses (the point is a decimal
+    // point) and, without the floor, was saved as 3.45 lei under „Salvat.”.
+    const fd = formFor(PRICING, { "grid.capitonat.160": "3.450", "grid.arcuit.180": "3.600", "base.lada": "1.200" });
+    const state = await savePricing(ADMIN_INITIAL_STATE, fd);
+    expect(state).toEqual({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: {
+        "grid.capitonat.160": PRICING_MESSAGES.floor,
+        "grid.arcuit.180": PRICING_MESSAGES.floor,
+        "base.lada": PRICING_MESSAGES.floor,
+      },
+    });
+    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(mocks.updateTag).not.toHaveBeenCalled();
+  });
+
+  it("refuses the same slip at the two extras, where the size of the amount cannot tell it", async () => {
+    // 1.300 at „LED sub pat” and 1.200 at „2 noptiere”, typed as the panel prints them, were
+    // saved under „Salvat.” as 1.3 and 1.2 lei: an extra may cost under the floor, so only the
+    // grid and the bases were checked. A client is there to be written to; it must not be reached.
+    const { client } = fakeClient({ data: [{ id: 1 }], error: null });
+    mocks.createClient.mockResolvedValue(client);
+
+    const fd = formFor(PRICING, { "extras.led": "1.300", "extras.nightstands": "1.200" });
+    const state = await savePricing(ADMIN_INITIAL_STATE, fd);
+
+    expect(state).toEqual({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { "extras.led": PRICING_MESSAGES.floor, "extras.nightstands": PRICING_MESSAGES.floor },
+    });
+    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(mocks.updateTag).not.toHaveBeenCalled();
+  });
+
+  it("marks the amounts under the floor in the same answer as a field that does not parse", async () => {
+    const fd = formFor(PRICING, { "grid.capitonat.160": "3.450", roundTo: "" });
+    const state = await savePricing(ADMIN_INITIAL_STATE, fd);
+    expect(state).toEqual({
+      status: "error",
+      message: ADMIN_MESSAGES.invalid,
+      fieldErrors: { roundTo: PRICING_MESSAGES.number, "grid.capitonat.160": PRICING_MESSAGES.floor },
+    });
+    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(mocks.updateTag).not.toHaveBeenCalled();
+  });
+
+  it("still saves a grid price at the floor or with decimals, 0 for a base, and a base or an extra under the floor", async () => {
+    const { client, calls } = fakeClient({ data: [{ id: 1 }], error: null });
+    mocks.createClient.mockResolvedValue(client);
+
+    // Metal legs for 50 lei more are a real amount: a base and an extra are held to the
+    // shape of the slip, not to the floor of the grid.
+    const fd = formFor(PRICING, {
+      "grid.capitonat.90": "100",
+      "grid.capitonat.160": "3450.50",
+      "base.lemn": "0",
+      "base.metal": "50",
+      "base.sertare": "99.5",
+      "extras.led": "50",
+      "extras.nightstands": "99",
+    });
+    const state = await savePricing(ADMIN_INITIAL_STATE, fd);
+
+    expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+    expect(calls.upsert).toEqual({
+      id: 1,
+      data: {
+        ...PRICING,
+        grid: { ...PRICING.grid, capitonat: { ...PRICING.grid.capitonat, "90": 100, "160": 3450.5 } },
+        base: { ...PRICING.base, lemn: 0, metal: 50, sertare: 99.5 },
+        extras: { led: 50, nightstands: 99 },
+      },
+      updated_at: "2026-10-21T10:00:00.000Z",
+    });
+    expect(mocks.updateTag).toHaveBeenCalledWith("pricing");
+  });
+
   it("upserts the parsed grid as pricing row 1 with the time of the save, then expires the pricing tag", async () => {
     const { client, calls } = fakeClient({ data: [{ id: 1 }], error: null });
     mocks.createClient.mockResolvedValue(client);

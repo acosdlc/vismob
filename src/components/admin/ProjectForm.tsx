@@ -1,14 +1,16 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, type FormEvent } from "react";
 import { saveProject } from "@/actions/admin/save-project";
 import { DeleteProjectButton } from "@/components/admin/DeleteProjectButton";
 import { AdminCard, AdminSection, Notice, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Select, fieldErrorId } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { EXTRAS, extrasValues, PROJECT_LIMITS, PROJECT_SIZE } from "@/lib/admin/projects";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 import type { Tables } from "@/lib/supabase/database.types";
 
@@ -51,7 +53,7 @@ export const PROJECT_FORM_TEXTS = {
   sectionProject: "Proiectul",
   sectionPublish: "Publicare",
   title: "Titlu",
-  titleHint: "Numele proiectului, de exemplu „Pat capitonat pentru un dormitor mic”. Apare și ca text alternativ al pozei.",
+  titleHint: "Numele proiectului în panou, de exemplu „Pat capitonat pentru un dormitor mic”. Nu apare pe site.",
   ticketNo: "Nr. fișă",
   ticketNoHint: "Apare pe fișa din hero ca „Nr. …”.",
   model: "Model",
@@ -95,16 +97,35 @@ const FIELD_ORDER: readonly string[] = [
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made
+ * meanwhile): useGuardedActionState. The save may have gone through all the same, so the
+ * text is not the one the server answers when it wrote nothing (ADMIN_MESSAGES.generic).
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
+/** The same while a project is being created: the first try may have added it, and a second would add it twice. */
+const CALL_FAILED_NEW: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswerNew };
+
 // PLAN PR-9 „Lucrări”, DESIGN §4.8: two cards over every editable column of a project,
-// the project itself and its publication. `useActionState` drives the `saveProject`
-// Server Action; the submit goes through `onSubmit` so the typed values stay in place
-// after a save (React resets a form it submitted itself). A new project posts an empty
-// hidden `id` and lands on its own screen (the action redirects); an existing one keeps
-// its slug. The photos have their own form (ProjectPhotosForm), once the row exists.
-// Without JavaScript the `<form action>` posts to the action. No client pre-pass: the
-// admin reads the server's field errors, including the two publication rules.
+// the project itself and its publication. `useGuardedActionState` drives the
+// `saveProject` Server Action (a call that fails leaves the form as it is, with
+// CALL_FAILED or CALL_FAILED_NEW beside the button: two module constants, so the hook
+// gets the same object on every render); the submit goes through `onSubmit` so the typed
+// values stay in place after a save (React resets a form it submitted itself). A new
+// project posts an empty hidden `id` and lands on its own screen (the action redirects,
+// which the hook lets through); an existing one keeps its slug. The photos have their own
+// form (ProjectPhotosForm), once the row exists, and publishing needs one of them: so
+// „Publicat” and the hero box, which the server could only refuse on a new project, are
+// offered for an existing one alone. Without JavaScript the `<form action>` posts to the
+// action. No client pre-pass: the admin reads the server's field errors, including the
+// three publication rules (consent, a photo, a published hero).
 export function ProjectForm({ project, models, materials, families, bases }: ProjectFormProps) {
-  const [state, formAction, pending] = useActionState(saveProject, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(
+    saveProject,
+    ADMIN_INITIAL_STATE,
+    project === null ? CALL_FAILED_NEW : CALL_FAILED,
+  );
+  const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
@@ -120,7 +141,7 @@ export function ProjectForm({ project, models, materials, families, bases }: Pro
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const ids = {
@@ -147,7 +168,7 @@ export function ProjectForm({ project, models, materials, families, bases }: Pro
 
   return (
     <div className="flex flex-col gap-8">
-      <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-8">
+      <form ref={formRef} action={formAction} onSubmit={onSubmit} onChange={markEdited} noValidate autoComplete="off" className="flex flex-col gap-8">
         <input type="hidden" name="id" value={project?.id ?? ""} />
 
         <AdminSection title={PROJECT_FORM_TEXTS.sectionProject}>
@@ -334,12 +355,15 @@ export function ProjectForm({ project, models, materials, families, bases }: Pro
                 <FieldError fieldId={ids.clientConsent}>{errors.client_consent}</FieldError>
               </Field>
 
-              <Field className="col-span-full">
-                <Checkbox id={ids.published} name="published" defaultChecked={project?.published ?? false} invalid={Boolean(errors.published)}>
-                  {PROJECT_FORM_TEXTS.published}
-                </Checkbox>
-                <FieldError fieldId={ids.published}>{errors.published}</FieldError>
-              </Field>
+              {/* A new project has no photo, and publishing needs one: the box comes with the saved project's screen. */}
+              {editing && (
+                <Field className="col-span-full">
+                  <Checkbox id={ids.published} name="published" defaultChecked={project.published} invalid={Boolean(errors.published)}>
+                    {PROJECT_FORM_TEXTS.published}
+                  </Checkbox>
+                  <FieldError fieldId={ids.published}>{errors.published}</FieldError>
+                </Field>
+              )}
 
               <Field className="col-span-full">
                 <Checkbox id={ids.featured} name="featured" defaultChecked={project?.featured ?? false} invalid={Boolean(errors.featured)}>
@@ -348,12 +372,15 @@ export function ProjectForm({ project, models, materials, families, bases }: Pro
                 <FieldError fieldId={ids.featured}>{errors.featured}</FieldError>
               </Field>
 
-              <Field className="col-span-full">
-                <Checkbox id={ids.hero} name="hero" defaultChecked={project?.hero ?? false} invalid={Boolean(errors.hero)}>
-                  {PROJECT_FORM_TEXTS.hero}
-                </Checkbox>
-                <FieldError fieldId={ids.hero}>{errors.hero}</FieldError>
-              </Field>
+              {/* The hero is a published project, so this box follows „Publicat”. */}
+              {editing && (
+                <Field className="col-span-full">
+                  <Checkbox id={ids.hero} name="hero" defaultChecked={project.hero} invalid={Boolean(errors.hero)}>
+                    {PROJECT_FORM_TEXTS.hero}
+                  </Checkbox>
+                  <FieldError fieldId={ids.hero}>{errors.hero}</FieldError>
+                </Field>
+              )}
 
               <Field>
                 <Label htmlFor={ids.sort}>{PROJECT_FORM_TEXTS.sort}</Label>
@@ -378,7 +405,7 @@ export function ProjectForm({ project, models, materials, families, bases }: Pro
           <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
             {pending ? PROJECT_FORM_TEXTS.submitting : PROJECT_FORM_TEXTS.submit}
           </Button>
-          <SaveNotice state={state} pending={pending} />
+          <SaveNotice state={state} pending={pending} edited={edited} />
         </div>
       </form>
 
@@ -387,8 +414,9 @@ export function ProjectForm({ project, models, materials, families, bases }: Pro
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

@@ -21,25 +21,34 @@ interface Result {
 const state = vi.hoisted(() => ({
   tables: {} as Record<string, { data: unknown; error: { message: string } | null }>,
   clientError: null as Error | null,
+  /** Every `eq` the reader chained, as "table.column=value", in the order of the calls. */
+  filters: [] as string[],
 }));
 
 vi.mock("next/cache", () => ({ cacheTag: vi.fn(), cacheLife: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock("@/lib/supabase/public", () => ({
   createPublicClient: () => {
     if (state.clientError) throw state.clientError;
-    return { from: (table: string) => query(state.tables[table] ?? { data: [], error: null }) };
+    return { from: (table: string) => query(table, state.tables[table] ?? { data: [], error: null }) };
   },
 }));
 
-// A fake of the PostgREST builder: every filter returns the builder, awaiting it
-// (or maybeSingle()) resolves to the table's { data, error }.
-function query(result: Result) {
+// A fake of the PostgREST builder: `eq` is recorded and keeps the rows that match, the
+// other filters return the builder, awaiting it (or maybeSingle()) resolves to the
+// table's { data, error }.
+function query(table: string, result: Result) {
+  let data = result.data;
   const q = {
     select: () => q,
-    eq: () => q,
+    eq: (column: string, value: unknown) => {
+      state.filters.push(`${table}.${column}=${String(value)}`);
+      if (Array.isArray(data)) data = data.filter((row: Record<string, unknown>) => row[column] === value);
+      return q;
+    },
     order: () => q,
-    maybeSingle: async () => ({ ...result, data: Array.isArray(result.data) ? (result.data[0] ?? null) : result.data }),
-    then: <R>(onOk: (value: Result) => R, onErr?: (reason: unknown) => R) => Promise.resolve(result).then(onOk, onErr),
+    maybeSingle: async () => ({ ...result, data: Array.isArray(data) ? (data[0] ?? null) : data }),
+    then: <R>(onOk: (value: Result) => R, onErr?: (reason: unknown) => R) =>
+      Promise.resolve({ ...result, data }).then(onOk, onErr),
   };
   return q;
 }
@@ -103,6 +112,7 @@ function tablesFrom(r: ProjectRows) {
 beforeEach(() => {
   state.tables = {};
   state.clientError = null;
+  state.filters = [];
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -185,7 +195,7 @@ describe("projectsFromRows", () => {
     expect(projectCaption(p)).toBe("Arcuit · 160 × 200");
   });
 
-  it("leaves the material label empty when the material is not readable (inactive) or has no family", () => {
+  it("leaves the material label empty when the material's row is not readable or has no family", () => {
     const r = rows([FULL]);
     r.materials = [];
     expect(projectsFromRows(r)[0].materialLabel).toBe("");
@@ -231,6 +241,22 @@ describe("getProjects / getHeroProject", () => {
     expect(cacheTag).toHaveBeenCalledWith("projects");
     expect(cacheLife).toHaveBeenCalledWith("days");
     expect(cacheLife).not.toHaveBeenCalledWith("minutes");
+  });
+
+  it("keep the name of a colour and of a base that were switched off since: the reader takes every row it may read", async () => {
+    // The policies return a switched-off material or base while a published project
+    // refers to it. An `active` filter here would empty the caption and the ticket again.
+    const r = rows([FULL]);
+    state.tables = {
+      ...tablesFrom(r),
+      materials: { data: r.materials.map((m) => ({ ...m, active: false })), error: null },
+      bases: { data: r.bases.map((b) => ({ ...b, active: false })), error: null },
+    };
+    const [project] = await allProjects();
+    expect(project.materialLabel).toBe("Catifea, verde sticlă");
+    expect(project.baseLabel).toBe("Ladă de depozitare");
+    expect(projectCaption(project)).toBe("Capitonat · 180 × 200 · Catifea, verde sticlă · Cluj-Napoca");
+    expect(state.filters).toEqual([]);
   });
 
   it("return nothing, not the seed, when the database has no published projects", async () => {

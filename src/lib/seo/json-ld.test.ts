@@ -45,6 +45,11 @@ describe("furnitureStoreJsonLd", () => {
     });
   });
 
+  it("puts an address typed on two lines on one line", () => {
+    const data = furnitureStoreJsonLd({ ...REAL, address: "Str. Fabricii 12\nTimișoara" }, ORIGIN);
+    expect(data?.address).toMatchObject({ streetAddress: "Str. Fabricii 12, Timișoara" });
+  });
+
   it("drops every field whose value is a placeholder or empty, the address object included", () => {
     const data = furnitureStoreJsonLd({ ...SEED_SETTINGS, workshop_name: "Atelierul Țăranu" }, ORIGIN);
     expect(data).toEqual({

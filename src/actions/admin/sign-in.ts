@@ -42,8 +42,10 @@ export async function signIn(_prev: AdminActionState, formData: FormData): Promi
     }
     const session = sessionFromClaims(data?.claims);
     admin = session.kind === "signed-in" && session.admin;
-    // A valid account without the role gets no session: sign it out again.
-    if (!admin) await supabase.auth.signOut();
+    // A valid account without the role gets no session: sign it out again. Only the
+    // session this attempt opened ("local"); the default scope, "global", would end
+    // the account's sessions on its other devices too.
+    if (!admin) await supabase.auth.signOut({ scope: "local" });
   } catch (err) {
     console.error("signIn", err);
     return { status: "error", message: ADMIN_MESSAGES.unavailable };

@@ -1,4 +1,5 @@
 import type { Settings } from "@/lib/data/settings.seed";
+import { oneLine } from "@/lib/one-line";
 
 // ARHITECTURA §10, PLAN „JSON-LD”: a FurnitureStore built only from what `settings`
 // holds (no geo, no structured hours in v1). Pure: the page passes getSettings()
@@ -28,7 +29,8 @@ export function furnitureStoreJsonLd(settings: Settings, origin: string): Record
   if (real(settings.email_public)) data.email = settings.email_public.trim();
 
   const address: Record<string, string> = {};
-  if (real(settings.address)) address.streetAddress = settings.address.trim();
+  // The address may be typed on several lines in Setări; the field takes one.
+  if (real(settings.address)) address.streetAddress = oneLine(settings.address);
   if (real(settings.city)) address.addressLocality = settings.city.trim();
   if (Object.keys(address).length > 0) {
     data.address = { "@type": "PostalAddress", ...address, addressCountry: "RO" };

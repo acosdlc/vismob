@@ -2,24 +2,31 @@ import type { Settings } from "@/lib/data/settings.seed";
 
 // The Setări form (docs/PLAN.md PR-7, ARHITECTURA §8): one descriptor per key of
 // `Settings`, grouped as src/lib/data/settings.seed.ts groups them. The labels are
-// the workshop's words; a hint says where the value appears on the site and comes
-// from the JSDoc of the seed, nothing else. Pure: the client form and the server
-// schema (settings-schema.ts) both read it, so it must not import the seed values.
+// the workshop's words; a hint says where the value appears on the site, from the
+// JSDoc of the seed, or which shape the schema takes (the links, WhatsApp, „Telefon”),
+// nothing else. Pure: the client form and the server schema (settings-schema.ts) both
+// read it, so it must not import the seed values.
 
 export type SettingsKey = keyof Settings;
 
 /** How the form shows a key and how settings-schema.ts validates it. */
-export type SettingsFieldKind = "text" | "textarea" | "url" | "boolean" | "digits" | "photo";
+export type SettingsFieldKind = "text" | "textarea" | "url" | "boolean" | "digits" | "photo" | "phone" | "email";
 
 export interface SettingsField {
   key: SettingsKey;
   /** Short, with comma-below diacritics; the `<label>` text (for a boolean, the checkbox text). */
   label: string;
-  /** One sentence: where the value appears on the site, or what shape it has. */
+  /** Where the value appears on the site, or what shape it has. */
   hint?: string;
   kind: SettingsFieldKind;
   /** Longest accepted value, in characters (the checkbox posts "on"). */
   maxLength: number;
+  /**
+   * On a text or a textarea only: the site hides the piece while the value is empty, so
+   * the schema lets it be saved empty. Every other text and textarea is required: the
+   * site prints it inside a fixed sentence, where an empty value would leave a gap.
+   */
+  optional?: true;
 }
 
 export interface SettingsGroup {
@@ -37,6 +44,9 @@ export const SETTINGS_MAX = {
   boolean: 2,
   /** A media bucket path posted by PhotoField (`site/<slug>-<stamp>.webp`). */
   photo: 200,
+  /** „Telefon” and „Email” keep the bound of a text: a "[...]" placeholder may still stand in for either. */
+  phone: 200,
+  email: 200,
 } as const satisfies Record<SettingsFieldKind, number>;
 
 const text = (key: SettingsKey, label: string, hint?: string): SettingsField => ({
@@ -55,10 +65,18 @@ const textarea = (key: SettingsKey, label: string, hint?: string): SettingsField
   maxLength: SETTINGS_MAX.textarea,
 });
 
-const url = (key: SettingsKey, label: string): SettingsField => ({
+/** A text or a textarea that may be saved empty: the site hides its piece then (see `optional`). */
+const optional = (field: SettingsField): SettingsField => ({ ...field, optional: true });
+
+/** The default hint holds for a link the site shows when filled in; a link no page shows gets its own. */
+const url = (
+  key: SettingsKey,
+  label: string,
+  hint = "Linkul complet, cu https://. Gol: nu apare pe site.",
+): SettingsField => ({
   key,
   label,
-  hint: "Linkul complet, cu https://. Gol: nu apare pe site.",
+  hint,
   kind: "url",
   maxLength: SETTINGS_MAX.url,
 });
@@ -74,7 +92,17 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       textarea("registered_office", "Sediul social"),
       textarea("address", "Adresa atelierului"),
       text("city", "Localitatea"),
-      text("phone_public", "Telefon"),
+      // „Telefon” and, below, „Email”: the site links them (tel:, mailto:) wherever it shows
+      // them, so the schema requires both and checks them as a number and an address. The
+      // check takes one number that dials as typed and answers every refusal with the same
+      // message, also for a valid number written 0264/123.456: the hint states the rule.
+      {
+        key: "phone_public",
+        label: "Telefon",
+        hint: "Un singur număr, de exemplu 0722 123 456 sau +40 722 123 456. Fără „/”, fără al doilea număr și fără alt text.",
+        kind: "phone",
+        maxLength: SETTINGS_MAX.phone,
+      },
       {
         key: "whatsapp_number",
         label: "WhatsApp",
@@ -82,17 +110,25 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
         kind: "digits",
         maxLength: SETTINGS_MAX.digits,
       },
-      text("email_public", "Email"),
+      { key: "email_public", label: "Email", kind: "email", maxLength: SETTINGS_MAX.email },
       textarea("hours", "Program"),
       text("visits_note", "Vizite", "Completează „În atelier, …” și „vizite …”, de exemplu „cu programare”."),
       url("instagram_url", "Instagram"),
       url("facebook_url", "Facebook"),
-      url("google_profile_url", "Profil Google"),
-      text("google_rating", "Nota Google", "Apare doar când sunt completate și nota, și numărul de recenzii."),
-      text(
-        "google_reviews_count",
-        "Număr de recenzii Google",
-        "Apare doar când sunt completate și nota, și numărul de recenzii.",
+      // Only the JSON-LD reads it (src/lib/seo/json-ld.ts): no page links to the profile.
+      url(
+        "google_profile_url",
+        "Profil Google",
+        "Linkul complet, cu https://. Nu apare pe site: îl citesc doar motoarele de căutare.",
+      ),
+      // The Google line shows only with both values (src/components/home/Reviews.tsx).
+      optional(text("google_rating", "Nota Google", "Apare doar când sunt completate și nota, și numărul de recenzii.")),
+      optional(
+        text(
+          "google_reviews_count",
+          "Număr de recenzii Google",
+          "Apare doar când sunt completate și nota, și numărul de recenzii.",
+        ),
       ),
     ],
   },
@@ -136,7 +172,8 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       textarea("fabrics_text", "Stofe și furnizori"),
       text("founded_year", "Anul înființării"),
       text("team_size", "Echipa"),
-      textarea("story_text", "Povestea atelierului"),
+      // It only ends the paragraph of the „Atelierul” section (src/components/home/Atelier.tsx).
+      optional(textarea("story_text", "Povestea atelierului")),
       {
         key: "atelier_photo_path",
         label: "Poza atelierului",
@@ -154,3 +191,10 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
 
 /** Every field in form order; the schema's shape and the focus order of the form. */
 export const SETTINGS_FIELDS: readonly SettingsField[] = SETTINGS_GROUPS.flatMap((group) => group.fields);
+
+/**
+ * The name of the hidden input in which the form posts the fingerprint of the stored row
+ * its fields were filled from (settings-fingerprint.ts); saveSettings compares it with the
+ * row it finds. Not a Settings key: the schema drops it, like any name it does not know.
+ */
+export const SETTINGS_FINGERPRINT_FIELD = "settings_fingerprint";

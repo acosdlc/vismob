@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/site/Button";
+import { oneLine } from "@/lib/one-line";
 
 export interface MapEmbedProps {
   /** `settings.address`; the query of both Google Maps URLs. */
@@ -10,9 +11,13 @@ export interface MapEmbedProps {
   height: number;
 }
 
-/** The Google Maps URLs for an address: the embed and the full page. */
+/**
+ * The Google Maps URLs for an address: the embed and the full page. The address may be
+ * typed on several lines in Setări (the contact list shows the breaks); the search gets
+ * it on one line, the lines joined with commas.
+ */
 export function mapUrls(address: string): { embed: string; open: string } {
-  const query = encodeURIComponent(address);
+  const query = encodeURIComponent(oneLine(address));
   return {
     embed: `https://www.google.com/maps?q=${query}&output=embed`,
     open: `https://www.google.com/maps/search/?api=1&query=${query}`,

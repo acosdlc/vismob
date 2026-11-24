@@ -37,8 +37,9 @@ export const isBaseId = oneOf(BASE_IDS);
 const isTab = oneOf(TABS);
 const isPriceCategory = oneOf(PRICE_CATEGORIES);
 
-// The columns each select reads (the public_read policies hide inactive rows, so
-// `active` is never needed in code).
+// The columns the mapper takes. `active` is not one of them: whoever reads the rows
+// decides which ones arrive (readCatalog() below asks for the active ones; the request
+// screen of the panel reads them all).
 export type ModelRow = Pick<Tables<"models">, "id" | "name" | "note" | "code" | "description" | "sort">;
 export type FamilyRow = Pick<
   Tables<"material_families">,
@@ -88,8 +89,9 @@ function colorFromRow(row: MaterialRow): Color {
  * The content tables as the configurator's Catalog (ARHITECTURA §7). Pure. Every
  * list is ordered by `sort`; a row the types cannot represent is skipped with a
  * console.error, and so is a family without colours or a model without families,
- * which resolve() could not configure. Inactive rows never arrive: the public_read
- * policies filter them, so there is no `active` check here.
+ * which resolve() could not configure, and a family that no model allows, which
+ * nobody could choose. There is no `active` check here: the mapper takes the rows
+ * it is given, and the reader decides whether the switched-off ones are among them.
  */
 export function catalogFromRows(rows: CatalogRows): Catalog {
   const colorsByFamily = new Map<string, Color[]>();
@@ -137,6 +139,16 @@ export function catalogFromRows(rows: CatalogRows): Catalog {
     models.push(model);
   }
 
+  // A family that no model allows cannot be chosen in the configurator: its swatches
+  // on /materiale would open another material (resolve() repairs the family), so
+  // neither that page nor Acasă may offer it.
+  const allowed = new Set(models.flatMap((model) => model.families));
+  const offered = families.filter((family) => {
+    if (allowed.has(family.id)) return true;
+    console.error(`catalog: material family "${family.id}" is allowed by no model; skipped.`);
+    return false;
+  });
+
   const bases: Base[] = [];
   for (const row of [...rows.bases].sort(bySort)) {
     if (!isBaseId(row.id)) {
@@ -149,7 +161,7 @@ export function catalogFromRows(rows: CatalogRows): Catalog {
     bases.push(base);
   }
 
-  return { models, families, bases };
+  return { models, families: offered, bases };
 }
 
 function unwrap<T>(result: { data: T[] | null; error: { message: string } | null }, table: string): T[] {
@@ -163,15 +175,20 @@ function unwrap<T>(result: { data: T[] | null; error: { message: string } | null
 async function readCatalog(): Promise<Catalog | null> {
   try {
     const db = createPublicClient();
+    // The site offers the active rows only, and asks for them here instead of counting
+    // on the public_read policies: a switched-off colour or base that a published
+    // project shows stays readable to everyone, so that the project keeps its name
+    // (src/lib/data/projects.ts).
     const [models, families, materials, modelFamilies, bases] = await Promise.all([
-      db.from("models").select("id, name, note, code, description, sort").order("sort"),
+      db.from("models").select("id, name, note, code, description, sort").eq("active", true).order("sort"),
       db.from("material_families").select("id, name, code, tab, description, specs, sort").order("sort"),
       db
         .from("materials")
         .select("id, family_id, name, code, hex, price_category, supplier_code, featured, photo_path, sort")
+        .eq("active", true)
         .order("sort"),
       db.from("model_families").select("model_id, family_id"),
-      db.from("bases").select("id, name, note, code, photo_path, sort").order("sort"),
+      db.from("bases").select("id, name, note, code, photo_path, sort").eq("active", true).order("sort"),
     ]);
     const catalog = catalogFromRows({
       models: unwrap(models, "models"),

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   startTransition,
-  useActionState,
   useEffect,
   useId,
   useRef,
@@ -14,13 +13,14 @@ import {
 import { issueFormToken } from "@/actions/issue-form-token";
 import { submitQuote } from "@/actions/submit-quote";
 import { collectSource, focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { Turnstile } from "@/components/contact/Turnstile";
 import { Button } from "@/components/site/Button";
 import { Eyebrow } from "@/components/site/Eyebrow";
 import { Checkbox, Field, FieldError, FormCard, Input, Label, Textarea, formStackClasses } from "@/components/site/form";
 import { trackEvent } from "@/lib/analytics";
 import { paramsFromConfig } from "@/lib/configurator/url";
-import { CONSENT_TEXT, FORM_FIELDS, INITIAL_FORM_STATE, type FieldErrors } from "@/lib/leads/types";
+import { CONSENT_TEXT, FORM_FIELDS, FORM_MESSAGES, INITIAL_FORM_STATE, type FieldErrors, type FormState } from "@/lib/leads/types";
 import { parseLeadForm, quoteSchema } from "@/lib/validation/schemas";
 import { QUOTE_FIELDS, type QuoteSectionProps } from "./types";
 
@@ -35,6 +35,9 @@ const CONSENT_LINK = "Politicii de confidențialitate";
 const [CONSENT_BEFORE, CONSENT_AFTER] = CONSENT_TEXT.split(CONSENT_LINK);
 
 const subscribeNoop = () => () => undefined;
+
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: FormState = { status: "error", message: FORM_MESSAGES.generic };
 
 /**
  * After the contact order (focusFirstInvalid), any other field with an error whose
@@ -51,20 +54,21 @@ function focusInvalid(form: HTMLFormElement, errors: FieldErrors) {
   }
 }
 
-// DESIGN §4.2 07 and §3.16, after src/components/contact/ContactForm.tsx: `useActionState`
-// drives the Server Action, a client pre-pass of the same Zod schema puts the focus on the
-// first error, and without JavaScript the `<form action>` posts to the action. The
-// configuration travels in a hidden input that follows the `config` prop; the server
-// recomputes the code and the price from it (§5.7).
+// DESIGN §4.2 07 and §3.16, after src/components/contact/ContactForm.tsx:
+// `useGuardedActionState` drives the Server Action (a call that fails leaves the form as
+// it is, with CALL_FAILED above the button), a client pre-pass of the same Zod schema puts
+// the focus on the first error, and without JavaScript the `<form action>` posts to the
+// action. The configuration travels in a hidden input that follows the `config` prop; the
+// server recomputes the code and the price from it (§5.7).
 export function QuoteForm(props: QuoteSectionProps) {
-  // „Modifică configurația” remounts the form: useActionState resets, the configuration
+  // „Modifică configurația” remounts the form: useGuardedActionState resets, the configuration
   // stays (it is still in the URL and in the props).
   const [round, setRound] = useState(0);
   return <QuoteRequestForm key={round} {...props} onReset={() => setRound((r) => r + 1)} />;
 }
 
 function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionProps & { onReset: () => void }) {
-  const [state, formAction, pending] = useActionState(submitQuote, INITIAL_FORM_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(submitQuote, INITIAL_FORM_STATE, CALL_FAILED);
   const [clientErrors, setClientErrors] = useState<FieldErrors | null>(null);
   const [startedAt, setStartedAt] = useState("");
   const tokenRequested = useRef(false);
@@ -88,14 +92,17 @@ function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionP
     if (state.status === "error" && state.fieldErrors && formRef.current) {
       focusInvalid(formRef.current, state.fieldErrors);
     }
-    if (state.status === "ok") confirmHeadingRef.current?.focus();
   }, [state]);
 
-  // ARHITECTURA §10: quote_submit once per success, with the code the server recomputed
-  // („Modifică configurația” remounts the form, so a new request reports again).
+  // On success the focus moves to the confirmation and quote_submit is reported with the
+  // code the server recomputed (ARHITECTURA §10), once per mount: a later change of the
+  // configuration must not repeat them, and neither must the router, which keeps the page
+  // while the visitor is elsewhere (`cacheComponents`) and runs its effects again each time
+  // it shows it. „Modifică configurația” remounts the form, so a new request reports again.
   useEffect(() => {
     if (state.status !== "ok" || submitReported.current) return;
     submitReported.current = true;
+    confirmHeadingRef.current?.focus();
     trackEvent("quote_submit", { code: state.code ?? code });
   }, [state, code]);
 
@@ -104,7 +111,13 @@ function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionP
     tokenRequested.current = true;
     issueFormToken()
       .then((token) => setStartedAt(token))
-      .catch(() => setStartedAt(""));
+      .catch(() => {
+        // The call brought no answer (the connection was away for a moment). The next focus
+        // or pointer-down asks again: without a token the server refuses every submit as
+        // sent too fast, and nothing short of a reload would get the request through.
+        tokenRequested.current = false;
+        setStartedAt("");
+      });
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -120,7 +133,7 @@ function QuoteRequestForm({ config, code, responseTime, onReset }: QuoteSectionP
       return;
     }
     setClientErrors(null);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const field = (name: string) => ({

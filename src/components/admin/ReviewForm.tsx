@@ -1,14 +1,16 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, type FormEvent } from "react";
 import { saveReview } from "@/actions/admin/save-review";
 import { DeleteReviewButton } from "@/components/admin/DeleteReviewButton";
 import { AdminCard, Notice, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Select, Textarea } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { REVIEW_SOURCES, reviewLabel } from "@/lib/admin/reviews";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 import type { Tables } from "@/lib/supabase/database.types";
 
@@ -44,15 +46,35 @@ const FIELD_ORDER: readonly string[] = ["first_name", "city", "body", "model_lab
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
+
+/**
+ * The same on the new-review screen. There the call may have created the review, and saveReview
+ * inserts on every post without an id: another try could add it twice, so the text sends her to the list first.
+ * A constant of its own, like CALL_FAILED: the hook wants the same object on every render.
+ */
+const CALL_FAILED_NEW: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswerNew };
+
 // PLAN PR-9 „Recenzii”, DESIGN §4.8: one card over every editable column of a review.
-// `useActionState` drives the `saveReview` Server Action; the submit goes through
-// `onSubmit` so the typed values stay in place after a save (React resets a form it
-// submitted itself). A new review posts an empty hidden `id` and lands on its own
-// screen (the action redirects). Without JavaScript the `<form action>` posts to the
-// action. No client pre-pass: the admin reads the server's field errors, the consent
-// rule included (it lands on the „Publicată” checkbox).
+// `useGuardedActionState` drives the `saveReview` Server Action (a call that fails
+// leaves the form as it is, with CALL_FAILED beside the button, or CALL_FAILED_NEW for a
+// new review); the submit goes through `onSubmit` so the typed values stay in place
+// after a save (React resets a form it submitted itself). A new review posts an empty
+// hidden `id` and lands on its own screen (the action redirects, which the hook lets
+// through). Without JavaScript the `<form action>` posts to the action. No client
+// pre-pass: the admin reads the server's field errors, the consent rule included (it
+// lands on the „Publicată” checkbox).
 export function ReviewForm({ review }: ReviewFormProps) {
-  const [state, formAction, pending] = useActionState(saveReview, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(
+    saveReview,
+    ADMIN_INITIAL_STATE,
+    review === null ? CALL_FAILED_NEW : CALL_FAILED,
+  );
+  const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
@@ -67,7 +89,7 @@ export function ReviewForm({ review }: ReviewFormProps) {
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const firstNameId = `${id}-first-name`;
@@ -85,7 +107,15 @@ export function ReviewForm({ review }: ReviewFormProps) {
   return (
     <div className="flex flex-col gap-8">
       <AdminCard>
-        <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-6">
+        <form
+          ref={formRef}
+          action={formAction}
+          onSubmit={onSubmit}
+          onChange={markEdited}
+          noValidate
+          autoComplete="off"
+          className="flex flex-col gap-6"
+        >
           <input type="hidden" name="id" value={review?.id ?? ""} />
 
           <div className={fieldGridClasses}>
@@ -198,7 +228,7 @@ export function ReviewForm({ review }: ReviewFormProps) {
             <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
               {pending ? REVIEW_FORM_TEXTS.submitting : REVIEW_FORM_TEXTS.submit}
             </Button>
-            <SaveNotice state={state} pending={pending} />
+            <SaveNotice state={state} pending={pending} edited={edited} />
           </div>
         </form>
       </AdminCard>
@@ -208,8 +238,9 @@ export function ReviewForm({ review }: ReviewFormProps) {
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

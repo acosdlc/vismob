@@ -41,7 +41,8 @@ vi.mock("@supabase/ssr", () => ({
 
 import { isGuardedPath, proxy } from "./proxy";
 
-const request = (path: string) => new NextRequest(`http://localhost:3000${path}`);
+const request = (path: string, init?: ConstructorParameters<typeof NextRequest>[1]) =>
+  new NextRequest(`http://localhost:3000${path}`, init);
 const ADMIN = { sub: "u1", email: "ana@example.com", app_metadata: { role: "admin" } };
 
 beforeEach(() => {
@@ -88,6 +89,35 @@ describe("proxy", () => {
     const response = await proxy(request("/admin/cereri?status=nou"));
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("http://localhost:3000/admin/login");
+  });
+
+  it("redirects an anonymous HEAD like the GET it stands for", async () => {
+    const response = await proxy(request("/admin/cereri", { method: "HEAD" }));
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("http://localhost:3000/admin/login");
+  });
+
+  it("lets an anonymous POST (a Server Action call) through instead of redirecting it", async () => {
+    mocks.refreshedCookie = { name: "sb-test-auth-token", value: "rotated" };
+    const response = await proxy(
+      request("/admin/setari", { method: "POST", headers: { "next-action": "a".repeat(42) } }),
+    );
+
+    // Not answered here: the request goes on to the route (NextResponse.next()), where
+    // the action refuses it with its own message and the form keeps what was typed.
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    const cookie = response.cookies.get("sb-test-auth-token");
+    expect(cookie?.value).toBe("rotated");
+    expect(cookie?.httpOnly).toBe(true);
+  });
+
+  it("goes by the method, not by the action header: a form posted without JavaScript passes too", async () => {
+    const response = await proxy(request("/admin/cereri/abc", { method: "POST" }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
   it("lets an anonymous visitor reach /admin/login", async () => {

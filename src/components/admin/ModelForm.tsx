@@ -1,12 +1,14 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, type FormEvent } from "react";
 import { saveModel } from "@/actions/admin/save-model";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Textarea, fieldErrorId } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 
 export interface ModelFormProps {
@@ -19,7 +21,7 @@ export interface ModelFormProps {
 }
 
 export const MODEL_TEXTS = {
-  noteHint: "Apare sub nume pe cardul modelului, de exemplu „Tapițat, cu nasturi”.",
+  noteHint: "Apare sub nume pe butonul modelului din configurator, de exemplu „Tapițat, cu nasturi”.",
   descriptionHint: "Textul cardului de pe Acasă.",
   familiesLegend: "Familii de materiale permise",
   familiesHint: "Clientul alege doar dintre aceste familii pentru acest model.",
@@ -29,14 +31,22 @@ export const MODEL_TEXTS = {
 /** The focus goes to the first invalid field in form order (DESIGN §3.16). */
 const FIELD_ORDER: readonly string[] = ["name", "note", "description", "families", "active", "sort"];
 
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
+
 // PLAN PR-8 „Modele”: the texts, the model ↔ family rules and `active` of one model,
-// in the site's card (DESIGN §4.8). `useActionState` drives the `saveModel` Server
-// Action; the submit goes through `onSubmit` so what the admin typed stays in place
-// after a save (React resets a form it submitted itself). Without JavaScript the
+// in the site's card (DESIGN §4.8). `useGuardedActionState` drives the `saveModel`
+// Server Action (a call that fails leaves the form as it is, with CALL_FAILED beside
+// the button); the submit goes through `onSubmit` so what the admin typed stays in
+// place after a save (React resets a form it submitted itself). Without JavaScript the
 // `<form action>` posts to the action. The code is shown, never edited: it is part
 // of every configuration code.
 export function ModelForm({ model, families, selected }: ModelFormProps) {
-  const [state, formAction, pending] = useActionState(saveModel, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(saveModel, ADMIN_INITIAL_STATE, CALL_FAILED);
+  const [edited, markEdited] = useSavedNotice(pending);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
@@ -64,11 +74,11 @@ export function ModelForm({ model, families, selected }: ModelFormProps) {
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   return (
-    <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-6">
+    <form ref={formRef} action={formAction} onSubmit={onSubmit} onChange={markEdited} noValidate autoComplete="off" className="flex flex-col gap-6">
       <input type="hidden" name="id" value={model.id} />
       <AdminCard>
         <div className={fieldGridClasses}>
@@ -169,7 +179,7 @@ export function ModelForm({ model, families, selected }: ModelFormProps) {
         <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
           {pending ? "Se salvează…" : "Salvează"}
         </Button>
-        <SaveNotice state={state} pending={pending} />
+        <SaveNotice state={state} pending={pending} edited={edited} />
       </div>
     </form>
   );
@@ -183,8 +193,9 @@ function Hint({ id, children }: { id: string; children: string }) {
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

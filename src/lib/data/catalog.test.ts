@@ -24,25 +24,34 @@ interface Result {
 const state = vi.hoisted(() => ({
   tables: {} as Record<string, { data: unknown; error: { message: string } | null }>,
   clientError: null as Error | null,
+  /** Every `eq` the reader chained, as "table.column=value", in the order of the calls. */
+  filters: [] as string[],
 }));
 
 vi.mock("next/cache", () => ({ cacheTag: vi.fn(), cacheLife: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock("@/lib/supabase/public", () => ({
   createPublicClient: () => {
     if (state.clientError) throw state.clientError;
-    return { from: (table: string) => query(state.tables[table] ?? { data: [], error: null }) };
+    return { from: (table: string) => query(table, state.tables[table] ?? { data: [], error: null }) };
   },
 }));
 
-// A fake of the PostgREST builder: every filter returns the builder, awaiting it
-// (or maybeSingle()) resolves to the table's { data, error }.
-function query(result: Result) {
+// A fake of the PostgREST builder: `eq` is recorded and keeps the rows that match, the
+// other filters return the builder, awaiting it (or maybeSingle()) resolves to the
+// table's { data, error }.
+function query(table: string, result: Result) {
+  let data = result.data;
   const q = {
     select: () => q,
-    eq: () => q,
+    eq: (column: string, value: unknown) => {
+      state.filters.push(`${table}.${column}=${String(value)}`);
+      if (Array.isArray(data)) data = data.filter((row: Record<string, unknown>) => row[column] === value);
+      return q;
+    },
     order: () => q,
-    maybeSingle: async () => ({ ...result, data: Array.isArray(result.data) ? (result.data[0] ?? null) : result.data }),
-    then: <R>(onOk: (value: Result) => R, onErr?: (reason: unknown) => R) => Promise.resolve(result).then(onOk, onErr),
+    maybeSingle: async () => ({ ...result, data: Array.isArray(data) ? (data[0] ?? null) : data }),
+    then: <R>(onOk: (value: Result) => R, onErr?: (reason: unknown) => R) =>
+      Promise.resolve({ ...result, data }).then(onOk, onErr),
   };
   return q;
 }
@@ -93,19 +102,23 @@ const EXPECTED: Catalog = {
   families: SEED_CATALOG.families.map((f) => ({ ...f, colors: f.colors.map((c) => ({ ...c, priceCategory: "A" })) })),
 };
 
+// The tables as the database holds them: models, materials and bases carry `active`,
+// which the rows the mapper takes do not. Every seed row is switched on.
 function tablesFrom(rows: CatalogRows) {
+  const on = <T extends object>(list: T[]) => list.map((row) => ({ ...row, active: true }));
   return {
-    models: { data: rows.models, error: null },
+    models: { data: on(rows.models), error: null },
     material_families: { data: rows.families, error: null },
-    materials: { data: rows.materials, error: null },
+    materials: { data: on(rows.materials), error: null },
     model_families: { data: rows.modelFamilies, error: null },
-    bases: { data: rows.bases, error: null },
+    bases: { data: on(rows.bases), error: null },
   };
 }
 
 beforeEach(() => {
   state.tables = {};
   state.clientError = null;
+  state.filters = [];
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -199,6 +212,30 @@ describe("catalogFromRows", () => {
     expect(catalog.models.map((m) => m.id)).toEqual(["capitonat", "arcuit"]);
   });
 
+  it("skips a family that no model allows, with a console.error", () => {
+    // The workshop moved Lamele from wood to velvet: no bed can be configured in wood any more.
+    const rows = seedRows();
+    rows.modelFamilies = rows.modelFamilies.map((mf) =>
+      mf.model_id === "lamele" ? { model_id: "lamele", family_id: "catifea" } : mf,
+    );
+    const catalog = catalogFromRows(rows);
+    expect(catalog.families.map((f) => f.id)).toEqual(["catifea", "boucle", "stofa", "piele"]);
+    expect(catalog.models.map((m) => m.id)).toEqual(["capitonat", "arcuit", "canale", "lamele"]);
+    expect(catalog.models[3].families).toEqual(["catifea"]);
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(console.error).mock.calls[0][0]).toMatch(/material family "lemn" is allowed by no model/);
+  });
+
+  it("skips the family only a switched-off model allows", () => {
+    // The public reader asks for active models, so Lamele's row does not arrive; its rule still does.
+    const rows = seedRows();
+    rows.models = rows.models.filter((m) => m.id !== "lamele");
+    const catalog = catalogFromRows(rows);
+    expect(catalog.families.map((f) => f.id)).toEqual(["catifea", "boucle", "stofa", "piele"]);
+    expect(catalog.models.map((m) => m.id)).toEqual(["capitonat", "arcuit", "canale"]);
+    expect(console.error).toHaveBeenCalledTimes(1);
+  });
+
   it("turns anything but an array of {k, v} strings into empty specs", () => {
     const rows = seedRows();
     rows.families[0].specs = { k: "Frecare", v: "40.000" };
@@ -227,6 +264,29 @@ describe("getCatalog", () => {
     expect(await getCatalog()).toEqual(EXPECTED);
     expect(cacheTag).toHaveBeenCalledWith("catalog");
     expect(cacheLife).toHaveBeenCalledWith("days");
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("asks for the active rows itself, so a switched-off row that stays readable never reaches the site", async () => {
+    // A switched-off colour or base that a published project shows stays readable to
+    // everyone (its name is printed in the project's caption), so the policy alone no
+    // longer keeps it out of the configurator and of Materiale.
+    const tables = tablesFrom(seedRows());
+    const off =
+      (id: string) =>
+      <T extends { id: string; active: boolean }>(row: T): T =>
+        row.id === id ? { ...row, active: false } : row;
+    state.tables = {
+      ...tables,
+      models: { ...tables.models, data: tables.models.data.map(off("canale")) },
+      materials: { ...tables.materials, data: tables.materials.data.map(off("ct-bleumarin")) },
+      bases: { ...tables.bases, data: tables.bases.data.map(off("metal")) },
+    };
+    const catalog = await getCatalog();
+    expect(state.filters).toEqual(["models.active=true", "materials.active=true", "bases.active=true"]);
+    expect(catalog.models.map((m) => m.id)).toEqual(["capitonat", "arcuit", "lamele"]);
+    expect(catalog.families[0].colors.map((c) => c.id)).toEqual(["ct-verde", "ct-mustar", "ct-roz", "ct-antracit", "ct-caramiziu"]);
+    expect(catalog.bases.map((b) => b.id)).toEqual(["lemn", "lada", "sertare"]);
     expect(console.error).not.toHaveBeenCalled();
   });
 

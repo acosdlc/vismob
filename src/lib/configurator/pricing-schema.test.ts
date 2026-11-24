@@ -1,18 +1,21 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { SEED_CATALOG } from "./catalog.seed";
-import type { Pricing } from "./pricing";
+import { DEFAULT_CONFIG, SEED_CATALOG } from "./catalog.seed";
+import { priceFor, type Pricing } from "./pricing";
 import {
+  LEI_FLOOR,
   PREVIEW_CONFIGS,
   PRICING_FIELD_ORDER,
   PRICING_FIELDS,
   PRICING_MESSAGES,
   PRICING_WIDTHS,
+  fieldsUnderLeiFloor,
   parsePricingForm,
   previewPrices,
   pricingSchema,
 } from "./pricing-schema";
-import type { Catalog } from "./types";
+import { resolve } from "./rules";
+import type { Catalog, Config } from "./types";
 
 // A fixture only (the style of pricing.test.ts): the workshop's real grid is never in the code.
 const PRICING: Pricing = {
@@ -92,8 +95,37 @@ describe("PRICING_FIELDS", () => {
   });
 });
 
+describe("PRICING_MESSAGES", () => {
+  it("says above the grid what an empty cell does, and under a refused amount how to write thousands", () => {
+    // An empty cell does not take the width out of the configurator (StepSize offers every
+    // SIZES width) and estimatePrice() prices it from another cell, also when no wider cell
+    // is filled: the hint must not promise otherwise, nor stop at the first of the two cases.
+    expect(PRICING_MESSAGES.grid).toBe(
+      "Scrie prețul în lei pentru fiecare lățime, fără punct la mii: 3450, nu 3.450. O celulă goală nu scoate lățimea din configurator: patul ia prețul următoarei lățimi completate sau, dacă nu e niciuna mai lată, al celei mai late completate.",
+    );
+    expect(PRICING_MESSAGES.floor).toBe("Preț sub 100 lei. Scrie suma fără punct la mii: 3450, nu 3.450.");
+    expect(PRICING_MESSAGES.floor).toContain(`sub ${LEI_FLOOR} lei`);
+  });
+
+  it("is true to the site: a width with an empty cell is still priced, with the next filled width of its row or, with none wider, the widest filled one", () => {
+    // The fixture's Arcuit row has prices at 160 and 180 only. Category A, headboard 100
+    // and wooden legs add nothing, so each price below is a grid cell as it is.
+    const parsed = parsePricingForm(formFor(PRICING));
+    if (!parsed.ok) throw new Error("the fixture must parse");
+    const arcuit = (size: Config["size"]) => {
+      const config: Config = { ...DEFAULT_CONFIG, model: "arcuit", size, family: "boucle", color: "bc-alb", hb: 100, base: "lemn" };
+      return priceFor(resolve(config, SEED_CATALOG), parsed.data);
+    };
+    expect([arcuit("160"), arcuit("180")]).toEqual([3200, 3600]);
+    expect([arcuit("90"), arcuit("120"), arcuit("140")]).toEqual([3200, 3200, 3200]);
+    // No filled width after 200: estimatePrice() falls back to the widest one, a narrower bed's
+    // price. The second half of the hint's sentence says so.
+    expect(arcuit("200")).toBe(3600);
+  });
+});
+
 describe("parsePricingForm", () => {
-  it("reads a sparse grid: an empty cell is a width that is not offered, a model may have none", () => {
+  it("reads a sparse grid: an empty cell is left out of its row, a model may have none", () => {
     const result = parsePricingForm(formFor(PRICING));
     expect(result).toEqual({ ok: true, data: PRICING });
     expect(result.ok && pricingSchema.safeParse(result.data).success).toBe(true);
@@ -182,6 +214,115 @@ describe("parsePricingForm", () => {
   it("ignores inputs it does not know", () => {
     const fd = formFor(PRICING, { $ACTION_ID_abc: "x", "grid.pat5.160": "9", note: "x" });
     expect(parsePricingForm(fd)).toEqual({ ok: true, data: PRICING });
+  });
+});
+
+describe("fieldsUnderLeiFloor", () => {
+  it("flags a grid cell, a base and an extra typed with a point between thousands, by input name and in form order", () => {
+    // The panel prints „3.450 lei”; typed back, "3.450" is a number to the parser: 3.45 lei.
+    const fd = formFor(PRICING, {
+      "extras.nightstands": "1.200",
+      "extras.led": " 1.300 ",
+      "base.lada": "1.200",
+      "grid.arcuit.180": " 3.600 ",
+      "grid.capitonat.160": "3.450",
+    });
+    const parsed = parsePricingForm(fd);
+    expect(parsed.ok && parsed.data.grid.capitonat["160"]).toBe(3.45);
+    // What the two extras were saved as, under „Salvat.”, while only the grid and the bases were checked.
+    expect(parsed.ok && parsed.data.extras).toEqual({ led: 1.3, nightstands: 1.2 });
+    expect(fieldsUnderLeiFloor(fd)).toEqual([
+      "grid.capitonat.160",
+      "grid.arcuit.180",
+      "base.lada",
+      "extras.led",
+      "extras.nightstands",
+    ]);
+  });
+
+  it("holds a grid cell to the floor: every amount above zero and under it, whatever its decimals", () => {
+    // No bed costs under 100 lei, so in the grid the size of the amount is enough to tell the slip.
+    const fd = formFor(PRICING, { "grid.capitonat.90": "0.5", "grid.arcuit.160": "50", "grid.canale.160": "99.99" });
+    expect(fieldsUnderLeiFloor(fd)).toEqual(["grid.capitonat.90", "grid.arcuit.160", "grid.canale.160"]);
+  });
+
+  it("holds a base and an extra to the shape of the slip only: under the floor they may be real amounts", () => {
+    // Metal legs for 50 lei more are a price, not a slip: here the size cannot tell the two apart.
+    const real = formFor(PRICING, {
+      "base.metal": "50",
+      "base.lada": "99.5",
+      "base.sertare": "0.5",
+      "extras.led": "50",
+      "extras.nightstands": "99",
+    });
+    expect(parsePricingForm(real).ok).toBe(true);
+    expect(fieldsUnderLeiFloor(real)).toEqual([]);
+
+    // One to three digits, a point and exactly three digits: „1.200 lei” as the panel prints it, typed back.
+    for (const slip of ["1.200", "12.500", "125.000", " 1.200 "]) {
+      const fd = formFor(PRICING, { "base.metal": slip, "extras.nightstands": slip });
+      expect(fieldsUnderLeiFloor(fd), slip).toEqual(["base.metal", "extras.nightstands"]);
+    }
+    // Decimals that are no group of thousands, and more than three digits before the point.
+    for (const value of ["1.2", "1.20", "1.2000", "1200.000", "1200.50", "1200"]) {
+      const fd = formFor(PRICING, { "base.metal": value, "extras.nightstands": value });
+      expect(parsePricingForm(fd).ok, value).toBe(true);
+      expect(fieldsUnderLeiFloor(fd), value).toEqual([]);
+    }
+  });
+
+  it("passes 0 for a base, the floor itself, a price with decimals and an empty cell", () => {
+    expect(LEI_FLOOR).toBe(100);
+    expect(fieldsUnderLeiFloor(formFor(PRICING))).toEqual([]);
+    const fd = formFor(PRICING, {
+      "base.lemn": "0",
+      "base.metal": "100",
+      "grid.capitonat.90": "100",
+      "grid.capitonat.160": "3450.50",
+      "grid.arcuit.90": "",
+    });
+    expect(parsePricingForm(fd).ok).toBe(true);
+    expect(fieldsUnderLeiFloor(fd)).toEqual([]);
+  });
+
+  it("leaves the percentages and the rounding step alone, whatever they hold, and inputs it does not know", () => {
+    const fd = formFor(PRICING, {
+      "categoryPct.B": "10",
+      // The shape of the slip, but a percentage: the message speaks of a price in lei.
+      "hbPct.120": "1.250",
+      customPct: "15",
+      roundTo: "50",
+      "grid.pat5.160": "9",
+      "base.altceva": "1.200",
+      "extras.altceva": "1.200",
+    });
+    expect(parsePricingForm(fd).ok).toBe(true);
+    expect(fieldsUnderLeiFloor(fd)).toEqual([]);
+  });
+
+  it("flags them in a post the parser refuses too, and never an input the parser already refused", () => {
+    const fd = formFor(PRICING, {
+      "grid.arcuit.160": "3.200",
+      "grid.capitonat.160": "3.450,50", // not a number
+      "grid.canale.160": "0", // not above zero
+      "base.lada": "-800", // negative
+      "extras.led": "1.300,50", // not a number
+      "extras.nightstands": "1.200",
+      roundTo: "",
+    });
+    fd.delete("base.metal"); // not posted
+    const parsed = parsePricingForm(fd);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(Object.keys(parsed.fieldErrors).sort()).toEqual([
+      "base.lada",
+      "base.metal",
+      "extras.led",
+      "grid.canale.160",
+      "grid.capitonat.160",
+      "roundTo",
+    ]);
+    expect(fieldsUnderLeiFloor(fd)).toEqual(["grid.arcuit.160", "extras.nightstands"]);
   });
 });
 

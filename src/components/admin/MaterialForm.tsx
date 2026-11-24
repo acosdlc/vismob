@@ -1,16 +1,18 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { saveMaterial } from "@/actions/admin/save-material";
 import { DeleteMaterialButton } from "@/components/admin/DeleteMaterialButton";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, Notice, Tag, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { Checkbox, Field, FieldError, Input, Label, Select } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { HEX_PATTERN, PRICE_CATEGORIES } from "@/lib/admin/materials";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
-import { ADMIN_INITIAL_STATE, type AdminActionState } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import type { FieldErrors } from "@/lib/leads/types";
 import type { Tables } from "@/lib/supabase/database.types";
 
@@ -42,6 +44,8 @@ export const MATERIAL_FORM_TEXTS = {
   featured: "Apare pe Acasă (grila de 8 mostre)",
   active: "Activ (apare în configurator și pe Materiale)",
   sort: "Ordine",
+  /** Only on the new-material screen: there an empty „Ordine” means last; on an edit the action refuses it. */
+  sortHint: "Lasă gol ca să apară ultimul în familie.",
   photo: "Poză (pătrată)",
   photoHint: "Mostra fotografiată de aproape, cel puțin 600 × 600 px.",
   submit: "Salvează",
@@ -64,22 +68,42 @@ const FIELD_ORDER: readonly string[] = [
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made meanwhile):
+ * useGuardedActionState. `noAnswer`, not `generic`: the save may have gone through all the same.
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
+
+/**
+ * The same on the new-material screen. There the call may have created the colour, and saveMaterial
+ * inserts on every post without an id: another try could add it twice, so the text sends her to the list first.
+ * A constant of its own, like CALL_FAILED: the hook wants the same object on every render.
+ */
+const CALL_FAILED_NEW: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswerNew };
+
 /** The object-name slug of a row that has no id yet (PhotoField); the uuid keeps two drafts apart. */
 function draftSlug(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `nou-${Date.now()}`;
 }
 
 // PLAN PR-8 „Materiale”, DESIGN §4.8: one card over every editable column of a
-// material. `useActionState` drives the `saveMaterial` Server Action; the submit goes
-// through `onSubmit` so the typed values stay in place after a save (React resets a
-// form it submitted itself). A new material posts an empty hidden `id` and lands on
-// its own screen (the action redirects); an existing one keeps its family and code
-// (the select is disabled, a hidden input carries the family; neither is editable).
-// The submit is held while PhotoField is still uploading. Without JavaScript the
-// `<form action>` posts to the action. No client pre-pass: the admin reads the
-// server's field errors.
+// material. `useGuardedActionState` drives the `saveMaterial` Server Action (a call
+// that fails leaves the form as it is, with CALL_FAILED beside the button, or
+// CALL_FAILED_NEW for a new material); the submit goes through `onSubmit` so the typed
+// values stay in place after a save (React resets a form it submitted itself). A new
+// material posts an empty hidden `id` and lands on its own screen (the action
+// redirects, which the hook lets through); an existing one keeps its family and code
+// (the select is disabled, a hidden input carries the family; neither is editable). The
+// submit is held while PhotoField is still uploading. Without JavaScript the
+// `<form action>` posts to the action. No client pre-pass: the admin reads the server's
+// field errors.
 export function MaterialForm({ material, families }: MaterialFormProps) {
-  const [state, formAction, pending] = useActionState(saveMaterial, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(
+    saveMaterial,
+    ADMIN_INITIAL_STATE,
+    material === null ? CALL_FAILED_NEW : CALL_FAILED,
+  );
+  const [edited, markEdited] = useSavedNotice(pending);
   const [hex, setHex] = useState(material?.hex ?? "");
   const [uploading, setUploading] = useState(false);
   const [slug] = useState(() => material?.id ?? draftSlug());
@@ -99,7 +123,7 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
     // The disabled button already blocks the submit; this covers a scripted one.
     if (uploading) return;
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const familyId = `${id}-family`;
@@ -113,13 +137,22 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
   const featuredId = `${id}-featured`;
   const activeId = `${id}-active`;
   const sortId = `${id}-sort`;
+  const sortHintId = `${id}-sort-hint`;
   const photoId = `${id}-photo`;
   const held = pending || uploading;
 
   return (
     <div className="flex flex-col gap-8">
       <AdminCard>
-        <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-6">
+        <form
+          ref={formRef}
+          action={formAction}
+          onSubmit={onSubmit}
+          onChange={markEdited}
+          noValidate
+          autoComplete="off"
+          className="flex flex-col gap-6"
+        >
           <input type="hidden" name="id" value={material?.id ?? ""} />
           {editing && <input type="hidden" name="family_id" value={material.family_id} />}
 
@@ -237,6 +270,8 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
 
             <Field>
               <Label htmlFor={sortId}>{MATERIAL_FORM_TEXTS.sort}</Label>
+              {/* A new colour starts empty, not at 0: the action then puts it last in its family
+                  (nextMaterialSort), where a 0 would tie with the family's first colour. */}
               <Input
                 id={sortId}
                 name="sort"
@@ -245,9 +280,15 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
                 min={0}
                 max={999}
                 step={1}
-                defaultValue={material?.sort ?? 0}
+                defaultValue={material?.sort ?? ""}
                 invalid={Boolean(errors.sort)}
+                aria-describedby={editing ? undefined : sortHintId}
               />
+              {!editing && (
+                <p id={sortHintId} className={HINT}>
+                  {MATERIAL_FORM_TEXTS.sortHint}
+                </p>
+              )}
               <FieldError fieldId={sortId}>{errors.sort}</FieldError>
             </Field>
 
@@ -276,6 +317,7 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
                 id={photoId}
                 error={errors[PHOTO_FIELDS.path]}
                 onUploadingChange={setUploading}
+                onRemove={markEdited}
               />
             </div>
           </div>
@@ -284,7 +326,7 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
             <Button type="submit" variant="primary" disabled={held} aria-busy={pending || undefined}>
               {pending ? MATERIAL_FORM_TEXTS.submitting : MATERIAL_FORM_TEXTS.submit}
             </Button>
-            <SaveNotice state={state} pending={pending} />
+            <SaveNotice state={state} pending={pending} edited={edited} />
           </div>
         </form>
       </AdminCard>
@@ -294,8 +336,9 @@ export function MaterialForm({ material, families }: MaterialFormProps) {
   );
 }
 
-function SaveNotice({ state, pending }: { state: AdminActionState; pending: boolean }) {
-  if (pending || state.status === "idle") return null;
+function SaveNotice({ state, pending, edited }: { state: AdminActionState; pending: boolean; edited: boolean }) {
+  // „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice).
+  if (pending || state.status === "idle" || (state.status === "ok" && edited)) return null;
   return (
     <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
       {state.message}

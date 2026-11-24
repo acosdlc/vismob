@@ -8,12 +8,25 @@ import { ADMIN_MESSAGES } from "./types";
 
 // Pure helpers of the Lucrări screens (docs/PLAN.md PR-9, ARHITECTURA §8 „Lucrări”):
 // the project form's schema, the photo rows' parser, the slug a new project gets and
-// the two publication rules (consent before publishing, published before hero). No
-// Supabase, no React: the Server Actions parse with these, the forms import the texts.
+// the three publication rules (consent and a photo before publishing, published before
+// hero). No Supabase, no React: the Server Actions parse with these, the forms import
+// the texts.
 
 /** Texts of these screens that ADMIN_MESSAGES does not carry (listed in the PR for approval). */
 export const PROJECT_MESSAGES = {
   consent: "Publicarea cere acordul clientului; bifează-l întâi.",
+  /**
+   * Answered by the project form, while a photo that was only picked may be on screen
+   * under it: the row is written by the Poze form alone, so the text names that section
+   * and its button by their labels (PROJECT_PHOTOS_TEXTS.submit).
+   */
+  noPhoto: "Publicarea cere cel puțin o poză salvată: adaug-o la „Poze” și apasă „Salvează pozele”.",
+  /**
+   * Answered by the Poze form, so it names the box of the project form by its label
+   * (PROJECT_FORM_TEXTS.published) and says to save that form: the rule reads the stored
+   * flag, not the box as it stands on screen.
+   */
+  lastPhoto: "Un proiect publicat are nevoie de cel puțin o poză. Păstrează una sau debifează „Publicat (apare pe site)” și salvează proiectul întâi.",
   heroUnpublished: "Proiectul din hero trebuie să fie publicat.",
   model: "Alege un model din listă.",
   size: "Scrie lățimea și lungimea saltelei în cm (60–300).",
@@ -162,7 +175,20 @@ export function canPublish(input: Pick<ProjectInput, "published" | "client_conse
   return !input.published || input.client_consent;
 }
 
-/** The hero project is the first thing on Acasă: it has to be published (and so, through canPublish, consented). */
+/**
+ * The site shows a published project through its first photo (the tile on Acasă and on
+ * /lucrari, the hero's big photo with the ticket over it) and draws an empty placeholder
+ * box when there is none: publishing needs at least one. `photoCount` is what the project
+ * has, or what a save of its photos would leave (photoCountAfterSave); a new project has 0.
+ */
+export function publishedHasPhoto(project: Pick<ProjectInput, "published">, photoCount: number): boolean {
+  return !project.published || photoCount > 0;
+}
+
+/**
+ * The hero project is the first thing on Acasă: it has to be published (and so, through
+ * canPublish and publishedHasPhoto, consented and with a photo).
+ */
 export function heroAllowed(input: Pick<ProjectInput, "hero" | "published">): boolean {
   return !input.hero || input.published;
 }
@@ -276,4 +302,19 @@ export function parseProjectPhotosForm(formData: FormData): ParseResult<ProjectP
 
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors };
   return { ok: true, data: { edits, newPhoto } };
+}
+
+/**
+ * How many photos a project has once saveProjectPhotos has applied `input` to its rows
+ * (`own`), for the photo rule (publishedHasPhoto): the rows not ticked for deletion,
+ * plus the new photo. It follows the action's two exceptions: a posted id that is not
+ * one of the project's rows changes nothing, and a new photo whose path one of the rows
+ * already stores is not inserted, even when that row is ticked.
+ */
+export function photoCountAfterSave(own: readonly { id: string; path: string }[], input: ProjectPhotosInput): number {
+  const deleted = new Set(input.edits.filter((edit) => edit.delete).map((edit) => edit.id));
+  const kept = own.filter((photo) => !deleted.has(photo.id)).length;
+  const { newPhoto } = input;
+  const added = newPhoto !== null && !own.some((photo) => photo.path === newPhoto.path);
+  return kept + (added ? 1 : 0);
 }

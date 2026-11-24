@@ -10,10 +10,14 @@ import { createClient, type ServerClient } from "@/lib/supabase/server";
  * „Salvează” on /admin/catalog/modele/[id] (PLAN PR-8), for `useActionState`. Re-checks
  * the admin role, validates, then writes the model's texts, `active` and `sort` and
  * replaces its model ↔ family rules through the signed-in user's cookie client (RLS:
- * `admin_all`), and expires the "catalog" tag. The model itself is never created or
- * deleted here (its drawing and rules live in code), and it keeps at least one family:
- * without one, catalogFromRows() would drop it from the configurator. Deactivating the
- * last active model is refused too: getCatalog() throws on a catalogue without models.
+ * `admin_all`), and expires the "catalog" tag. The "projects" tag goes with it, as after
+ * every catalogue write: the projects are cached for a day with the catalogue names
+ * they print (src/lib/data/projects.ts). That reader takes no column of a model today,
+ * so here the rule is kept rather than something on the site changed. The model itself
+ * is never created or deleted here (its drawing and rules live in code), and it keeps at
+ * least one family: without one, catalogFromRows() would drop it from the configurator.
+ * Deactivating the last active model is refused too: getCatalog() throws on a catalogue
+ * without models.
  */
 export async function saveModel(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const admin = await getAdminSession();
@@ -96,5 +100,6 @@ export async function saveModel(_prev: AdminActionState, formData: FormData): Pr
   }
 
   updateTag("catalog");
+  updateTag("projects");
   return { status: "ok", message: ADMIN_MESSAGES.saved };
 }

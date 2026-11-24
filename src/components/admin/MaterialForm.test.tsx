@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
+import { Component, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MATERIAL_MESSAGES } from "@/lib/admin/materials";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
@@ -22,6 +24,28 @@ vi.mock("browser-image-compression", () => ({ default: async (file: File) => fil
 import { deleteMaterialConfirmText } from "./DeleteMaterialButton";
 import { MATERIAL_FORM_TEXTS, MaterialForm, type MaterialFormFamily, type MaterialFormMaterial } from "./MaterialForm";
 import { PHOTO_TEXTS } from "./PhotoField";
+
+/** Stands where the framework's boundaries are; React reports what it catches to `onCaughtError`. */
+class Boundary extends Component<{ children: ReactNode }, { caught: boolean }> {
+  state = { caught: false };
+
+  static getDerivedStateFromError() {
+    return { caught: true };
+  }
+
+  render() {
+    return this.state.caught ? null : this.props.children;
+  }
+}
+
+/** What a Server Action's `redirect()` reaches the browser as: the call rejects with it. */
+function redirectTo(path: string): unknown {
+  try {
+    return redirect(path);
+  } catch (error) {
+    return error;
+  }
+}
 
 const FAMILIES: MaterialFormFamily[] = [
   { id: "catifea", name: "Catifea", code: "CT" },
@@ -127,7 +151,11 @@ describe("MaterialForm for a new material", () => {
     expect(sort).toHaveAttribute("name", "sort");
     expect(sort).toHaveAttribute("type", "number");
     expect(sort).toHaveAttribute("min", "0");
-    expect(sort).toHaveValue(0);
+    // Empty, not 0: a 0 would tie with the family's first colour and could take its place.
+    expect(sort).toHaveValue(null);
+    expect(sort).toHaveAccessibleDescription(T.sortHint);
+    // „ultimul”: the screen speaks of „material” („Material nou”, „Activ”).
+    expect(T.sortHint).toBe("Lasă gol ca să apară ultimul în familie.");
 
     const photo = screen.getByLabelText(T.photo);
     expect(photo).toHaveAttribute("type", "file");
@@ -188,6 +216,29 @@ describe("MaterialForm for a new material", () => {
     expect(screen.getByLabelText(T.hex)).toHaveValue("#cdbfa6");
     expect(screen.getByLabelText(T.priceCategory)).toHaveValue("C");
     expect(screen.getByRole("button", { name: T.submit })).toBeEnabled();
+  });
+
+  it("posts an empty „Ordine” when it is left alone, so the action can put the colour last in its family", async () => {
+    render(<MaterialForm material={null} families={FAMILIES} />);
+    fireEvent.change(screen.getByLabelText(T.name), { target: { value: "Nisip" } });
+    fireEvent.change(screen.getByLabelText(T.hex), { target: { value: "#cdbfa6" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(saveMaterial).toHaveBeenCalledTimes(1));
+    expect(saveMaterial.mock.calls[0][1].get("sort")).toBe("");
+  });
+
+  it("keeps the „Ordine” hint beside a field error of the same box", async () => {
+    saveMaterial.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: { sort: ADMIN_MESSAGES.invalid } });
+    render(<MaterialForm material={null} families={FAMILIES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await screen.findByRole("alert");
+    const sort = screen.getByLabelText(T.sort);
+    expect(sort).toHaveAttribute("aria-invalid", "true");
+    expect(sort).toHaveAccessibleDescription(`${T.sortHint} ${ADMIN_MESSAGES.invalid}`);
   });
 
   it("shows the server's message and field errors, and focuses the first invalid field in form order", async () => {
@@ -251,6 +302,73 @@ describe("MaterialForm for a new material", () => {
     await waitFor(() => expect(saveMaterial).toHaveBeenCalledTimes(1));
     expect(saveMaterial.mock.calls[0][1].get(PHOTO_FIELDS.path)).toBe(path);
   });
+
+  it("keeps the form, what was typed and the uploaded photo when the call to the action fails, sends her to the list first, and posts it all again on the next try", async () => {
+    // No answer comes back: a dropped connection, a laptop just back from sleep, a deployment made meanwhile.
+    // On this screen the call may have created the colour all the same.
+    saveMaterial.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<MaterialForm material={null} families={FAMILIES} />);
+    const name = screen.getByLabelText(T.name);
+    fireEvent.change(screen.getByLabelText(T.family), { target: { value: "boucle" } });
+    fireEvent.change(name, { target: { value: "Nisip" } });
+    fireEvent.change(screen.getByLabelText(T.hex), { target: { value: "#cdbfa6" } });
+    const submit = screen.getByRole("button", { name: T.submit });
+    pickPhoto();
+    await waitFor(() => expect(submit).toBeEnabled());
+    const [path] = upload.mock.calls[0];
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    // The create text, not the one that asks for another try: saveMaterial inserts on every post
+    // without an id, so a second „Salvează” after a first that did arrive adds the colour twice.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswerNew);
+    // So the notice itself has to say where to look before that second try.
+    expect(alert).toHaveTextContent("Înainte să încerci din nou, verifică în listă, într-o filă nouă, dacă nu s-a adăugat deja.");
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh empty one: the form was never taken down.
+    expect(screen.getByLabelText(T.name)).toBe(name);
+    expect(name).toHaveValue("Nisip");
+    expect(screen.getByLabelText(T.family)).toHaveValue("boucle");
+    expect(screen.getByLabelText(T.hex)).toHaveValue("#cdbfa6");
+    expect(screen.getByTestId("hex-preview")).toHaveStyle({ backgroundColor: "#cdbfa6" });
+    expect(hidden(PHOTO_FIELDS.path)).toHaveValue(path);
+    expect(submit).toBeEnabled();
+
+    // Nothing holds the form back once she has looked: the next try is a new call with everything in it.
+    fireEvent.click(submit);
+    // By its text: the photo field has a status line of its own.
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    const formData = saveMaterial.mock.calls[1][1];
+    expect(formData.get("id")).toBe("");
+    expect(formData.get("family_id")).toBe("boucle");
+    expect(formData.get("name")).toBe("Nisip");
+    expect(formData.get("hex")).toBe("#cdbfa6");
+    expect(formData.get(PHOTO_FIELDS.path)).toBe(path);
+    reported.mockRestore();
+  });
+
+  it("lets the redirect to the new colour's screen through to the framework instead of calling it a failure", async () => {
+    // On a create the real action ends in redirect(), and the browser's call rejects with it.
+    const thrown = redirectTo("/admin/catalog/materiale/bc-nisip?creat=1");
+    saveMaterial.mockRejectedValueOnce(thrown);
+    const caught = vi.fn();
+    render(
+      <Boundary>
+        <MaterialForm material={null} families={FAMILIES} />
+      </Boundary>,
+      { onCaughtError: caught },
+    );
+    fireEvent.change(screen.getByLabelText(T.name), { target: { value: "Nisip" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(caught).toHaveBeenCalledTimes(1));
+    expect(caught.mock.calls[0][0]).toBe(thrown);
+    expect(screen.queryByText(ADMIN_MESSAGES.noAnswerNew)).toBeNull();
+  });
 });
 
 describe("MaterialForm for an existing material", () => {
@@ -278,6 +396,9 @@ describe("MaterialForm for an existing material", () => {
     expect(screen.getByRole("checkbox", { name: T.featured })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: T.active })).toBeChecked();
     expect(screen.getByLabelText(T.sort)).toHaveValue(3);
+    // The hint is the new-colour screen's: here an emptied „Ordine” is refused (saveMaterial).
+    expect(screen.queryByText(T.sortHint)).toBeNull();
+    expect(screen.getByLabelText(T.sort)).not.toHaveAttribute("aria-describedby");
     expect(hidden(PHOTO_FIELDS.path)).toHaveValue(PHOTO);
     expect(hidden(PHOTO_FIELDS.before)).toHaveValue(PHOTO);
 
@@ -308,6 +429,142 @@ describe("MaterialForm for an existing material", () => {
     expect(screen.getByLabelText(T.name)).toHaveValue("Verde închis");
   });
 
+  it("posts an emptied „Ordine” as empty, and marks and focuses the box when the action refuses it", async () => {
+    // What saveMaterial answers to an emptied „Ordine” on an existing colour.
+    saveMaterial.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.invalid, fieldErrors: { sort: ADMIN_MESSAGES.required } });
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const sort = screen.getByLabelText(T.sort);
+    fireEvent.change(sort, { target: { value: "" } });
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+
+    await waitFor(() => expect(saveMaterial).toHaveBeenCalledTimes(1));
+    // Empty, not 0: the action can tell an emptied box from a typed 0.
+    expect(saveMaterial.mock.calls[0][1].get("sort")).toBe("");
+    expect(saveMaterial.mock.calls[0][1].get("id")).toBe("ct-verde");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Verifică câmpurile marcate.");
+    expect(sort).toHaveAttribute("aria-invalid", "true");
+    expect(sort).toHaveAccessibleDescription("Completează acest câmp.");
+    await waitFor(() => expect(document.activeElement).toBe(sort));
+    // Nothing was saved, and nothing says so.
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(sort).toHaveValue(null);
+  });
+
+  it("hides the saved notice as soon as the form is edited after a save, and shows it again after the next save", async () => {
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+
+    // Typed after the save: „Salvat.” would speak for a name that is not saved.
+    fireEvent.change(screen.getByLabelText(T.name), { target: { value: "Verde închis" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByLabelText(T.name)).toHaveValue("Verde închis");
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveMaterial.mock.calls[1][1].get("name")).toBe("Verde închis");
+
+    // The colour field keeps its own handler (the preview) and is an edit as well.
+    fireEvent.change(screen.getByLabelText(T.hex), { target: { value: "#B98A2E" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(screen.getByTestId("hex-preview")).toHaveStyle({ backgroundColor: "#B98A2E" });
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    // So are a select and a tick.
+    fireEvent.change(screen.getByLabelText(T.priceCategory), { target: { value: "C" } });
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: T.featured }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+
+    // Saved, then saved once more with nothing changed in between: the notice goes while
+    // the save runs and is back with its answer.
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+  });
+
+  it("hides the saved notice when the photo is removed or replaced after a save", async () => {
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    // „Șterge poza” is a click: no change event reaches the form, the photo field reports it.
+    fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    expect(hidden(PHOTO_FIELDS.path)).toHaveValue("");
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    pickPhoto();
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+    await waitFor(() => expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument());
+    expect(screen.queryByText(ADMIN_MESSAGES.saved)).toBeNull();
+  });
+
+  it("stops saying „…apare pe site după ce salvezi” once the save went through and the page hands back the stored photo", async () => {
+    const { rerender } = render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const submit = screen.getByRole("button", { name: T.submit });
+    pickPhoto();
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument();
+    const [path] = upload.mock.calls[0];
+
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    expect(saveMaterial.mock.calls[0][1].get(PHOTO_FIELDS.path)).toBe(path);
+    // The action ends with refresh(): the screen gets the saved row with the action's answer.
+    rerender(<MaterialForm material={{ ...MATERIAL, photo_path: path }} families={FAMILIES} />);
+
+    // „Salvat.” stands alone: the sentence about a save still to come would now be stale.
+    expect(screen.getByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    expect(screen.queryByText(PHOTO_TEXTS.uploaded)).toBeNull();
+    expect(hidden(PHOTO_FIELDS.path)).toHaveValue(path);
+    expect(hidden(PHOTO_FIELDS.before)).toHaveValue(path);
+
+    // The same for a removal: said until the save, not after it.
+    fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+    expect(screen.getByText(PHOTO_TEXTS.removed)).toBeInTheDocument();
+    fireEvent.click(submit);
+    await screen.findByText(ADMIN_MESSAGES.saved);
+    rerender(<MaterialForm material={{ ...MATERIAL, photo_path: null }} families={FAMILIES} />);
+    expect(screen.getByText(ADMIN_MESSAGES.saved)).toBeInTheDocument();
+    expect(screen.queryByText(PHOTO_TEXTS.removed)).toBeNull();
+  });
+
+  it("keeps the error notice, the field errors and the focus while the form is edited", async () => {
+    saveMaterial.mockResolvedValue({
+      status: "error",
+      message: MATERIAL_MESSAGES.lastColor,
+      fieldErrors: { active: MATERIAL_MESSAGES.lastColor },
+    });
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: T.submit }));
+    await screen.findByRole("alert");
+    const active = screen.getByRole("checkbox", { name: T.active });
+    await waitFor(() => expect(document.activeElement).toBe(active));
+
+    // Another field is edited: nothing the refused save left on screen moves.
+    const name = screen.getByLabelText(T.name);
+    name.focus();
+    fireEvent.change(name, { target: { value: "Verde închis" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(MATERIAL_MESSAGES.lastColor);
+    expect(active).toHaveAttribute("aria-invalid", "true");
+    expect(active).toHaveAccessibleDescription(MATERIAL_MESSAGES.lastColor);
+    expect(document.activeElement).toBe(name);
+  });
+
   it("shows a plain error without field errors", async () => {
     saveMaterial.mockResolvedValue({ status: "error", message: ADMIN_MESSAGES.forbidden });
     render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
@@ -316,6 +573,35 @@ describe("MaterialForm for an existing material", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.forbidden);
     expect(screen.getByLabelText(T.name)).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("asks for another try, not for a look in the list, when the call fails on an existing colour, and saves on that try", async () => {
+    // No answer comes back: here a dropped connection (a laptop just back from sleep gives the same),
+    // which the next try can get past. After a deployment that retired the action's id only a reload helps.
+    saveMaterial.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // The reason is not on screen; the hook leaves it on the console (useGuardedActionState).
+    const reported = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<MaterialForm material={MATERIAL} families={FAMILIES} />);
+    const name = screen.getByLabelText(T.name);
+    fireEvent.change(name, { target: { value: "Verde închis" } });
+    const submit = screen.getByRole("button", { name: T.submit });
+
+    fireEvent.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    // Saving this row twice writes the same values twice: there is nothing to look for in the list.
+    expect(alert).toHaveTextContent(ADMIN_MESSAGES.noAnswer);
+    expect(alert.className).toContain("border-error");
+    // The same input, not a fresh one with the saved name: the form was never taken down.
+    expect(screen.getByLabelText(T.name)).toBe(name);
+    expect(name).toHaveValue("Verde închis");
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(await screen.findByText(ADMIN_MESSAGES.saved)).toHaveAttribute("role", "status");
+    expect(saveMaterial.mock.calls[1][1].get("id")).toBe("ct-verde");
+    expect(saveMaterial.mock.calls[1][1].get("name")).toBe("Verde închis");
+    reported.mockRestore();
   });
 });
 

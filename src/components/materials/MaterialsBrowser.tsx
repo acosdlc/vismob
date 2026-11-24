@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Catalog } from "@/lib/configurator/types";
 import { swatchItems } from "@/lib/materials/swatches";
-import { BASE_CARDS, BasesCards } from "./BasesCards";
+import { BasesCards, shownBaseCards } from "./BasesCards";
 import { FamilyArticle } from "./FamilyArticle";
 import { MaterialsTabs, type MaterialsTab, type MaterialsTabId } from "./MaterialsTabs";
 import type { MaterialsBrowserProps } from "./types";
@@ -14,22 +14,30 @@ import { WoodFinishes } from "./WoodFinishes";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** The three tabs with their counters, computed from the catalogue (DESIGN §4.3). */
+/**
+ * The tabs with their counters, computed from the catalogue (DESIGN §4.3 has three). A
+ * tab with no family under it is left out: the catalogue drops a family that no model
+ * allows, and „Lemn masiv 0 esențe” would open on nothing. „Picioare și baze” always
+ * stays, a catalogue has at least one base; it counts the cards shown.
+ */
 export function materialsTabs(catalog: Catalog): MaterialsTab[] {
   const textile = catalog.families.filter((f) => f.tab === "textile");
   const wood = catalog.families.filter((f) => f.tab === "lemn");
   const species = wood.reduce((n, f) => n + f.colors.length, 0);
-  return [
-    { id: "textile", label: "Textile", count: plural(textile.length, "familie", "familii") },
-    { id: "lemn", label: "Lemn masiv", count: plural(species, "esență", "esențe") },
-    { id: "baze", label: "Picioare și baze", count: String(BASE_CARDS.length) },
-  ];
+  const tabs: MaterialsTab[] = [];
+  if (textile.length > 0) tabs.push({ id: "textile", label: "Textile", count: plural(textile.length, "familie", "familii") });
+  if (wood.length > 0) tabs.push({ id: "lemn", label: "Lemn masiv", count: plural(species, "esență", "esențe") });
+  tabs.push({ id: "baze", label: "Picioare și baze", count: String(shownBaseCards(catalog.bases).length) });
+  return tabs;
 }
 
 export function MaterialsBrowser({ catalog, settings }: MaterialsBrowserProps) {
   const items = useMemo(() => swatchItems(catalog), [catalog]);
-  const [tab, setTab] = useState<MaterialsTabId>("textile");
+  const [chosen, setTab] = useState<MaterialsTabId>("textile");
   const tabs = materialsTabs(catalog);
+  // The tab the visitor chose, or the first one left when the catalogue has no such tab:
+  // on arrival („Textile” with no textile family) or after a newer catalogue comes in.
+  const tab = tabs.some((t) => t.id === chosen) ? chosen : tabs[0].id;
   const families = catalog.families.filter((f) => (tab === "lemn" ? f.tab === "lemn" : f.tab === "textile"));
 
   return (

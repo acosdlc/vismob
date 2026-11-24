@@ -104,4 +104,75 @@ describe("MaterialsBrowser", () => {
     const smaller = { ...SEED_CATALOG, families: SEED_CATALOG.families.filter((f) => f.id === "catifea" || f.id === "lemn") };
     expect(materialsTabs(smaller)[0].count).toBe("1 familie");
   });
+
+  it("leaves out a tab with no family under it", () => {
+    // No model allows wood any more, so the catalogue arrives without the family (catalogFromRows).
+    const noWood = { ...SEED_CATALOG, families: SEED_CATALOG.families.filter((f) => f.tab !== "lemn") };
+    expect(materialsTabs(noWood).map((t) => t.id)).toEqual(["textile", "baze"]);
+
+    render(<MaterialsBrowser catalog={noWood} settings={settings} />);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Textile4 familii", "Picioare și baze3"]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(within(screen.getByRole("tabpanel")).getAllByRole("link")).toHaveLength(19);
+    expect(screen.queryByRole("link", { name: /^Nuc/ })).not.toBeInTheDocument();
+
+    // The keys step over the missing tab: Right from Textile is Picioare și baze, with no wood on the way.
+    fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: /Picioare și baze/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText("Finisaje pentru lemn")).not.toBeInTheDocument();
+    expect(screen.queryByText("Lemn masiv")).not.toBeInTheDocument();
+  });
+
+  it("opens on the first tab left when no textile family is offered", () => {
+    const onlyWood = { ...SEED_CATALOG, families: SEED_CATALOG.families.filter((f) => f.tab === "lemn") };
+    render(<MaterialsBrowser catalog={onlyWood} settings={settings} />);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Lemn masiv5 esențe", "Picioare și baze3"]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(tabs[0]).toHaveAttribute("tabindex", "0");
+    const panel = screen.getByRole("tabpanel");
+    expect(panel).toHaveAttribute("aria-labelledby", tabs[0].id);
+    expect(within(panel).getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "Lemn masiv",
+      "Finisaje pentru lemn",
+    ]);
+    expect(within(panel).getAllByRole("link")).toHaveLength(5);
+  });
+
+  it("falls back to the first tab left when the open one goes with a newer catalogue", () => {
+    const { rerender } = render(<MaterialsBrowser catalog={SEED_CATALOG} settings={settings} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Lemn masiv/ }));
+    expect(screen.getByRole("tab", { name: /Lemn masiv/ })).toHaveAttribute("aria-selected", "true");
+
+    const noWood = { ...SEED_CATALOG, families: SEED_CATALOG.families.filter((f) => f.tab !== "lemn") };
+    rerender(<MaterialsBrowser catalog={noWood} settings={settings} />);
+    expect(screen.getByRole("tab", { name: /Textile/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(screen.getByRole("tabpanel")).getAllByRole("heading", { level: 2 })).toHaveLength(4);
+  });
+
+  it("shows a base card only while one of its bases is offered, and counts the cards shown", () => {
+    // „Picioare metalice” is switched off: the public catalogue arrives without the row.
+    const noMetal = { ...SEED_CATALOG, bases: SEED_CATALOG.bases.filter((b) => b.id !== "metal") };
+    expect(materialsTabs(noMetal).map((t) => t.count)).toEqual(["4 familii", "5 esențe", "2"]);
+
+    render(<MaterialsBrowser catalog={noMetal} settings={settings} />);
+    const tab = screen.getByRole("tab", { name: /Picioare și baze/ });
+    expect(tab).toHaveTextContent("Picioare și baze2");
+    fireEvent.click(tab);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "Picioare din lemn",
+      "Bază până la podea",
+    ]);
+    expect(within(panel).getAllByText("FOTO")).toHaveLength(2);
+    expect(within(panel).queryByText("Picior metalic")).not.toBeInTheDocument();
+  });
+
+  it("keeps „Bază până la podea” while either storage base is offered", () => {
+    const noLada = { ...SEED_CATALOG, bases: SEED_CATALOG.bases.filter((b) => b.id !== "lada") };
+    expect(materialsTabs(noLada)[2].count).toBe("3");
+    const noStorage = { ...SEED_CATALOG, bases: SEED_CATALOG.bases.filter((b) => b.id !== "lada" && b.id !== "sertare") };
+    expect(materialsTabs(noStorage)[2].count).toBe("2");
+  });
 });

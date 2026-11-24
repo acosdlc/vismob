@@ -25,7 +25,9 @@ const ROWS: Record<NonNullable<TicketProps["size"]>, string> = {
 };
 
 // DESIGN §3.6: border 1.5px ink, white, ink title bar in DM Mono 11px uppercase .08em
-// (padding 8px 14px), `<dl>` grid auto 1fr with muted `<dt>`.
+// (padding 8px 14px), `<dl>` grid auto 1fr with muted `<dt>`. A value keeps its line
+// breaks (pre-line): the request screen of the panel prints the client's message here,
+// typed on several lines; every other value is a single line and shows as before.
 export function Ticket({ title, number, rows, size = "sm", children, className }: TicketProps) {
   return (
     <div className={cx("border-[1.5px] border-ink bg-white text-ink", className)}>
@@ -38,7 +40,7 @@ export function Ticket({ title, number, rows, size = "sm", children, className }
           {rows.map((row) => (
             <Fragment key={row.k}>
               <dt className="text-muted">{row.k}</dt>
-              <dd>{row.v}</dd>
+              <dd className="whitespace-pre-line">{row.v}</dd>
             </Fragment>
           ))}
         </dl>

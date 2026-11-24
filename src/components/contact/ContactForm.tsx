@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   startTransition,
-  useActionState,
   useEffect,
   useId,
   useRef,
@@ -17,13 +16,16 @@ import { Button } from "@/components/site/Button";
 import { Eyebrow } from "@/components/site/Eyebrow";
 import { Checkbox, Field, FieldError, FormCard, Input, Label, Select, Textarea, formStackClasses } from "@/components/site/form";
 import { collectSource, focusFirstInvalid as focusFirstInvalidIn } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { trackEvent } from "@/lib/analytics";
 import {
   CONSENT_TEXT,
   FORM_FIELDS,
+  FORM_MESSAGES,
   INITIAL_FORM_STATE,
   MATTRESS_SIZES,
   type FieldErrors,
+  type FormState,
 } from "@/lib/leads/types";
 import { contactSchema, parseLeadForm } from "@/lib/validation/schemas";
 import { FileUpload } from "./FileUpload";
@@ -53,11 +55,15 @@ export function focusFirstInvalid(form: HTMLFormElement, errors: FieldErrors): b
 
 const subscribeNoop = () => () => undefined;
 
-// DESIGN §4.1 09 „Cerere de ofertă” and §3.16. `useActionState` drives the Server
-// Action; a client pre-pass of the same Zod schema puts the focus on the first error
-// without a round trip; without JavaScript the `<form action>` posts to the action.
+/** The state of a call that brought no answer (a dropped connection, a deployment made meanwhile): useGuardedActionState. */
+const CALL_FAILED: FormState = { status: "error", message: FORM_MESSAGES.generic };
+
+// DESIGN §4.1 09 „Cerere de ofertă” and §3.16. `useGuardedActionState` drives the Server
+// Action (a call that fails leaves the form as it is, with CALL_FAILED above the button);
+// a client pre-pass of the same Zod schema puts the focus on the first error without a
+// round trip; without JavaScript the `<form action>` posts to the action.
 export function ContactForm({ responseTime, page, confirmHeadingLevel = 3 }: ContactFormProps) {
-  // „Trimite altă cerere” remounts the form, which resets useActionState and every field.
+  // „Trimite altă cerere” remounts the form, which resets useGuardedActionState and every field.
   const [round, setRound] = useState(0);
   return (
     <RequestForm
@@ -77,11 +83,12 @@ function RequestForm({
   onReset,
 }: ContactFormProps & { confirmHeadingLevel: 2 | 3; onReset: () => void }) {
   const ConfirmHeading = confirmHeadingLevel === 2 ? "h2" : "h3";
-  const [state, formAction, pending] = useActionState(submitContact, INITIAL_FORM_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(submitContact, INITIAL_FORM_STATE, CALL_FAILED);
   const [clientErrors, setClientErrors] = useState<FieldErrors | null>(null);
   const [startedAt, setStartedAt] = useState("");
   const [uploading, setUploading] = useState(false);
   const tokenRequested = useRef(false);
+  const submitReported = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const confirmHeadingRef = useRef<HTMLHeadingElement>(null);
   const id = useId();
@@ -97,13 +104,18 @@ function RequestForm({
   const errors: FieldErrors = clientErrors ?? serverErrors ?? {};
 
   // Server-side field errors (a submit without JavaScript, or a value the client let through).
-  // On success the focus moves to the confirmation and contact_submit is reported once:
-  // `state` changes only when the action returns (ARHITECTURA §10).
+  // On success the focus moves to the confirmation and contact_submit is reported
+  // (ARHITECTURA §10), once per mount: `state` changes only when the action returns, but
+  // the router keeps the page while the visitor is elsewhere (`cacheComponents`) and runs
+  // its effects again each time it shows it. Without the ref one request would be counted
+  // on every return, and the focus, with the scroll, pulled back to the confirmation.
+  // „Trimite altă cerere” remounts the form, so a new request reports again.
   useEffect(() => {
     if (state.status === "error" && state.fieldErrors && formRef.current) {
       focusFirstInvalid(formRef.current, state.fieldErrors);
     }
-    if (state.status === "ok") {
+    if (state.status === "ok" && !submitReported.current) {
+      submitReported.current = true;
       confirmHeadingRef.current?.focus();
       trackEvent("contact_submit");
     }
@@ -114,7 +126,13 @@ function RequestForm({
     tokenRequested.current = true;
     issueFormToken()
       .then((token) => setStartedAt(token))
-      .catch(() => setStartedAt(""));
+      .catch(() => {
+        // The call brought no answer (the connection was away for a moment). The next focus
+        // or pointer-down asks again: without a token the server refuses every submit as
+        // sent too fast, and nothing short of a reload would get the request through.
+        tokenRequested.current = false;
+        setStartedAt("");
+      });
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -130,7 +148,7 @@ function RequestForm({
       return;
     }
     setClientErrors(null);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const field = (name: string) => ({

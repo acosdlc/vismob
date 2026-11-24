@@ -1,16 +1,18 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { startTransition, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { saveProjectPhotos } from "@/actions/admin/save-project-photos";
 import { PhotoField } from "@/components/admin/PhotoField";
 import { AdminCard, EmptyState, Notice, fieldGridClasses } from "@/components/admin/ui";
+import { useSavedNotice } from "@/components/admin/useSavedNotice";
 import { Button } from "@/components/site/Button";
 import { cx } from "@/components/site/cx";
 import { Checkbox, Field, FieldError, Input, Label } from "@/components/site/form";
 import { focusFirstInvalid } from "@/components/site/form/helpers";
+import { useGuardedActionState } from "@/components/site/form/useGuardedActionState";
 import { PHOTO_FIELDS } from "@/lib/admin/media";
 import { NEW_PHOTO_ALT_FIELD, PHOTO_ROW_ID_FIELD, photoRowFields, PROJECT_LIMITS } from "@/lib/admin/projects";
-import { ADMIN_INITIAL_STATE } from "@/lib/admin/types";
+import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { mediaUrl } from "@/lib/data/media";
 import type { FieldErrors } from "@/lib/leads/types";
 import type { Tables } from "@/lib/supabase/database.types";
@@ -41,6 +43,13 @@ export const PROJECT_PHOTOS_TEXTS = {
 
 const HINT = "text-[14px] leading-[1.4] text-muted";
 
+/**
+ * The state of a call that brought no answer (a dropped connection, a deployment made
+ * meanwhile): useGuardedActionState. The save may have gone through all the same, so the
+ * text is not the one the server answers when it wrote nothing (ADMIN_MESSAGES.generic).
+ */
+const CALL_FAILED: AdminActionState = { status: "error", message: ADMIN_MESSAGES.noAnswer };
+
 /** The rows as the site orders them (projectsFromRows): by sort, then path. */
 function sortedPhotos(photos: ProjectPhotosFormPhoto[]): ProjectPhotosFormPhoto[] {
   return [...photos].sort((a, b) => a.sort - b.sort || a.path.localeCompare(b.path));
@@ -50,10 +59,13 @@ function sortedPhotos(photos: ProjectPhotosFormPhoto[]): ProjectPhotosFormPhoto[
 // plus one new photo, for the `saveProjectPhotos` Server Action. The new photo goes to the
 // bucket from the browser (PhotoField, folder `projects`, named after the project id) and
 // the form posts only its path with its alt text; the submit is held while the upload runs.
-// The submit goes through `onSubmit` so the typed values survive a save with errors.
-// Without JavaScript the `<form action>` posts to the action.
+// The submit goes through `onSubmit` so the typed values survive a save with errors, and
+// `useGuardedActionState` drives the action so they survive a call that fails as well (the
+// form then shows CALL_FAILED and keeps the uploaded path). Without JavaScript the
+// `<form action>` posts to the action.
 export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps) {
-  const [state, formAction, pending] = useActionState(saveProjectPhotos, ADMIN_INITIAL_STATE);
+  const [state, formAction, pending, submit] = useGuardedActionState(saveProjectPhotos, ADMIN_INITIAL_STATE, CALL_FAILED);
+  const [edited, markEdited] = useSavedNotice(pending);
   const [uploading, setUploading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const id = useId();
@@ -64,6 +76,9 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
   // client state: left alone, the submit after a successful save would post the stored
   // photo again. Counting the saves (derived while rendering, as React documents for state
   // that follows a changed value) keys the „Adaugă o poză” block, so it remounts empty.
+  // The remount takes whatever the block holds, so the block is closed while a save runs
+  // (its picker disabled, its text read-only): a photo picked or a text typed then was not
+  // in the submit and would be dropped, the photo left in the bucket with no row.
   const [seen, setSeen] = useState(state);
   const [saved, setSaved] = useState(0);
   if (state !== seen) {
@@ -86,7 +101,7 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
     // The disabled button already blocks the submit; this covers a scripted one.
     if (uploading) return;
     const formData = new FormData(event.currentTarget);
-    startTransition(() => formAction(formData));
+    startTransition(() => submit(formData));
   }
 
   const newPhotoId = `${id}-new-photo`;
@@ -96,7 +111,7 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
 
   return (
     <AdminCard>
-      <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate autoComplete="off" className="flex flex-col gap-8">
+      <form ref={formRef} action={formAction} onSubmit={onSubmit} onChange={markEdited} noValidate autoComplete="off" className="flex flex-col gap-8">
         <input type="hidden" name="project_id" value={projectId} />
 
         {ordered.length === 0 ? (
@@ -122,7 +137,9 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
                 ratio="4:3"
                 id={newPhotoId}
                 error={errors[PHOTO_FIELDS.path]}
+                disabled={pending}
                 onUploadingChange={setUploading}
+                onRemove={markEdited}
               />
             </div>
             <Field className="col-span-full">
@@ -132,6 +149,7 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
                 name={NEW_PHOTO_ALT_FIELD}
                 type="text"
                 maxLength={PROJECT_LIMITS.alt}
+                readOnly={pending}
                 invalid={Boolean(errors[NEW_PHOTO_ALT_FIELD])}
                 aria-describedby={newAltHintId}
               />
@@ -147,7 +165,8 @@ export function ProjectPhotosForm({ projectId, photos }: ProjectPhotosFormProps)
           <Button type="submit" variant="primary" disabled={held} aria-busy={pending || undefined}>
             {pending ? PROJECT_PHOTOS_TEXTS.submitting : PROJECT_PHOTOS_TEXTS.submit}
           </Button>
-          {!pending && state.status !== "idle" && (
+          {/* „Salvat.” speaks only for what the submit carried: an edit since then hides it (useSavedNotice). */}
+          {!pending && state.status !== "idle" && !(state.status === "ok" && edited) && (
             <Notice tone={state.status === "ok" ? "ok" : "error"} className="min-w-0 flex-1">
               {state.message}
             </Notice>

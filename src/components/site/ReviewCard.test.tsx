@@ -16,4 +16,13 @@ describe("ReviewCard", () => {
     expect(container.textContent).not.toContain("Ana,");
     expect(container.querySelectorAll("figcaption span")).toHaveLength(1);
   });
+
+  it("keeps the line breaks of a review typed in paragraphs", () => {
+    const quote = "Patul a venit la timp.\n\nMontajul a durat o oră.";
+    const { container } = render(<ReviewCard quote={quote} name="Ana" city="Cluj" model="" />);
+    const paragraph = container.querySelector("blockquote p");
+    // The text is printed as stored; pre-line is what makes the browser break the lines.
+    expect(paragraph?.textContent).toBe(quote);
+    expect(paragraph?.className).toContain("whitespace-pre-line");
+  });
 });

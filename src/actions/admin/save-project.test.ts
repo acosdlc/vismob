@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NIL_UUID, PROJECT_MESSAGES } from "@/lib/admin/projects";
+import { PROJECT_MESSAGES } from "@/lib/admin/projects";
 import type { AdminSession } from "@/lib/admin/session";
 import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES } from "@/lib/admin/types";
 
@@ -38,11 +38,12 @@ interface FakeQuery {
   update(...args: unknown[]): FakeQuery;
   eq(...args: unknown[]): FakeQuery;
   neq(...args: unknown[]): FakeQuery;
+  limit(...args: unknown[]): FakeQuery;
   maybeSingle(): Promise<Result>;
   then<R>(onOk: (value: Result) => R, onErr?: (reason: unknown) => R): Promise<R>;
 }
 
-/** What each chain answers; the defaults describe a healthy database that knows the form's model, material and base. */
+/** What each chain answers; the defaults describe a healthy database that knows the form's model, material and base, and a project with a photo. */
 interface Scenario {
   /** `from("models").select("id")` */
   models?: Result;
@@ -58,12 +59,15 @@ interface Scenario {
   insert?: Result;
   /** `from("projects").select("id").eq("id", …).maybeSingle()` */
   row?: Result;
+  /** `from("project_photos").select("id").eq("project_id", …).limit(1)` */
+  photos?: Result;
   /** `from("projects").update(…).eq("id", …).select("id")` */
   update?: Result;
 }
 
 const ROW_ID = "9a1b2c3d-0000-4000-8000-00000000abcd";
 const NEW_ID = "9a1b2c3d-0000-4000-8000-00000000ef01";
+const PHOTO_ID = "3f2b1c4d-0000-4000-8000-000000000001";
 
 const isHeroClear = (payload: unknown) => JSON.stringify(payload) === JSON.stringify({ hero: false });
 
@@ -72,6 +76,7 @@ function respond(scenario: Scenario, call: Call): Result {
   if (call.table === "models") return scenario.models ?? { data: [{ id: "capitonat" }, { id: "arcuit" }, { id: "canale" }, { id: "lamele" }], error: null };
   if (call.table === "materials") return scenario.materials ?? { data: [{ id: "ct-verde" }, { id: "bc-nisip" }], error: null };
   if (call.table === "bases") return scenario.bases ?? { data: [{ id: "lemn" }, { id: "lada" }], error: null };
+  if (call.table === "project_photos" && method === "select") return scenario.photos ?? { data: [{ id: PHOTO_ID }], error: null };
   if (call.table === "projects") {
     if (method === "insert") return scenario.insert ?? { data: [{ id: NEW_ID }], error: null };
     if (method === "update") return isHeroClear(arg) ? (scenario.clearHero ?? { data: [], error: null }) : (scenario.update ?? { data: [{ id: ROW_ID }], error: null });
@@ -99,6 +104,7 @@ function fakeClient(scenario: Scenario = {}) {
       update: record("update"),
       eq: record("eq"),
       neq: record("neq"),
+      limit: record("limit"),
       maybeSingle: () => {
         call.ops.push(["maybeSingle"]);
         return Promise.resolve(respond(scenario, call));
@@ -118,7 +124,7 @@ function fakeClient(scenario: Scenario = {}) {
   return { client, calls };
 }
 
-/** The form's post; `id` "" is a new project. */
+/** The form's post; `id` "" is a new project, which is saved unpublished: its photos come after the row exists. */
 function form(overrides: Record<string, string | string[] | undefined> = {}): FormData {
   const values: Record<string, string | string[] | undefined> = {
     id: "",
@@ -133,7 +139,7 @@ function form(overrides: Record<string, string | string[] | undefined> = {}): Fo
     city: "Cluj-Napoca",
     delivered_on: "2026-03-14",
     client_consent: "on",
-    published: "on",
+    published: undefined,
     featured: "on",
     hero: undefined,
     sort: "3",
@@ -162,7 +168,7 @@ const COLUMNS = {
   delivered_on: "2026-03-14",
   featured: true,
   hero: false,
-  published: true,
+  published: false,
   client_consent: true,
   sort: 3,
 };
@@ -209,7 +215,8 @@ describe("saveProject", () => {
   });
 
   it("refuses to publish without the client's consent, on the published box", async () => {
-    const state = await saveProject(ADMIN_INITIAL_STATE, form({ client_consent: undefined }));
+    // A new project: the consent is asked for first, the photo (which it cannot have yet) after it.
+    const state = await saveProject(ADMIN_INITIAL_STATE, form({ client_consent: undefined, published: "on" }));
     expect(state).toEqual({ status: "error", message: PROJECT_MESSAGES.consent, fieldErrors: { published: PROJECT_MESSAGES.consent } });
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
@@ -363,22 +370,19 @@ describe("saveProject", () => {
       });
     });
 
-    it("clears every other hero before inserting a hero project", async () => {
-      const { client, calls } = fakeClient();
-      mocks.createClient.mockResolvedValue(client);
+    it("cannot be published, with or without the hero box: it has no photo yet, so nothing is inserted and no other hero is cleared", async () => {
+      for (const boxes of [{ published: "on" }, { published: "on", hero: "on" }]) {
+        const { client, calls } = fakeClient();
+        mocks.createClient.mockResolvedValue(client);
 
-      await expect(saveProject(ADMIN_INITIAL_STATE, form({ hero: "on" }))).rejects.toThrow("NEXT_REDIRECT");
+        const state = await saveProject(ADMIN_INITIAL_STATE, form(boxes));
 
-      expect(summary(calls).map((c) => [c[0], c[1]])).toEqual([
-        ["models", "select"],
-        ["materials", "select"],
-        ["bases", "select"],
-        ["projects", "select"],
-        ["projects", "update"],
-        ["projects", "insert"],
-      ]);
-      expect(calls[4].ops).toEqual([["update", { hero: false }], ["eq", "hero", true], ["neq", "id", NIL_UUID], ["select", "id"]]);
-      expect(calls[5].ops[0][1]).toMatchObject({ hero: true });
+        expect(state).toEqual({ status: "error", message: PROJECT_MESSAGES.noPhoto, fieldErrors: { published: PROJECT_MESSAGES.noPhoto } });
+        expect(calls).toEqual([]);
+      }
+      expect(mocks.createClient).not.toHaveBeenCalled();
+      expect(mocks.updateTag).not.toHaveBeenCalled();
+      expect(mocks.redirect).not.toHaveBeenCalled();
     });
 
     it("does not touch the other projects when the new one is not the hero", async () => {
@@ -386,18 +390,6 @@ describe("saveProject", () => {
       mocks.createClient.mockResolvedValue(client);
       await expect(saveProject(ADMIN_INITIAL_STATE, form())).rejects.toThrow("NEXT_REDIRECT");
       expect(summary(calls).some((c) => c[1] === "update")).toBe(false);
-    });
-
-    it("answers the generic message when the hero flags cannot be cleared, and does not insert", async () => {
-      const { client, calls } = fakeClient({ clearHero: { data: null, error: { message: "permission denied" } } });
-      mocks.createClient.mockResolvedValue(client);
-
-      const state = await saveProject(ADMIN_INITIAL_STATE, form({ hero: "on" }));
-
-      expect(state).toEqual({ status: "error", message: ADMIN_MESSAGES.generic });
-      expect(summary(calls).some((c) => c[1] === "insert")).toBe(false);
-      expect(console.error).toHaveBeenCalledWith(expect.stringContaining("permission denied"));
-      expect(mocks.updateTag).not.toHaveBeenCalled();
     });
 
     it("treats an insert of 0 rows as a missing role (RLS filters silently)", async () => {
@@ -425,7 +417,10 @@ describe("saveProject", () => {
   });
 
   describe("an existing project", () => {
-    const edit = (overrides: Record<string, string | string[] | undefined> = {}) => form({ id: ROW_ID, ...overrides });
+    /** The edit screen's post for a published project; the fake gives it one photo unless the scenario says otherwise. */
+    const edit = (overrides: Record<string, string | string[] | undefined> = {}) => form({ id: ROW_ID, published: "on", ...overrides });
+    /** What the update writes for that post. */
+    const PUBLISHED = { ...COLUMNS, published: true };
 
     it("updates the columns except the slug, refreshes the screen and expires the projects tag", async () => {
       const { client, calls } = fakeClient();
@@ -439,16 +434,56 @@ describe("saveProject", () => {
         ["materials", "select"],
         ["bases", "select"],
         ["projects", "select"],
+        ["project_photos", "select"],
         ["projects", "update"],
       ]);
       expect(calls[3].ops).toEqual([["select", "id"], ["eq", "id", ROW_ID], ["maybeSingle"]]);
-      expect(calls[4].ops).toEqual([["update", COLUMNS], ["eq", "id", ROW_ID], ["select", "id"]]);
-      expect(calls[4].ops[0][1]).not.toHaveProperty("slug");
+      // Published: one row of its photos is looked for before the write.
+      expect(calls[4].ops).toEqual([["select", "id"], ["eq", "project_id", ROW_ID], ["limit", 1]]);
+      expect(calls[5].ops).toEqual([["update", PUBLISHED], ["eq", "id", ROW_ID], ["select", "id"]]);
+      expect(calls[5].ops[0][1]).not.toHaveProperty("slug");
       expect(mocks.refresh).toHaveBeenCalledTimes(1);
       expect(mocks.updateTag).toHaveBeenCalledTimes(1);
       expect(mocks.updateTag).toHaveBeenCalledWith("projects");
       expect(mocks.redirect).not.toHaveBeenCalled();
       expect(console.error).not.toHaveBeenCalled();
+    });
+
+    it("refuses to publish a project without a photo, on the published box, before the hero clear and the update", async () => {
+      const { client, calls } = fakeClient({ photos: { data: [], error: null } });
+      mocks.createClient.mockResolvedValue(client);
+
+      const state = await saveProject(ADMIN_INITIAL_STATE, edit({ hero: "on" }));
+
+      expect(state).toEqual({ status: "error", message: PROJECT_MESSAGES.noPhoto, fieldErrors: { published: PROJECT_MESSAGES.noPhoto } });
+      expect(summary(calls).map((c) => [c[0], c[1]])).toEqual([
+        ["models", "select"],
+        ["materials", "select"],
+        ["bases", "select"],
+        ["projects", "select"],
+        ["project_photos", "select"],
+      ]);
+      expect(mocks.updateTag).not.toHaveBeenCalled();
+      expect(mocks.refresh).not.toHaveBeenCalled();
+      expect(console.error).not.toHaveBeenCalled();
+    });
+
+    it("saves an unpublished project that has no photo, without looking for one", async () => {
+      const { client, calls } = fakeClient({ photos: { data: [], error: null } });
+      mocks.createClient.mockResolvedValue(client);
+
+      const state = await saveProject(ADMIN_INITIAL_STATE, edit({ published: undefined }));
+
+      expect(state).toEqual({ status: "ok", message: ADMIN_MESSAGES.saved });
+      expect(summary(calls).map((c) => [c[0], c[1]])).toEqual([
+        ["models", "select"],
+        ["materials", "select"],
+        ["bases", "select"],
+        ["projects", "select"],
+        ["projects", "update"],
+      ]);
+      expect(calls[4].ops[0]).toEqual(["update", COLUMNS]);
+      expect(mocks.updateTag).toHaveBeenCalledWith("projects");
     });
 
     it("clears every other hero, excluding itself, before updating a hero project", async () => {
@@ -463,11 +498,12 @@ describe("saveProject", () => {
         ["materials", "select"],
         ["bases", "select"],
         ["projects", "select"],
+        ["project_photos", "select"],
         ["projects", "update"],
         ["projects", "update"],
       ]);
-      expect(calls[4].ops).toEqual([["update", { hero: false }], ["eq", "hero", true], ["neq", "id", ROW_ID], ["select", "id"]]);
-      expect(calls[5].ops[0][1]).toMatchObject({ hero: true });
+      expect(calls[5].ops).toEqual([["update", { hero: false }], ["eq", "hero", true], ["neq", "id", ROW_ID], ["select", "id"]]);
+      expect(calls[6].ops[0][1]).toMatchObject({ hero: true });
     });
 
     it("answers notFound for an id the table does not have", async () => {
@@ -477,6 +513,7 @@ describe("saveProject", () => {
       const state = await saveProject(ADMIN_INITIAL_STATE, edit());
 
       expect(state).toEqual({ status: "error", message: ADMIN_MESSAGES.notFound });
+      // The row is looked up before its photos: a project that is gone is not answered with the photo rule.
       expect(summary(calls).at(-1)).toEqual(["projects", "select", "id"]);
       expect(mocks.updateTag).not.toHaveBeenCalled();
     });
@@ -502,10 +539,18 @@ describe("saveProject", () => {
       mocks.createClient.mockResolvedValue(row.client);
       expect(await saveProject(ADMIN_INITIAL_STATE, edit())).toEqual({ status: "error", message: ADMIN_MESSAGES.generic });
 
+      // The photos could not be read: nothing says the project has one, so nothing is written.
+      const photos = fakeClient({ photos: { data: null, error: { message: "timeout reading the photos" } } });
+      mocks.createClient.mockResolvedValue(photos.client);
+      expect(await saveProject(ADMIN_INITIAL_STATE, edit({ hero: "on" }))).toEqual({ status: "error", message: ADMIN_MESSAGES.generic });
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining("timeout reading the photos"));
+      expect(summary(photos.calls).some((c) => c[1] === "update")).toBe(false);
+
       const clearHero = fakeClient({ clearHero: { data: null, error: { message: "timeout" } } });
       mocks.createClient.mockResolvedValue(clearHero.client);
       expect(await saveProject(ADMIN_INITIAL_STATE, edit({ hero: "on" }))).toEqual({ status: "error", message: ADMIN_MESSAGES.generic });
       expect(summary(clearHero.calls).filter((c) => c[1] === "update")).toHaveLength(1);
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining("clearing hero"));
       expect(mocks.updateTag).not.toHaveBeenCalled();
     });
 

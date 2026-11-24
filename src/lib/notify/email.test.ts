@@ -12,7 +12,7 @@ vi.mock("resend", () => ({
 }));
 
 import { Resend } from "resend";
-import { FALLBACK_FROM, fromAddress, sendEmail } from "./email";
+import { cannotSendReason, FALLBACK_FROM, fromAddress, sendEmail } from "./email";
 
 const SECRET_BODY = "Mesajul clientului, care nu are ce căuta în loguri";
 const input = () => ({
@@ -27,6 +27,7 @@ beforeEach(() => {
   vi.stubEnv("EMAIL_FROM", "");
   vi.stubEnv("NOTIFY_DRY_RUN", "");
   vi.stubEnv("VERCEL_ENV", "");
+  vi.mocked(Resend).mockClear();
   sendMock.mockReset();
   sendMock.mockResolvedValue({ data: { id: "re_123" }, error: null, headers: null });
 });
@@ -56,6 +57,43 @@ describe("sendEmail", () => {
     expect(await sendEmail(input())).toEqual({ ok: true, dryRun: true });
     expect(sendMock).not.toHaveBeenCalled();
     expect(Resend).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dry run outside production without RESEND_API_KEY", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    // A preview, `vercel dev`, and a machine outside Vercel (no VERCEL_ENV at all).
+    for (const env of ["preview", "development", undefined]) {
+      vi.stubEnv("VERCEL_ENV", env);
+      expect(await sendEmail(input())).toEqual({ ok: true, dryRun: true });
+    }
+    expect(info).toHaveBeenCalledTimes(3);
+    expect(Resend).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed in production without RESEND_API_KEY, naming the variable", async () => {
+    // A dry run here would be journaled as a sent email: nothing retried, nobody alerted.
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("EMAIL_FROM", "Atelier <cereri@domeniu.ro>");
+    const result = await sendEmail(input());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("Missing environment variable RESEND_API_KEY");
+    expect(Resend).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
+  });
+
+  it("dry-runs with NOTIFY_DRY_RUN=1 in production too, with or without the key", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NOTIFY_DRY_RUN", "1");
+    expect(await sendEmail(input())).toEqual({ ok: true, dryRun: true });
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    expect(await sendEmail(input())).toEqual({ ok: true, dryRun: true });
+    expect(info).toHaveBeenCalledTimes(2);
+    expect(Resend).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
   it("sends through Resend with the fallback sender outside production", async () => {
@@ -115,5 +153,61 @@ describe("sendEmail", () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     sendMock.mockRejectedValueOnce(new Error("fetch failed"));
     expect(await sendEmail(input())).toEqual({ ok: false, error: "fetch failed" });
+  });
+});
+
+describe("cannotSendReason", () => {
+  const missing = (name: string) =>
+    `Missing environment variable ${name}. Add it on the Vercel project's Environment Variables page.`;
+  const SENDER = "Atelier <cereri@domeniu.ro>";
+
+  it("names the missing variable in production: the key first, then the sender", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    expect(cannotSendReason()).toBe(missing("RESEND_API_KEY"));
+    vi.stubEnv("EMAIL_FROM", SENDER);
+    expect(cannotSendReason()).toBe(missing("RESEND_API_KEY"));
+    vi.stubEnv("EMAIL_FROM", "");
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    expect(cannotSendReason()).toBe(missing("EMAIL_FROM"));
+  });
+
+  it("answers null in production once both variables are set", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("EMAIL_FROM", SENDER);
+    expect(cannotSendReason()).toBeNull();
+  });
+
+  it("answers null outside production with nothing set: a missing key is a dry run there", () => {
+    for (const env of ["preview", "development", undefined]) {
+      vi.stubEnv("VERCEL_ENV", env);
+      expect(cannotSendReason()).toBeNull();
+    }
+  });
+
+  it("answers null with NOTIFY_DRY_RUN=1 in production: a dry run needs neither variable", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NOTIFY_DRY_RUN", "1");
+    expect(cannotSendReason()).toBeNull();
+  });
+
+  it("answers the text sendEmail fails with, and null wherever sendEmail does not fail on a variable", async () => {
+    // The retry cron waits on this answer instead of spending an attempt, so it must be
+    // neither stricter nor looser than the send itself, in every combination.
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    for (const env of ["production", "preview", undefined]) {
+      for (const dryRun of ["", "1"]) {
+        for (const key of ["", "re_test"]) {
+          for (const sender of ["", SENDER]) {
+            vi.stubEnv("VERCEL_ENV", env);
+            vi.stubEnv("NOTIFY_DRY_RUN", dryRun);
+            vi.stubEnv("RESEND_API_KEY", key);
+            vi.stubEnv("EMAIL_FROM", sender);
+            const sent = await sendEmail(input());
+            expect(cannotSendReason(), JSON.stringify({ env, dryRun, key, sender })).toBe(sent.ok ? null : sent.error);
+          }
+        }
+      }
+    }
   });
 });

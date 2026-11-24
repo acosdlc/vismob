@@ -5,12 +5,18 @@ import type { FieldErrors } from "@/lib/leads/types";
 // libphonenumber-js (src/lib/validation/schemas.ts) or the configurator seed
 // (src/lib/admin/leads.ts) into its bundle. Both modules re-export these.
 
-/** The form's string fields, first value per name; files and React's `$ACTION_*` entries are skipped. */
+/**
+ * The form's string fields, first value per name; files and React's `$ACTION_*` entries are skipped.
+ * CR LF and a lone CR are read as LF, as a textarea's own value holds them: a browser
+ * posts every line break of a textarea as CR LF, while the field's `maxLength` counted it
+ * once, so a text typed up to the limit would come back as too long. Nothing else in a
+ * value changes.
+ */
 export function formValues(formData: FormData): Record<string, string> {
   const values: Record<string, string> = {};
   for (const [key, value] of formData.entries()) {
     if (typeof value !== "string" || key.startsWith("$ACTION") || key in values) continue;
-    values[key] = value;
+    values[key] = value.replace(/\r\n?/g, "\n");
   }
   return values;
 }

@@ -5,10 +5,13 @@ import {
   MATERIAL_MESSAGES,
   materialIdFor,
   nextMaterialCode,
+  nextMaterialSort,
   parseMaterialForm,
   PRICE_CATEGORIES,
   SLUG_MAX,
   slugify,
+  SORT_MAX,
+  sortLeftBlank,
 } from "./materials";
 
 /** A full, valid post of the form; a test overrides what it checks. */
@@ -101,6 +104,53 @@ describe("nextMaterialCode", () => {
   it("grows past two digits without truncating", () => {
     expect(nextMaterialCode("CT", ["CT99"])).toBe("CT100");
     expect(nextMaterialCode("CT", ["CT100"])).toBe("CT101");
+  });
+});
+
+describe("nextMaterialSort", () => {
+  it("is the family's highest order plus one, whatever the order the rows come in", () => {
+    expect(nextMaterialSort([0, 1, 2, 3, 4, 5])).toBe(6);
+    expect(nextMaterialSort([4, 0, 12, 3])).toBe(13);
+    expect(nextMaterialSort([0])).toBe(1);
+    // A tie at the top is still one place: the next colour goes after both.
+    expect(nextMaterialSort([0, 0, 0])).toBe(1);
+  });
+
+  it("starts a family without colours at 0", () => {
+    expect(nextMaterialSort([])).toBe(0);
+  });
+
+  it("never goes past SORT_MAX, the most the schema accepts", () => {
+    expect(SORT_MAX).toBe(999);
+    expect(nextMaterialSort([SORT_MAX - 1])).toBe(SORT_MAX);
+    expect(nextMaterialSort([SORT_MAX])).toBe(SORT_MAX);
+    expect(nextMaterialSort([3, 1200])).toBe(SORT_MAX);
+    // What the result is stored as is something the schema itself would take.
+    const stored = parseMaterialForm(form({ sort: String(nextMaterialSort([SORT_MAX])) }));
+    expect(stored.ok && stored.data.sort).toBe(SORT_MAX);
+  });
+});
+
+describe("sortLeftBlank", () => {
+  it("is true for an empty, a blank or a missing „Ordine”", () => {
+    expect(sortLeftBlank(form({ sort: "" }))).toBe(true);
+    expect(sortLeftBlank(form({ sort: "  " }))).toBe(true);
+    expect(sortLeftBlank(form({ sort: undefined }))).toBe(true);
+  });
+
+  it("is false for a typed number, 0 included, and for anything else the schema will judge", () => {
+    expect(sortLeftBlank(form({ sort: "0" }))).toBe(false);
+    expect(sortLeftBlank(form({ sort: "7" }))).toBe(false);
+    expect(sortLeftBlank(form({ sort: " 12 " }))).toBe(false);
+    expect(sortLeftBlank(form({ sort: "abc" }))).toBe(false);
+  });
+
+  it("tells apart exactly the posts the schema turns into the same 0", () => {
+    for (const sort of ["", "  ", "0", undefined]) {
+      const parsed = parseMaterialForm(form({ sort }));
+      expect(parsed.ok && parsed.data.sort).toBe(0);
+    }
+    expect([sortLeftBlank(form({ sort: "" })), sortLeftBlank(form({ sort: "0" }))]).toEqual([true, false]);
   });
 });
 

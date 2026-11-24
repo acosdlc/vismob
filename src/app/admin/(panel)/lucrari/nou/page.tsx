@@ -29,13 +29,14 @@ type ListsRead = { ok: true; lists: ProjectLists } | { ok: false; problem: strin
 // signed-in user's cookie client, ARHITECTURA §8), every row, inactive ones included: a
 // project may reference a material the configurator no longer offers. The slug is chosen
 // by the Server Action, which then redirects to the new project's screen, where the photos
-// are added. The (panel) layout wraps this page in the guard's <Suspense>, so cookies()
-// may be read at the top level.
+// are added and, with a photo saved, the project can be published: the form has no
+// „Publicat” box here, so the lead says where publishing went. The (panel) layout wraps
+// this page in the guard's <Suspense>, so cookies() may be read at the top level.
 export default async function ProiectNouPage() {
   const read = await readLists();
 
   return (
-    <AdminPage title="Proiect nou" lead="Pozele se adaugă după ce salvezi proiectul.">
+    <AdminPage title="Proiect nou" lead="Pozele se adaugă după ce salvezi proiectul; apoi îl poți publica.">
       {read.ok ? <ProjectForm project={null} {...read.lists} /> : <Notice tone="error">{read.problem}</Notice>}
     </AdminPage>
   );

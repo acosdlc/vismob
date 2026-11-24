@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SEED_SETTINGS } from "@/lib/data/settings.seed";
-import { SETTINGS_FIELDS, SETTINGS_GROUPS, SETTINGS_MAX } from "./settings-fields";
+import { SETTINGS_FIELDS, SETTINGS_FINGERPRINT_FIELD, SETTINGS_GROUPS, SETTINGS_MAX } from "./settings-fields";
 
 const CEDILLA = /[şţŞŢ]/;
 
@@ -55,10 +55,53 @@ describe("SETTINGS_FIELDS", () => {
       expect(kind(key)).toBe("textarea");
     }
     expect(kind("workshop_name")).toBe("text");
+    // The two values the site links (tel:, mailto:) have kinds of their own, so the schema checks them.
+    expect(kind("phone_public")).toBe("phone");
+    expect(kind("email_public")).toBe("email");
+    const checked = SETTINGS_FIELDS.filter((field) => field.kind === "phone" || field.kind === "email");
+    expect(checked.map((field) => field.key)).toEqual(["phone_public", "email_public"]);
     // PR-9: the FOTO 08 photo is the only photo kind, last in the „Atelier” group.
     expect(kind("atelier_photo_path")).toBe("photo");
     expect(SETTINGS_FIELDS.filter((field) => field.kind === "photo").map((field) => field.key)).toEqual(["atelier_photo_path"]);
     expect(SETTINGS_GROUPS.find((group) => group.title === "Atelier")?.fields.at(-1)?.key).toBe("atelier_photo_path");
+  });
+
+  it("marks as optional exactly the texts the site hides while they are empty", () => {
+    const optional = SETTINGS_FIELDS.filter((field) => field.optional);
+    // The Google line shows only with both of its values (Reviews.tsx); the story only ends the
+    // Atelier paragraph (Atelier.tsx). Every other text is printed inside a fixed sentence.
+    expect(optional.map((field) => field.key)).toEqual(["google_rating", "google_reviews_count", "story_text"]);
+    // The schema reads the flag on these two kinds alone: a link, the WhatsApp number and the
+    // photo may be empty by their kind, „Telefon” and „Email” never.
+    expect(optional.map((field) => field.kind)).toEqual(["text", "text", "textarea"]);
+  });
+
+  it("says of the Google profile link that the site never shows it, and keeps the hint of the two footer links", () => {
+    const hint = (key: string) => SETTINGS_FIELDS.find((field) => field.key === key)?.hint;
+    // Its only reader is the JSON-LD (src/lib/seo/json-ld.ts): „Gol: nu apare pe site.” promised a link.
+    expect(hint("google_profile_url")).toBe(
+      "Linkul complet, cu https://. Nu apare pe site: îl citesc doar motoarele de căutare.",
+    );
+    for (const key of ["instagram_url", "facebook_url"]) {
+      expect(hint(key)).toBe("Linkul complet, cu https://. Gol: nu apare pe site.");
+    }
+  });
+
+  it("says under „Telefon” which spelling the check takes, with the two examples and what it refuses", () => {
+    const hint = (key: string) => SETTINGS_FIELDS.find((field) => field.key === key)?.hint;
+    // The check answers one message for every refusal („Scrie un număr de telefon valid.”), also
+    // for a valid number written as 0264/123.456 or followed by a second one, so the rule is
+    // stated on the field. Both examples pass the check: settings-schema.test.ts posts them.
+    expect(hint("phone_public")).toBe(
+      "Un singur număr, de exemplu 0722 123 456 sau +40 722 123 456. Fără „/”, fără al doilea număr și fără alt text.",
+    );
+  });
+
+  it("names the fingerprint input apart from every Settings key and from the photo field's inputs", () => {
+    // The form posts it next to the settings; a name shared with a key would be stored in its place.
+    const taken = SETTINGS_FIELDS.flatMap((field) => [field.key as string, `${field.key}_before`]);
+    expect(taken).not.toContain(SETTINGS_FINGERPRINT_FIELD);
+    expect(Object.keys(SEED_SETTINGS)).not.toContain(SETTINGS_FINGERPRINT_FIELD);
   });
 
   it("bounds every field by its kind and keeps the texts in Romanian with comma-below diacritics", () => {

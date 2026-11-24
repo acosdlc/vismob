@@ -10,7 +10,9 @@ import { createClient, type ServerClient } from "@/lib/supabase/server";
  * „Salvează” on /admin/catalog/familii/[id] (PLAN PR-8), for `useActionState`. Re-checks
  * the admin role, validates, then writes the family's name, description and
  * specification rows through the signed-in user's cookie client (RLS: `admin_all`)
- * and expires the "catalog" tag. The code and the tab are structural (configuration
+ * and expires the "catalog" tag, and the "projects" tag with it: the project captions
+ * and the hero ticket are cached under that one with the family's name, for a day
+ * (src/lib/data/projects.ts). The code and the tab are structural (configuration
  * codes, the Materiale page) and are not written here.
  */
 export async function saveFamily(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
@@ -52,5 +54,6 @@ export async function saveFamily(_prev: AdminActionState, formData: FormData): P
   }
 
   updateTag("catalog");
+  updateTag("projects");
   return { status: "ok", message: ADMIN_MESSAGES.saved };
 }

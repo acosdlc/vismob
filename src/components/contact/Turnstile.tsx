@@ -6,7 +6,7 @@ import { FORM_FIELDS } from "@/lib/leads/types";
 
 // Cloudflare Turnstile (ARHITECTURA §6.1 step 3.2, §9). The widget renders only when
 // NEXT_PUBLIC_TURNSTILE_SITE_KEY is set at build time; without it the component renders
-// nothing and the server skips the check (verifyTurnstile without TURNSTILE_SECRET_KEY).
+// nothing and the server skips the check (verifyTurnstile is on only with both keys).
 
 interface TurnstileRenderOptions {
   sitekey: string;

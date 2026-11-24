@@ -3,11 +3,14 @@ import type { ReactElement } from "react";
 import { render } from "@react-email/render";
 import { Resend } from "resend";
 import { PLAIN_TEXT_OPTIONS } from "@/emails/shared";
-import { environment, optionalEnv } from "@/lib/env";
+import { environment, optionalEnv, requireEnv } from "@/lib/env";
 
 // The one place that talks to Resend (CLAUDE.md rule 5). Reads its variables at
-// call time, so the app builds with none of them set; without RESEND_API_KEY,
-// or with NOTIFY_DRY_RUN=1, it only logs the recipient and the subject.
+// call time, so the app builds with none of them set. With NOTIFY_DRY_RUN=1, or
+// outside production without RESEND_API_KEY, it only logs the recipient and the
+// subject. Production without the key fails the send instead, like production
+// without EMAIL_FROM: a dry run there is journaled as a sent email, so nothing
+// is retried and nobody is told.
 
 export interface SendEmailInput {
   to: string;
@@ -34,10 +37,34 @@ export function fromAddress(): string {
   return FALLBACK_FROM;
 }
 
+/**
+ * Why no email at all can leave this deployment, or null. Only production without
+ * RESEND_API_KEY or EMAIL_FROM is in that state (NOTIFY_DRY_RUN=1 needs neither),
+ * and the text is the one every `sendEmail` call fails with there: the same two
+ * reads, in the same order. The retry cron asks before it spends an attempt, since
+ * a retry would fail on the same variable whatever the email.
+ */
+export function cannotSendReason(): string | null {
+  if (environment() !== "production" || optionalEnv("NOTIFY_DRY_RUN") === "1") return null;
+  try {
+    requireEnv("RESEND_API_KEY");
+    fromAddress();
+    return null;
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   try {
+    // NOTIFY_DRY_RUN=1 is asked for, so it holds in every environment. A missing
+    // key is a dry run only outside production; in production `requireEnv` throws
+    // and the catch below answers with its text, which the caller logs and
+    // journals as a failed send for the retry cron.
+    const dryRun = optionalEnv("NOTIFY_DRY_RUN") === "1";
+    if (!dryRun && environment() === "production") requireEnv("RESEND_API_KEY");
     const apiKey = optionalEnv("RESEND_API_KEY");
-    if (optionalEnv("NOTIFY_DRY_RUN") === "1" || !apiKey) {
+    if (dryRun || !apiKey) {
       console.info(`[notify] dry run: „${input.subject}” → ${input.to}`);
       return { ok: true, dryRun: true };
     }

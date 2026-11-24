@@ -30,7 +30,7 @@ export interface Color {
   /** Stable code (e.g. CT01), never the index. */
   code: string;
   priceCategory?: PriceCategory;
-  /** The supplier's own reference, shown as „[cod furnizor]” on /materiale. */
+  /** The supplier's own reference; the configurator's step 03 prints it after the colour's name when there is one. */
   supplierCode?: string;
   /** Shown in the 8-swatch grid on Acasă 03 (DESIGN §4.1). */
   featured?: boolean;
