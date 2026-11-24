@@ -22,7 +22,7 @@ export async function createUploadUrls(count: number): Promise<UploadUrlsResult>
 
     const recent = await recentUploadRequestCount(admin, hash);
     if (recent + count > UPLOAD_LIMITS.maxUrlsPerIpPerHour) {
-      return { ok: false, message: FORM_MESSAGES.rateLimited };
+      return { ok: false, message: FORM_MESSAGES.uploadsRateLimited };
     }
 
     const { error: insertError } = await admin
@@ -44,6 +44,8 @@ export async function createUploadUrls(count: number): Promise<UploadUrlsResult>
     return { ok: true, uploads };
   } catch (error) {
     console.error("createUploadUrls", error);
-    return { ok: false, message: FORM_MESSAGES.generic };
+    // The message stands under the photo field, before any request was tried: it speaks of the
+    // photo, not of the request, which FORM_MESSAGES.generic would call unsent.
+    return { ok: false, message: FORM_MESSAGES.uploadFailed };
   }
 }

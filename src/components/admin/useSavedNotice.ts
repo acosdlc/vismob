@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Whether an admin form was edited since its last submit was sent, for the „Salvat.” notice
@@ -16,6 +16,11 @@ import { useCallback, useState } from "react";
  * submit is sent, not when its answer arrives: what is typed while a save is on its way was
  * not in that submit, so its „Salvat.” must not cover it. A submit the form holds back (a
  * photo still uploading) is never sent and clears nothing.
+ *
+ * Leaving the screen raises the flag too. The router keeps a visited screen mounted but
+ * hidden (React's `<Activity>`, with `cacheComponents`) and shows it again, with its state,
+ * when the same record is opened: a „Salvat.” that was on it would come back and stand for
+ * a save of an earlier visit, beside boxes the database may no longer agree with.
  */
 export function useSavedNotice(pending: boolean): readonly [edited: boolean, markEdited: () => void] {
   const [edited, setEdited] = useState(false);
@@ -27,5 +32,21 @@ export function useSavedNotice(pending: boolean): readonly [edited: boolean, mar
     if (pending) setEdited(false);
   }
   const markEdited = useCallback(() => setEdited(true), []);
+
+  // React runs the cleanup of a layout effect when it hides the screen, before the screen
+  // is out of sight, so the notice is retired there, as after an edit. A save still on its
+  // way at that moment keeps its notice: its answer has not been shown yet, and she finds
+  // it when she returns. The ref holds `pending` as last shown, for the cleanup to read.
+  const sending = useRef(pending);
+  useLayoutEffect(() => {
+    sending.current = pending;
+  }, [pending]);
+  useLayoutEffect(
+    () => () => {
+      if (!sending.current) setEdited(true);
+    },
+    [],
+  );
+
   return [edited, markEdited];
 }

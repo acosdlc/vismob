@@ -1,0 +1,51 @@
+--- ../ProjectForm.before.tsx	2026-11-24 07:08:29.272669116 +0000
++++ ../ProjectForm.fixed.tsx	2026-11-24 07:11:05.978698165 +0000
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { startTransition, useEffect, useId, useRef, type FormEvent } from "react";
++import { Fragment, startTransition, useEffect, useId, useLayoutEffect, useRef, type FormEvent } from "react";
+ import { saveProject } from "@/actions/admin/save-project";
+ import { DeleteProjectButton } from "@/components/admin/DeleteProjectButton";
+ import { AdminCard, AdminSection, Notice, fieldGridClasses } from "@/components/admin/ui";
+@@ -126,6 +126,9 @@
+     project === null ? CALL_FAILED_NEW : CALL_FAILED,
+   );
+   const [edited, markEdited] = useSavedNotice(pending);
++  // „Salvat.” belongs to the visit it was given in: the cleanup runs when the router hides the
++  // kept screen, so the notice is gone when she returns (an error stays, it does not look at the flag).
++  useLayoutEffect(() => markEdited, [markEdited]);
+   const formRef = useRef<HTMLFormElement>(null);
+   const id = useId();
+   const errors: FieldErrors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
+@@ -165,12 +168,22 @@
+     sort: `${id}-sort`,
+   };
+   const extrasInvalid = Boolean(errors.extras);
++  // The boxes are uncontrolled: React fills them when they are mounted and never again. The
++  // router keeps a visited screen mounted and hidden (`cacheComponents`) and renders the page
++  // anew when she returns, and the row may have changed meanwhile: another project took the
++  // hero (saveProject clears this row's flag), or another window saved. Left as they were, the
++  // boxes would show the earlier visit and the next save would write it back. Keyed on the
++  // stored row, they are rebuilt from it whenever the page brings another row than the one
++  // they were filled from, and left alone, typed text included, when it brings the same one
++  // (FamilyForm keys its grid the same way).
++  const rowKey = JSON.stringify(project);
+ 
+   return (
+     <div className="flex flex-col gap-8">
+       <form ref={formRef} action={formAction} onSubmit={onSubmit} onChange={markEdited} noValidate autoComplete="off" className="flex flex-col gap-8">
+         <input type="hidden" name="id" value={project?.id ?? ""} />
+ 
++        <Fragment key={rowKey}>
+         <AdminSection title={PROJECT_FORM_TEXTS.sectionProject}>
+           <AdminCard>
+             <div className={fieldGridClasses}>
+@@ -400,6 +413,7 @@
+             </div>
+           </AdminCard>
+         </AdminSection>
++        </Fragment>
+ 
+         <div className="flex flex-wrap items-center gap-4">
+           <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>

@@ -108,6 +108,62 @@ describe("proxy", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
     expect(response.headers.get("x-middleware-next")).toBe("1");
+    // The rotated cookie goes on with the request, for the action to read. The response
+    // carries none: the next two tests say why.
+    expect(response.headers.get("x-middleware-request-cookie")).toBe("sb-test-auth-token=rotated");
+    expect(response.cookies.get("sb-test-auth-token")).toBeUndefined();
+  });
+
+  it("writes no cookie on a Server Action call whose session was just refused", async () => {
+    // Supabase Auth refused the session (it was ended, or its renewal was refused): the
+    // SSR client empties the cookie through setAll and the visitor is anonymous.
+    mocks.refreshedCookie = { name: "sb-test-auth-token", value: "" };
+    const response = await proxy(
+      request("/admin/setari", {
+        method: "POST",
+        headers: { "next-action": "a".repeat(42), cookie: "sb-test-auth-token=stale" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    // Next counts a cookie set here as set by the action: its answer would also carry a
+    // fresh render of the page, the (panel) layout's guard would redirect that render to
+    // /admin/login, and the form would be gone with what was typed.
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("x-middleware-set-cookie")).toBeNull();
+    // The action still reads the emptied cookie and answers ADMIN_MESSAGES.forbidden.
+    expect(response.headers.get("x-middleware-request-cookie")).toBe("sb-test-auth-token=");
+  });
+
+  it("writes none either when the renewed session has lost the admin role", async () => {
+    mocks.claims = { sub: "u2", app_metadata: {} };
+    mocks.refreshedCookie = { name: "sb-test-auth-token", value: "renewed" };
+    const response = await proxy(
+      request("/admin/preturi", {
+        method: "POST",
+        headers: { "next-action": "a".repeat(42), cookie: "sb-test-auth-token=old" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("x-middleware-set-cookie")).toBeNull();
+    expect(response.headers.get("x-middleware-request-cookie")).toBe("sb-test-auth-token=renewed");
+  });
+
+  it("keeps the renewed cookie on an admin's Server Action call", async () => {
+    // The ordinary renewal during a save: the browser must get the new session, and the
+    // page that Next renders into the answer passes the guard.
+    mocks.claims = ADMIN;
+    mocks.refreshedCookie = { name: "sb-test-auth-token", value: "rotated" };
+    const response = await proxy(
+      request("/admin/setari", { method: "POST", headers: { "next-action": "a".repeat(42) } }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
     const cookie = response.cookies.get("sb-test-auth-token");
     expect(cookie?.value).toBe("rotated");
     expect(cookie?.httpOnly).toBe(true);
@@ -138,8 +194,11 @@ describe("proxy", () => {
 
   it("lets a signed-in user without the role through: the layout guard explains the missing role", async () => {
     mocks.claims = { sub: "u2", app_metadata: {} };
+    mocks.refreshedCookie = { name: "sb-test-auth-token", value: "renewed" };
     const response = await proxy(request("/admin"));
     expect(response.status).toBe(200);
+    // A navigation writes the cookie a Server Action call left out.
+    expect(response.cookies.get("sb-test-auth-token")?.value).toBe("renewed");
   });
 
   it("treats missing Supabase variables as anonymous instead of failing", async () => {

@@ -1,0 +1,89 @@
+--- a/src/lib/cron/retry-notifications.test.ts
++++ b/src/lib/cron/retry-notifications.test.ts
+@@ -240,6 +240,86 @@
+     expect(fake.queries).toHaveLength(1);
+   });
+ 
++  it("leaves the workshop's email waiting, spending no attempt, while NOTIFY_EMAIL is missing, and sends it once the address is there", async () => {
++    // The workshop's email goes to NOTIFY_EMAIL and so does the alert. Retried without the
++    // variable, the pair used up its three attempts in two runs, the alert failed on the same
++    // variable, the event was marked alerted all the same, and nothing was sent once the
++    // variable was added.
++    const MISSING_ADDRESS = "Missing environment variable NOTIFY_EMAIL. Add it on the Vercel project's Environment Variables page.";
++    vi.stubEnv("NOTIFY_EMAIL", "");
++    const fake = fakeCronAdmin({
++      respond: respond({
++        // What the first send leaves behind on a deployment without NOTIFY_EMAIL: the
++        // workshop's email failed on the missing address, the client's confirmation went out.
++        failed: failed(LEAD.id, "email_workshop", 1, { error: "NOTIFY_EMAIL missing" }),
++        delivered: [{ lead_id: LEAD.id, type: "email_client" }],
++        leads: { [LEAD.id]: LEAD },
++        latest: { id: 9, detail: { error: "NOTIFY_EMAIL missing" } },
++      }),
++    });
++    // What the dispatcher answers for the workshop's email while the variable is missing.
++    mocks.sendLeadNotification.mockResolvedValue({ ok: false, error: "NOTIFY_EMAIL missing" });
++
++    // Three ticks without the variable, one more than it took to give the pair up: the
++    // same single error each time, nothing attempted, nothing written.
++    for (let tick = 1; tick <= 3; tick += 1) {
++      const report = await retryNotifications(fake.client, NOW);
++      expect(report.ok).toBe(false);
++      expect(report.errors).toEqual([MISSING_ADDRESS]);
++      expect(report.counts).toMatchObject({ retried: 0, succeeded: 0, alerted: 0 });
++    }
++    expect(mocks.sendLeadNotification).not.toHaveBeenCalled();
++    expect(mocks.sendEmail).not.toHaveBeenCalled();
++    expect(updates(fake.queries)).toEqual([]);
++
++    // The address is there: the email goes out with the attempt it was left at.
++    vi.stubEnv("NOTIFY_EMAIL", NOTIFY);
++    mocks.sendLeadNotification.mockResolvedValue({ ok: true, id: "re_retry" });
++
++    const report = await retryNotifications(fake.client, NOW);
++
++    expect(report).toMatchObject({ ok: true, errors: [], counts: { retried: 1, succeeded: 1, alerted: 0 } });
++    expect(mocks.sendLeadNotification).toHaveBeenCalledTimes(1);
++    expect(mocks.sendLeadNotification).toHaveBeenCalledWith(fake.client, LEAD, "email_workshop", { attempt: 2 });
++    expect(updates(fake.queries)).toEqual([]);
++  });
++
++  it("goes on with the client's emails, and reports the missing address once, while workshop emails wait", async () => {
++    vi.stubEnv("NOTIFY_EMAIL", "");
++    const other = "22222222-2222-4222-8222-222222222222";
++    const fake = fakeCronAdmin({
++      respond: respond({
++        failed: [
++          ...failed(LEAD.id, "email_workshop", 1, { error: "NOTIFY_EMAIL missing" }),
++          ...failed(other, "email_workshop", 2, { error: "NOTIFY_EMAIL missing" }),
++          ...failed(other, "email_client", 1),
++        ],
++        leads: { [LEAD.id]: LEAD, [other]: { ...LEAD, id: other } },
++      }),
++    });
++
++    const report = await retryNotifications(fake.client, NOW);
++
++    expect(report.ok).toBe(false);
++    expect(report.errors).toEqual(["Missing environment variable NOTIFY_EMAIL. Add it on the Vercel project's Environment Variables page."]);
++    expect(report.counts).toMatchObject({ retried: 1, succeeded: 1, alerted: 0 });
++    expect(mocks.sendLeadNotification).toHaveBeenCalledTimes(1);
++    expect(mocks.sendLeadNotification).toHaveBeenCalledWith(fake.client, { ...LEAD, id: other }, "email_client", { attempt: 2 });
++    expect(updates(fake.queries)).toEqual([]);
++  });
++
++  it("does not report the missing address for the workshop email of a request made in another environment", async () => {
++    // Production skips a preview's request whatever its variables are: that pair is not waiting for anything here.
++    vi.stubEnv("NOTIFY_EMAIL", "");
++    const lead: LeadRow = { ...LEAD, source: { page: "/contact", environment: "preview" } };
++    const fake = fakeCronAdmin({ respond: respond({ failed: failed(LEAD.id, "email_workshop", 1), leads: { [LEAD.id]: lead } }) });
++
++    const report = await retryNotifications(fake.client, NOW);
++
++    expect(report).toMatchObject({ ok: true, errors: [], counts: { retried: 0, skipped: 1 } });
++    expect(mocks.sendLeadNotification).not.toHaveBeenCalled();
++  });
++
+   it("counts a failed second attempt without alerting", async () => {
+     const fake = fakeCronAdmin({ respond: respond({ failed: failed(LEAD.id, "email_workshop", 1), leads: { [LEAD.id]: LEAD } }) });
+     mocks.sendLeadNotification.mockResolvedValue({ ok: false, error: "smtp down" });

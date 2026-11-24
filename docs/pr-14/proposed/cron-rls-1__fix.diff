@@ -1,0 +1,55 @@
+--- a/src/lib/cron/retry-notifications.ts	2026-11-24 06:14:58.952443762 +0000
++++ b/src/lib/cron/retry-notifications.ts	2026-11-24 08:36:33.500022965 +0000
+@@ -31,11 +31,17 @@
+ // (ARHITECTURA-NOTE), so the job only retries the requests of its own
+ // deployment's environment: a test request made on a preview is skipped. While
+ // the deployment cannot send at all (`cannotSendReason`) nothing is attempted
+-// and no attempt is counted: the run only reports why.
++// and no attempt is counted: the run only reports why. The workshop's email waits
++// the same way while NOTIFY_EMAIL is missing (it is that email's recipient, and
++// the alert's), and the client's emails go on.
+ 
+ /** The two `lead_events.type` values; anything else in the column is left alone. */
+ const LEAD_EVENT_TYPES: readonly LeadEventType[] = ["email_workshop", "email_client"];
+ 
++/** What a run reports, once, while a workshop email waits for its address (the wording of `requireEnv`). */
++const NOTIFY_EMAIL_MISSING =
++  "Missing environment variable NOTIFY_EMAIL. Add it on the Vercel project's Environment Variables page.";
++
+ /** Failed events the query may return per run (pairs are bounded separately). */
+ const EVENTS_LIMIT = 1000;
+ /** Lead ids per `in(...)` filter when looking for delivered emails. */
+@@ -122,9 +128,10 @@
+ }
+ 
+ /**
+- * Retries one pair. Answers false only for a request of another environment,
+- * which is skipped: it stays failed, and first in line, for the whole window, so
+- * it must not count against the run's RETRY_MAX_PAIRS.
++ * Retries one pair. Answers false for a pair it leaves as it is: a request of
++ * another environment, which is skipped, and a workshop email with no
++ * NOTIFY_EMAIL to go to, which waits. Both stay failed, and first in line, for the
++ * whole window, so they must not count against the run's RETRY_MAX_PAIRS.
+  */
+ async function retryPair(admin: AdminClient, pair: Pair, report: JobReport): Promise<boolean> {
+   const label = `${pair.leadId}/${pair.type}`;
+@@ -145,6 +152,19 @@
+       return false;
+     }
+ 
++    // The workshop's email goes to NOTIFY_EMAIL, and so does the alert. Without the
++    // variable a retry can only fail: two runs would use up the pair's attempts, the
++    // alert would fail on the same variable, the pair would be marked alerted, and
++    // nothing would be sent once the variable is added. So the pair waits: no attempt
++    // is recorded, each run fails with this one error for as long as such a pair is
++    // in the window, and once the variable is set the pair is retried from the attempt
++    // it was left at. The client's emails do not need the variable and go on.
++    if (pair.type === "email_workshop" && !optionalEnv("NOTIFY_EMAIL")) {
++      report.counts.deferred += 1;
++      if (!report.errors.includes(NOTIFY_EMAIL_MISSING)) report.errors.push(NOTIFY_EMAIL_MISSING);
++      return false;
++    }
++
+     const attempt = pair.failures + 1;
+     report.counts.retried += 1;
+     const result = await sendLeadNotification(admin, lead, pair.type, { attempt });

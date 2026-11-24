@@ -1,10 +1,12 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Activity } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MEDIA_UPLOAD, PHOTO_FIELDS } from "@/lib/admin/media";
 import { ADMIN_MESSAGES } from "@/lib/admin/types";
 
 const upload = vi.fn();
-const createClient = vi.fn(() => ({ storage: { from: () => ({ upload }) } }));
+const remove = vi.fn();
+const createClient = vi.fn(() => ({ storage: { from: () => ({ upload, remove }) } }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => createClient() }));
 // jsdom has no canvas: compression is the identity here, a file named "broken.*" cannot be
 // decoded, and one named "camera.*" comes out small, as the real resize leaves a camera's original.
@@ -20,6 +22,24 @@ import { PhotoField, PHOTO_TEXTS } from "./PhotoField";
 
 const CURRENT = "materials/ct-verde-1792569508760.webp";
 
+/**
+ * What `upload()` hands back as `error` when it fails. The three answers of Storage are the
+ * objects the app's own storage-js built against a real Storage API (a local Supabase stack),
+ * field for field; the others follow how storage-js builds an error (a StorageUnknownError
+ * without a status when no answer came, the HTTP status when the answer has no Storage body).
+ */
+const STORAGE_ERRORS = {
+  /** No session: the request runs as `anon` and the policy admin_all_media refuses the insert (a signed-in account without the admin role gets the same answer). */
+  sessionGone: { name: "StorageApiError", message: "new row violates row-level security policy", status: 400, statusCode: "403", code: "AccessDenied" },
+  tokenRefused: { name: "StorageApiError", message: '"exp" claim timestamp check failed', status: 400, statusCode: "403", code: "AccessDenied" },
+  nameTaken: { name: "StorageApiError", message: "The resource already exists", status: 400, statusCode: "409", code: "KeyAlreadyExists" },
+  /** No answer at all. */
+  unreachable: { name: "StorageUnknownError", message: "Failed to fetch" },
+  /** A gateway that turns the key away before Storage sees the request. */
+  gateway401: { name: "StorageApiError", message: "Invalid API key", status: 401, statusCode: "401" },
+  gateway403: { name: "StorageApiError", message: "Forbidden", status: 403, statusCode: "403" },
+} as const;
+
 function hidden(container: HTMLElement, name: string): HTMLInputElement {
   return container.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
 }
@@ -32,6 +52,7 @@ function pick(name = "poza.jpg", bytes = 10) {
 
 beforeEach(() => {
   upload.mockReset().mockResolvedValue({ data: {}, error: null });
+  remove.mockReset().mockResolvedValue({ data: [], error: null });
   createClient.mockClear();
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
 });
@@ -79,7 +100,7 @@ describe("PhotoField", () => {
   });
 
   it("reports a failed upload, an undecodable file and a missing service, and keeps the old path", async () => {
-    upload.mockResolvedValueOnce({ data: null, error: { message: "new row violates row-level security policy" } });
+    upload.mockResolvedValueOnce({ data: null, error: STORAGE_ERRORS.unreachable });
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { container } = render(<PhotoField folder="materials" slug="x" currentPath={CURRENT} label="Poză" />);
     pick();
@@ -203,7 +224,7 @@ describe("PhotoField", () => {
   });
 
   it("keeps an error on screen whatever the stored path is: it speaks of the file, not of the save", async () => {
-    upload.mockResolvedValueOnce({ data: null, error: { message: "new row violates row-level security policy" } });
+    upload.mockResolvedValueOnce({ data: null, error: STORAGE_ERRORS.unreachable });
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const field = (currentPath: string | null) => <PhotoField folder="materials" slug="x" currentPath={currentPath} label="Poză" />;
     const { rerender } = render(field(CURRENT));
@@ -269,5 +290,275 @@ describe("PhotoField", () => {
     render(<PhotoField folder="materials" slug="x" currentPath={null} label="Poză" error="Poza nu e validă." />);
     expect(screen.getByLabelText("Poză")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByText("Poza nu e validă.")).toBeInTheDocument();
+  });
+
+  it("stores a photo with a one-hour cache lifetime, so the copies of a deleted photo run out within hours, not within a year", async () => {
+    render(<PhotoField folder="projects" slug="x" currentPath={null} label="Poză" />);
+    pick();
+    await waitFor(() => expect(screen.getByText(PHOTO_TEXTS.uploaded)).toBeInTheDocument());
+    const [, , options] = upload.mock.calls[0];
+    // next/image keeps every optimized copy for the larger of images.minimumCacheTTL (Next's
+    // default, 4 hours) and the lifetime the bucket answers with; nothing removes those copies
+    // when the photo is deleted. "31536000" made that a year after the photo itself was gone.
+    expect(options.cacheControl).toBe("3600");
+  });
+
+  // The upload goes from the browser straight to Storage, so no Server Action is there to check
+  // the session and answer ADMIN_MESSAGES.forbidden: the field reads the refusal itself.
+  describe("an upload Storage refuses because of who is asking", () => {
+    beforeEach(() => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+    });
+
+    it("tells her to sign in again when the session is gone, with the text the saves give, not „Încearcă din nou”", async () => {
+      upload.mockResolvedValueOnce({ data: null, error: STORAGE_ERRORS.sessionGone });
+      const onUploadingChange = vi.fn();
+      const { container } = render(
+        <PhotoField folder="materials" slug="ct-verde" currentPath={CURRENT} label="Poză" onUploadingChange={onUploadingChange} />,
+      );
+
+      pick();
+
+      // Trying again can never work without a session: the field says what does.
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe("Sesiunea a expirat sau nu ai acces. Intră din nou în cont.");
+      expect(alert.textContent).toBe(ADMIN_MESSAGES.forbidden);
+      expect(screen.queryByText(PHOTO_TEXTS.failed)).toBeNull();
+      // The field keeps the photo it had and gives the submit back.
+      expect(hidden(container, PHOTO_FIELDS.path).value).toBe(CURRENT);
+      expect(onUploadingChange.mock.calls).toEqual([[true], [false]]);
+    });
+
+    it.each([
+      ["a token Storage no longer accepts", STORAGE_ERRORS.tokenRefused],
+      ["a gateway that answers 401", STORAGE_ERRORS.gateway401],
+      ["a gateway that answers 403", STORAGE_ERRORS.gateway403],
+    ])("gives the same text for %s", async (_case, error) => {
+      upload.mockResolvedValueOnce({ data: null, error });
+      render(<PhotoField folder="materials" slug="ct-verde" currentPath={null} label="Poză" />);
+
+      pick();
+
+      expect((await screen.findByRole("alert")).textContent).toBe(ADMIN_MESSAGES.forbidden);
+    });
+
+    it.each([
+      ["a name already taken", STORAGE_ERRORS.nameTaken],
+      ["a dropped connection", STORAGE_ERRORS.unreachable],
+    ])("keeps „Încearcă din nou” for a failure that is not about access: %s", async (_case, error) => {
+      upload.mockResolvedValueOnce({ data: null, error });
+      render(<PhotoField folder="materials" slug="ct-verde" currentPath={null} label="Poză" />);
+
+      pick();
+
+      expect((await screen.findByRole("alert")).textContent).toBe(PHOTO_TEXTS.failed);
+    });
+  });
+
+  // An upload that no save carried is on no row: the action only ever learns the path the form
+  // loaded with and the one it posts, and „Șterge proiectul” reads the paths from the rows. So
+  // the field takes such an upload out of the (public) bucket itself when it is replaced or
+  // dropped, and never touches a photo a row may store.
+  describe("an upload that was never saved", () => {
+    /** Picks a file and returns the path the field posts once the upload is in. */
+    async function pickAndWait(container: HTMLElement, name: string, previous = ""): Promise<string> {
+      // Date.now() names the object: two picks in the same millisecond would share a name.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      pick(name);
+      await waitFor(() => {
+        const value = hidden(container, PHOTO_FIELDS.path).value;
+        expect(value).not.toBe("");
+        expect(value).not.toBe(previous);
+      });
+      return hidden(container, PHOTO_FIELDS.path).value;
+    }
+
+    /** Lets React finish what it has scheduled (renders, effects), so "was not removed" is not read too early. */
+    const settled = () => act(async () => {});
+
+    it("is taken out of the bucket when another photo is picked instead", async () => {
+      const { container } = render(<PhotoField folder="projects" slug="p1" currentPath={null} label="Poză" />);
+      const first = await pickAndWait(container, "prima.jpg");
+      await settled();
+      expect(remove).not.toHaveBeenCalled();
+
+      const second = await pickAndWait(container, "a-doua.jpg", first);
+
+      expect(second).toMatch(/^projects\/p1-\d{13}\.webp$/);
+      // The replaced object, and only it: the one the field now posts stays.
+      await waitFor(() => expect(remove.mock.calls).toEqual([[[first]]]));
+      await settled();
+      expect(remove).toHaveBeenCalledTimes(1);
+    });
+
+    it("is taken out of the bucket on „Șterge poza”", async () => {
+      const { container } = render(<PhotoField folder="projects" slug="p1" currentPath={null} label="Poză" />);
+      const first = await pickAndWait(container, "prima.jpg");
+
+      fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+
+      expect(hidden(container, PHOTO_FIELDS.path).value).toBe("");
+      expect(remove.mock.calls).toEqual([[[first]]]);
+    });
+
+    it("stays when the photo picked after it could not be uploaded: the field still posts it", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const { container } = render(<PhotoField folder="projects" slug="p1" currentPath={null} label="Poză" />);
+      const first = await pickAndWait(container, "prima.jpg");
+
+      upload.mockResolvedValueOnce({ data: null, error: STORAGE_ERRORS.unreachable });
+      pick("a-doua.jpg");
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(PHOTO_TEXTS.failed));
+      await settled();
+
+      expect(hidden(container, PHOTO_FIELDS.path).value).toBe(first);
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it("never takes the stored photo out of the bucket: that is the action's to do, once the row is saved", async () => {
+      const { container } = render(<PhotoField folder="materials" slug="ct-verde" currentPath={CURRENT} label="Poză" />);
+
+      // The stored photo replaced in the field: the row still shows it on the site until the save.
+      const first = await pickAndWait(container, "prima.jpg", CURRENT);
+      await settled();
+      expect(remove).not.toHaveBeenCalled();
+
+      // The pick is dropped again: only the pick goes.
+      fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+      expect(remove.mock.calls).toEqual([[[first]]]);
+      expect(hidden(container, PHOTO_FIELDS.before).value).toBe(CURRENT);
+    });
+
+    it("leaves the stored photo alone when „Șterge poza” is pressed on it", () => {
+      render(<PhotoField folder="materials" slug="ct-verde" currentPath={CURRENT} label="Poză" />);
+      fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+      expect(remove).not.toHaveBeenCalled();
+      expect(createClient).not.toHaveBeenCalled();
+    });
+
+    it("is left alone once the form was submitted with it: a row may store it by then, whatever the answer was", async () => {
+      const { container } = render(
+        <form onSubmit={(event) => event.preventDefault()}>
+          <PhotoField folder="projects" slug="p1" currentPath={null} label="Poză" />
+        </form>,
+      );
+      const first = await pickAndWait(container, "prima.jpg");
+
+      // A save on its way, a save that failed halfway, or one whose answer was lost: the page
+      // still hands the old path down, and the row may already hold the new one.
+      fireEvent.submit(container.querySelector("form")!);
+
+      const second = await pickAndWait(container, "a-doua.jpg", first);
+      await settled();
+      expect(remove).not.toHaveBeenCalled();
+
+      // The pick made after the submit was never sent: it goes when it is dropped.
+      fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+      expect(remove.mock.calls).toEqual([[[second]]]);
+    });
+
+    it("stays when a submit goes by before the field has drawn the pick that replaced it: that submit still posted it", async () => {
+      const posted: unknown[] = [];
+      let submitWithTheAnswer = false;
+      const { container } = render(
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            posted.push(new FormData(event.currentTarget).get(PHOTO_FIELDS.path));
+          }}
+        >
+          <PhotoField
+            folder="projects"
+            slug="p1"
+            currentPath={null}
+            label="Poză"
+            // `false` arrives with the upload's answer, before React has written the new path into
+            // the hidden input. No form of the panel sends itself then (each holds its submit
+            // while a photo uploads); this one does, and so reads the path of the earlier pick.
+            onUploadingChange={(uploading) => {
+              if (submitWithTheAnswer && !uploading) {
+                document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+              }
+            }}
+          />
+        </form>,
+      );
+      const first = await pickAndWait(container, "prima.jpg");
+
+      submitWithTheAnswer = true;
+      const second = await pickAndWait(container, "a-doua.jpg", first);
+      await settled();
+
+      expect(second).not.toBe(first);
+      expect(posted).toEqual([first]);
+      // A row may store the first pick now, although the field has moved on to the second.
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it("still counts a submit after the router hid the screen and showed it again, and removes nothing while it is hidden", async () => {
+      // With cacheComponents the router does not unmount a screen that is left: it hides it in an
+      // <Activity>, pick and all, and shows it again as it was.
+      const kept = (mode: "visible" | "hidden") => (
+        <Activity mode={mode}>
+          <form onSubmit={(event) => event.preventDefault()}>
+            <PhotoField folder="projects" slug="p1" currentPath={null} label="Poză" />
+          </form>
+        </Activity>
+      );
+      const { container, rerender } = render(kept("visible"));
+      const first = await pickAndWait(container, "prima.jpg");
+
+      rerender(kept("hidden"));
+      await settled();
+      expect(remove).not.toHaveBeenCalled();
+
+      rerender(kept("visible"));
+      expect(hidden(container, PHOTO_FIELDS.path).value).toBe(first);
+      // The save made after coming back carries the pick: from here on a row may store it.
+      fireEvent.submit(container.querySelector("form")!);
+      const second = await pickAndWait(container, "a-doua.jpg", first);
+      await settled();
+      expect(remove).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+      expect(remove.mock.calls).toEqual([[[second]]]);
+    });
+
+    it("stays in the bucket when the screen goes away with it still in the field", async () => {
+      const { container, unmount } = render(<PhotoField folder="projects" slug="p1" currentPath={null} label="Poză" />);
+      await pickAndWait(container, "prima.jpg");
+
+      // Not the field's to judge: a screen the router kept can come back and be saved.
+      unmount();
+      await settled();
+
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it("says nothing when the removal fails: the object only stays where it was", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      remove.mockResolvedValueOnce({ data: null, error: { message: "Failed to fetch" } });
+      const { container } = render(<PhotoField folder="projects" slug="p1" currentPath={null} label="Poză" />);
+      const first = await pickAndWait(container, "prima.jpg");
+
+      fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+
+      await waitFor(() => expect(logged).toHaveBeenCalledWith(expect.stringContaining(first)));
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText(PHOTO_TEXTS.none)).toBeInTheDocument();
+
+      // The same when the client cannot even be made (no env): the field stays up.
+      const second = await pickAndWait(container, "a-doua.jpg");
+      logged.mockClear();
+      createClient.mockImplementationOnce(() => {
+        throw new Error("Missing environment variable NEXT_PUBLIC_SUPABASE_URL");
+      });
+      fireEvent.click(screen.getByRole("button", { name: PHOTO_TEXTS.remove }));
+
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(remove).not.toHaveBeenCalledWith([second]);
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText(PHOTO_TEXTS.none)).toBeInTheDocument();
+    });
   });
 });

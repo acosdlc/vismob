@@ -64,22 +64,29 @@ describe("createUploadUrls", () => {
     expect([...hashes][0]).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("stops at the hourly limit per IP and records nothing", async () => {
+  it("stops at the hourly limit per IP, records nothing and speaks about the photos, not about requests already sent", async () => {
     fake = fakeAdmin({ counts: { upload_requests: UPLOAD_LIMITS.maxUrlsPerIpPerHour - 5 } });
     mocks.admin = fake.client;
-    expect(await createUploadUrls(6)).toEqual({ ok: false, message: FORM_MESSAGES.rateLimited });
+    // No request has to exist for this limit to be reached: it counts upload links, those of photos
+    // she removed again and of uploads that failed too. And the request itself can still be sent.
+    expect(await createUploadUrls(6)).toEqual({
+      ok: false,
+      message: "Nu mai putem primi poze acum. Trimite cererea fără poze sau încearcă peste o oră.",
+    });
     expect(fake.inserts).toEqual([]);
 
     // Exactly up to the limit still passes.
     expect((await createUploadUrls(5)).ok).toBe(true);
   });
 
-  it("answers with the generic message when the database or the salt is missing", async () => {
+  it("when the database or the salt is missing says the photo could not be uploaded, not that the request could not be sent", async () => {
+    // The text stands under the photo field, before any request was tried.
+    const failed = { ok: false, message: "Nu am putut încărca poza. Încearcă din nou sau trimite cererea fără ea." };
     fake = fakeAdmin({ insertErrors: { upload_requests: "connection refused" } });
     mocks.admin = fake.client;
-    expect(await createUploadUrls(1)).toEqual({ ok: false, message: FORM_MESSAGES.generic });
+    expect(await createUploadUrls(1)).toEqual(failed);
 
     vi.stubEnv("IP_HASH_SALT", "");
-    expect(await createUploadUrls(1)).toEqual({ ok: false, message: FORM_MESSAGES.generic });
+    expect(await createUploadUrls(1)).toEqual(failed);
   });
 });

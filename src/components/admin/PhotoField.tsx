@@ -1,7 +1,7 @@
 "use client";
 
 import imageCompression from "browser-image-compression";
-import { useId, useState, type ChangeEvent } from "react";
+import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Notice } from "@/components/admin/ui";
 import { Button } from "@/components/site/Button";
 import { cx } from "@/components/site/cx";
@@ -11,7 +11,9 @@ import {
   MEDIA_UPLOAD,
   mediaObjectPath,
   PHOTO_FIELDS,
+  removeMediaObject,
   type MediaFolder,
+  type MediaStorage,
   type PhotoFieldNames,
 } from "@/lib/admin/media";
 import { ADMIN_MESSAGES } from "@/lib/admin/types";
@@ -72,12 +74,50 @@ async function compress(file: File): Promise<File | null> {
   }
 }
 
+/**
+ * Whether Storage refused the upload because of who is asking: the session is gone (signed out
+ * in another tab, ended at Supabase) or the account has no admin role (policy admin_all_media).
+ * Storage answers both with HTTP 400 and `statusCode: "403"` in the body; a gateway that turns
+ * the key away before Storage sees it answers 401 or 403 itself. Trying again cannot help then,
+ * so the field gives the text the saves give (ADMIN_MESSAGES.forbidden).
+ */
+function refusedForAccess(error: { status?: number; statusCode?: string }): boolean {
+  return error.statusCode === "403" || error.status === 403 || error.status === 401;
+}
+
+/**
+ * Takes out of the bucket uploads that are on no row and can reach none any more. Best effort:
+ * a failure is logged and the object only stays where it was.
+ */
+function removeUploads(paths: readonly string[]): void {
+  let storage: MediaStorage;
+  try {
+    storage = createClient().storage;
+  } catch (err) {
+    console.error("PhotoField", err);
+    return;
+  }
+  for (const path of paths) void removeMediaObject(storage, path);
+}
+
 // ARHITECTURA §8 „Poze”: the photo is resized in the browser and goes straight to the
 // public `media` bucket through the signed-in admin's client (policy admin_all_media);
 // the form then posts only the object path (PHOTO_FIELDS) and the Server Action stores
-// it and removes the photo it replaced. Every upload gets a new name, so the public URL
-// changes and no cache serves the old picture. The file input has no `name`: without
-// JavaScript the form simply keeps the photo it had.
+// it and removes the photo it replaced. Every upload gets a new name, so the pages link
+// to a new URL and no cache serves the old picture in the new one's place. The old URL
+// is another matter: caches go on answering at it after the object is removed, for as
+// long as the lifetime it was uploaded with says, so that is kept short (see the upload).
+// The file input has no `name`: without JavaScript the form simply keeps the photo it had.
+//
+// An upload that no submit carried is on no row, and the action only ever learns the path
+// the form loaded with and the one it posts: nothing else would remove it. So the field
+// takes such an upload out of the bucket itself when another pick replaces it or „Șterge
+// poza” drops it (`unsent`, `abandoned`). It never removes a photo a row may store:
+// - not the stored photo: the action removes that one, once the row is saved;
+// - not an upload a submit has carried: from then on a row may store it, whatever the
+//   answer was (a save still on its way, one that failed halfway, an answer that was lost).
+// A pick still in the field when the screen is left stays in the bucket: the router keeps
+// the screen as it was, and its form can still be saved.
 export function PhotoField({
   folder,
   slug,
@@ -98,6 +138,43 @@ export function PhotoField({
   const [path, setPath] = useState<string | null>(currentPath);
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  /** The upload the hidden input posts that no submit of its form has carried yet. */
+  const unsent = useRef<string | null>(null);
+  /** Such uploads the field has given up: they go once the hidden input has stopped posting them. */
+  const abandoned = useRef<string[]>([]);
+  const pathInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const form = pathInput.current?.form;
+    if (!form) return;
+    // A submit carries whatever the hidden input holds at that moment: nothing uploaded up
+    // to here is the field's to remove any more.
+    const sent = () => {
+      unsent.current = null;
+      abandoned.current = [];
+    };
+    // Capture: the form's own handler may stop the event, and the post goes out all the same.
+    form.addEventListener("submit", sent, true);
+    return () => form.removeEventListener("submit", sent, true);
+  }, []);
+
+  // The removal waits for the render that changed the path: until the hidden input is
+  // rewritten, a submit would still carry the upload being given up (and the listener above
+  // then takes it off the list). The input itself is read, not `path`, so an object goes
+  // only once no submit can post it any more.
+  useEffect(() => {
+    const posted = pathInput.current?.value;
+    const gone = abandoned.current.filter((upload) => upload !== posted);
+    if (gone.length === 0) return;
+    abandoned.current = abandoned.current.filter((upload) => upload === posted);
+    removeUploads(gone);
+  }, [path]);
+
+  /** Gives up the upload that no submit has carried, if the field holds one. */
+  function abandonUnsent() {
+    if (unsent.current) abandoned.current.push(unsent.current);
+    unsent.current = null;
+  }
 
   async function onChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -124,15 +201,21 @@ export function PhotoField({
         return;
       }
       const objectPath = mediaObjectPath(folder, slug, Date.now());
+      // One hour, not a year: this is how long caches go on serving a photo after it was
+      // removed. next/image keeps its optimized copies for the larger of this and its own
+      // minimum (images.minimumCacheTTL, 4 hours by default), and nothing purges them.
       const { error: uploadError } = await createClient()
         .storage.from(MEDIA_BUCKET)
-        .upload(objectPath, resized, { contentType: MEDIA_UPLOAD.mime, cacheControl: "31536000", upsert: false });
+        .upload(objectPath, resized, { contentType: MEDIA_UPLOAD.mime, cacheControl: "3600", upsert: false });
       if (uploadError) {
         console.error(`PhotoField: ${uploadError.message}`);
         setStatus("error");
-        setMessage(PHOTO_TEXTS.failed);
+        setMessage(refusedForAccess(uploadError) ? ADMIN_MESSAGES.forbidden : PHOTO_TEXTS.failed);
         return;
       }
+      // Only now: had this upload failed, the field would still post the earlier pick.
+      abandonUnsent();
+      unsent.current = objectPath;
       setPath(objectPath);
       setStatus("uploaded");
       setMessage(PHOTO_TEXTS.uploaded);
@@ -146,6 +229,7 @@ export function PhotoField({
   }
 
   function remove() {
+    abandonUnsent();
     setPath(null);
     setStatus("removed");
     setMessage(PHOTO_TEXTS.removed);
@@ -159,7 +243,7 @@ export function PhotoField({
     // tabIndex -1: focusFirstInvalid() lands on this wrapper when the server refuses the path (the inputs are hidden).
     <Field data-field={names.path} tabIndex={-1} className="outline-none">
       <Label htmlFor={fieldId}>{label}</Label>
-      <input type="hidden" name={names.path} value={path ?? ""} />
+      <input ref={pathInput} type="hidden" name={names.path} value={path ?? ""} />
       <input type="hidden" name={names.before} value={currentPath ?? ""} />
       <div className="flex flex-wrap items-start gap-4">
         <div

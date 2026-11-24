@@ -1,8 +1,8 @@
 // The price grid as data: its Zod schema (shared by the site's reader and the admin),
-// the names of the inputs the Prețuri form posts, the parser of that form, the check
-// of its lei amounts for a thousands-separator slip (the floor under a grid price is
-// shared with the Excel import) and the three typical configurations the form
-// previews (docs/ARHITECTURA.md §7, §8; docs/PLAN.md PR-8).
+// the names of the inputs the Prețuri form posts, the parser of that form with the
+// ceilings of its numbers, the check of its lei amounts for a thousands-separator slip
+// (the floor under a grid price is shared with the Excel import) and the three typical
+// configurations the form previews (docs/ARHITECTURA.md §7, §8; docs/PLAN.md PR-8).
 // Pure: no React, no Supabase, so the Client Component, the Server Action and the
 // `src/lib/data` reader all import it.
 import { z } from "zod";
@@ -81,15 +81,53 @@ export const PRICING_FIELD_ORDER: readonly string[] = [
  */
 export const LEI_FLOOR = 100;
 
+/**
+ * Above this, a lei amount (a grid cell, a base, an extra) is not a price but a stuck key,
+ * a number pasted from somewhere else or digits without end. Without a bound such an
+ * amount was saved under „Salvat.” and went straight to the site, and two sizes of it
+ * broke the site: a price above 2 147 483 647 lei does not fit `leads.price_estimate_ron`
+ * (an int), so every request for that bed failed, and 309 digits or more parse as
+ * Infinity, which JSON writes as null: a stored grid pricingSchema refuses, so the site
+ * lost every price and this form opened empty.
+ * The figure is loose on purpose: no document gives a price range, and a real price
+ * refused here would block the workshop. So it does not judge a price: a zero too many
+ * (36500 for 3650) is under it and still saved, and the preview and the site are where
+ * that slip shows.
+ * Checked in the parser, so the Excel import, which reads its sheet through
+ * parsePricingForm, refuses the same amounts.
+ */
+export const LEI_CEILING = 100_000;
+
+/**
+ * The same guard for the three kinds of markup (%). Far above any real one: it stops the
+ * stuck key and the pasted number, it does not judge a markup.
+ */
+export const PERCENT_CEILING = 1_000;
+
+/**
+ * And for the rounding step (lei): a step above twice a price rounds that price to „0 lei”.
+ * With the three ceilings the dearest bed the form can price costs 3 400 474 lei, which
+ * the int column holds many times over (the sum is redone in pricing-schema.test.ts).
+ */
+export const ROUND_CEILING = 1_000;
+
 /** Texts of the Prețuri form that ADMIN_MESSAGES does not carry. */
 export const PRICING_MESSAGES = {
   number: "Scrie un număr.",
   positive: "Scrie un număr mai mare ca zero.",
   /**
    * Under a grid cell above zero and under LEI_FLOOR, and under a base or an extra typed
-   * with a point between thousands ("1.200", 1.2 lei to the parser): fieldsUnderLeiFloor.
+   * with a point or a comma between thousands ("1.200", "1,200": 1.2 lei to the parser):
+   * fieldsUnderLeiFloor. The sentence names the point, the mark the panel itself prints
+   * („3.450 lei”); its example, 3450, is the answer to a comma as well.
    */
   floor: `Preț sub ${LEI_FLOOR} lei. Scrie suma fără punct la mii: 3450, nu 3.450.`,
+  /** Under a grid cell, a base or an extra above LEI_CEILING. */
+  ceiling: `Preț peste ${LEI_CEILING} lei. Verifică suma: poate are cifre în plus.`,
+  /** Under a percentage above PERCENT_CEILING. */
+  percentCeiling: `Procent peste ${PERCENT_CEILING}. Verifică numărul.`,
+  /** Under a rounding step above ROUND_CEILING. */
+  roundCeiling: `Pas de rotunjire peste ${ROUND_CEILING} lei. Scrie un pas mai mic, de exemplu 50.`,
   /**
    * Above the grid. It says what an empty cell does: the width is still offered, and
    * priced from the next filled width or, with none wider, from the widest filled one
@@ -102,18 +140,32 @@ export const PRICING_MESSAGES = {
 export type ParsePricingResult = { ok: true; data: Pricing } | { ok: false; fieldErrors: FieldErrors };
 
 /**
- * Plain digits with an optional decimal point: "3450", "3450.50". No sign. A point is
- * always the decimal point, so "3.450" is 3.45: fieldsUnderLeiFloor catches that slip.
+ * Plain digits with an optional decimal part: "3450", "3450.50", "17,5". No sign. The
+ * decimal mark is a point or a comma: 17,5 is how Romanian writes a percentage, the
+ * inputs ask for the decimal keypad (inputMode="decimal" in PricingForm.tsx), which on a
+ * phone set to Romanian offers the comma, and the Excel import reads the comma the same
+ * way (numberText in scripts/catalog-workbook.ts). A single mark is always the decimal
+ * mark, so "3.450" and "3,450" are 3.45: fieldsUnderLeiFloor catches that slip.
  */
-const NUMBER = /^\d+(\.\d+)?$/;
+const NUMBER = /^\d+([.,]\d+)?$/;
 const INTEGER = /^\d+$/;
 
-/** A posted amount or percentage: a number, 0 allowed, nothing negative. The form always posts it. */
-const amount = z
+/**
+ * A posted number: 0 allowed, nothing negative. The form always posts it. It may be of any
+ * size, Infinity included (309 digits), so no input uses it bare: each takes a ceiling.
+ */
+const postedNumber = z
   .string({ error: PRICING_MESSAGES.number })
   .trim()
   .regex(NUMBER, PRICING_MESSAGES.number)
-  .transform(Number);
+  // NUMBER lets one mark through at most, so one replace is enough.
+  .transform((text) => Number(text.replace(",", ".")));
+
+/** A posted lei amount (a grid cell, a base, an extra): at most LEI_CEILING. Infinity is above it too. */
+const amount = postedNumber.refine((value) => value <= LEI_CEILING, PRICING_MESSAGES.ceiling);
+
+/** A posted percentage: at most PERCENT_CEILING. */
+const percent = postedNumber.refine((value) => value <= PERCENT_CEILING, PRICING_MESSAGES.percentCeiling);
 
 /** A grid price: "" (or not posted) for a cell left empty, otherwise a number above zero. */
 const gridPrice = z
@@ -123,13 +175,14 @@ const gridPrice = z
   .transform((value) => value || undefined)
   .pipe(amount.refine((value) => value > 0, PRICING_MESSAGES.positive).optional());
 
-/** The rounding step: a whole number above zero. */
+/** The rounding step: a whole number above zero, at most ROUND_CEILING. */
 const roundTo = z
   .string({ error: PRICING_MESSAGES.number })
   .trim()
   .regex(INTEGER, PRICING_MESSAGES.number)
   .transform(Number)
-  .refine((value) => value > 0, PRICING_MESSAGES.positive);
+  .refine((value) => value > 0, PRICING_MESSAGES.positive)
+  .refine((value) => value <= ROUND_CEILING, PRICING_MESSAGES.roundCeiling);
 
 /** One model's row: only the widths that have a price. */
 const gridRow = z
@@ -143,19 +196,20 @@ const gridRow = z
     return offered;
   });
 
-const amountsFor = <K extends string>(keys: readonly K[]) =>
-  z.object(Object.fromEntries(keys.map((key) => [key, amount])) as Record<K, typeof amount>);
+/** One input per key, all of one kind: lei amounts or percentages (each with its own ceiling). */
+const fieldsFor = <K extends string>(keys: readonly K[], field: typeof amount | typeof percent) =>
+  z.object(Object.fromEntries(keys.map((key) => [key, field])) as Record<K, typeof field>);
 
 /** The posted form, nested as the Pricing type; its output is a Pricing. */
 const pricingFormSchema = z.object({
   grid: z.object(
     Object.fromEntries(PRICING_MODEL_IDS.map((model) => [model, gridRow])) as Record<ModelId, typeof gridRow>,
   ),
-  categoryPct: amountsFor(PRICING_CATEGORIES),
-  hbPct: amountsFor(PRICING_HEIGHTS),
-  base: amountsFor(PRICING_BASE_IDS),
+  categoryPct: fieldsFor(PRICING_CATEGORIES, percent),
+  hbPct: fieldsFor(PRICING_HEIGHTS, percent),
+  base: fieldsFor(PRICING_BASE_IDS, amount),
   extras: z.object({ led: amount, nightstands: amount }),
-  customPct: amount,
+  customPct: percent,
   roundTo,
 });
 
@@ -207,10 +261,13 @@ export function parsePricingForm(formData: FormData): ParsePricingResult {
 
 /**
  * The slip as it is typed: one to three digits, a point and exactly three digits
- * ("1.200", "12.500"), which is the panel's own „1.200 lei” typed back. A text of this
- * shape is always a number to the parser (NUMBER).
+ * ("1.200", "12.500"), which is the panel's own „1.200 lei” typed back, or the same with
+ * a comma ("1,200"), the other way of grouping thousands: the comma is a decimal mark to
+ * the parser too, so without it here "1,200" would be saved as 1.2 lei. A text of this
+ * shape is always a number to the parser (NUMBER), and at most 999.999, so never above
+ * LEI_CEILING: the parser does not refuse it.
  */
-const THOUSANDS_SLIP = /^\d{1,3}\.\d{3}$/;
+const THOUSANDS_SLIP = /^\d{1,3}[.,]\d{3}$/;
 
 /**
  * The inputs of the posted Prețuri form (PRICING_FIELDS names, in form order) whose

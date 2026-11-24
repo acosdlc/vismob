@@ -1,0 +1,28 @@
+--- ../LoginForm.main.tsx	2026-11-24 07:30:18.415786186 +0000
++++ src/components/admin/LoginForm.tsx	2026-11-24 07:30:18.434563392 +0000
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useActionState, useId } from "react";
++import { startTransition, useActionState, useId, type FormEvent } from "react";
+ import { signIn } from "@/actions/admin/sign-in";
+ import { Notice } from "@/components/admin/ui";
+ import { Button } from "@/components/site/Button";
+@@ -17,8 +17,16 @@
+   const emailId = `${id}-email`;
+   const passwordId = `${id}-password`;
+ 
++  // Through `onSubmit`, like the other admin forms: React resets a form it submitted through
++  // the `action` path once the action settles, so a refused sign-in emptied both boxes.
++  function onSubmit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++    const formData = new FormData(event.currentTarget);
++    startTransition(() => formAction(formData));
++  }
++
+   return (
+-    <form action={formAction} className={formStackClasses}>
++    <form action={formAction} onSubmit={onSubmit} className={formStackClasses}>
+       <Field>
+         <Label htmlFor={emailId}>Email</Label>
+         <Input

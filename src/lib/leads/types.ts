@@ -60,6 +60,17 @@ export const FORM_FIELDS = {
 /** Minimum seconds between the form token being issued and the submit. */
 export const MIN_FORM_SECONDS = 3;
 
+/** The server refuses a form token older than this, whatever its signature (src/lib/security/form-token.ts). */
+export const FORM_TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A form that is still open asks for a new token once the one it holds is this old, at its next
+ * focus, pointer-down or submit: an hour before the server's limit, so a form left open since
+ * yesterday does not keep posting a token that is refused on every try. Not earlier: a new token
+ * starts MIN_FORM_SECONDS again, and a token the server still accepts needs no replacing.
+ */
+export const FORM_TOKEN_RENEW_MS = FORM_TOKEN_MAX_AGE_MS - 60 * 60 * 1000;
+
 /** Leads per ip_hash per hour (ARHITECTURA §6.1 step 3.4). */
 export const LEADS_PER_IP_PER_HOUR = 5;
 
@@ -89,6 +100,14 @@ export const FORM_MESSAGES = {
   privacy: "Bifează acordul pentru prelucrarea datelor.",
   tooLong: "Textul e prea lung.",
   uploads: "Poți adăuga cel mult 6 poze, fiecare de maximum 10 MB.",
+  // The next three stand under the photo field only. No request exists yet when they show, and
+  // it can still be sent, so none of them borrows a text written for the request.
+  /** A file the browser cannot read as a picture (a PDF, a HEIC on a desktop). */
+  uploadType: "Nu am putut citi fișierul. Alege o poză JPG, PNG sau WebP.",
+  /** The upload itself failed: the connection, Storage, or the call for the upload links. */
+  uploadFailed: "Nu am putut încărca poza. Încearcă din nou sau trimite cererea fără ea.",
+  /** UPLOAD_LIMITS.maxUrlsPerIpPerHour reached: it counts links, those of removed and failed photos too. */
+  uploadsRateLimited: "Nu mai putem primi poze acum. Trimite cererea fără poze sau încearcă peste o oră.",
   generic: "Nu am putut trimite cererea. Încearcă din nou sau sună-ne.",
   tooFast: "Formularul a fost trimis prea repede. Încearcă din nou.",
   rateLimited: "Ai trimis deja mai multe cereri. Te rugăm să ne suni.",
