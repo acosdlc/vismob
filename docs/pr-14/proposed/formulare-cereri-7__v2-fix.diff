@@ -1,0 +1,48 @@
+--- /tmp/claude-0/-home-user-vismob/6607813d-fa6a-5717-a399-4bd31a4a00d2/scratchpad/real/src/lib/admin/leads.ts	2026-11-24 06:14:58.948590784 +0000
++++ v2-copy/src/lib/admin/leads.ts	2026-11-24 09:09:08.792139194 +0000
+@@ -113,6 +113,36 @@
+   return /^0\d{3,}$/.test(digits) ? digits.slice(1) : null;
+ }
+ 
++/**
++ * The letters Romanian writes with a diacritic, each with the forms a name reaches the database
++ * in: plain (typed without diacritics), comma-below, and the cedilla of older keyboard layouts
++ * (ş U+015F, ţ U+0163), which looks the same on screen and is written as an escape for that reason.
++ */
++const LETTER_FORMS = ["aăâ", "iî", "sș\u015F", "tț\u0163"] as const;
++
++/** What a regular expression reads, plus the double quote, which PostgREST reads around a whole value. */
++const PATTERN_SYNTAX = /[.*+?^${}|[\]"]/;
++
++/**
++ * The search as a regular expression for PostgREST's `imatch` (Postgres `~*`) in which „Stirbu”,
++ * „Știrbu” and „Ştirbu” are one name: `ilike` compares letter by letter, while clients and the
++ * workshop type a name with or without its diacritics. Every other character stands for itself
++ * (sanitizeSearch already dropped `,` `(` `)` `%` and the backslash). Null when the search has
++ * none of those letters, so `ilike` already says everything.
++ */
++export function nameSearchPattern(search: string): string | null {
++  const letters = Array.from(search.normalize("NFC"));
++  const formsOf = (letter: string) => LETTER_FORMS.find((forms) => Array.from(forms).includes(letter.toLowerCase()));
++  if (!letters.some(formsOf)) return null;
++  return letters
++    .map((letter) => {
++      const forms = formsOf(letter);
++      if (forms) return `[${forms}${forms.toUpperCase()}]`;
++      return PATTERN_SYNTAX.test(letter) ? `\\${letter}` : letter;
++    })
++    .join("");
++}
++
+ /** The three filter methods the chain uses; PostgREST's builder has them, and so can a test's fake. */
+ export interface LeadQuery {
+   eq(column: string, value: string): this;
+@@ -132,6 +162,8 @@
+     const terms = SEARCH_COLUMNS.map((column) => `${column}.ilike.%${search}%`);
+     const digits = phoneSearchDigits(search);
+     if (digits) terms.push(`phone.ilike.%${digits}%`);
++    const name = nameSearchPattern(search);
++    if (name) terms.push(`name.imatch.${name}`);
+     q = q.or(terms.join(","));
+   }
+   return q;

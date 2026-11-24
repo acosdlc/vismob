@@ -1,13 +1,16 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { requireEnv } from "@/lib/env";
+import { FORM_TOKEN_MAX_AGE_MS } from "@/lib/leads/types";
 
 // The pages are static, so the "form loaded at" timestamp cannot be rendered on
 // the server. A Server Action mints it on the form's first interaction, signed
 // with FORM_HMAC_SECRET, and the submit proves how long the form was open.
 
-/** A token older than this is refused, whatever its signature. */
-export const FORM_TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// A token older than FORM_TOKEN_MAX_AGE_MS is refused, whatever its signature. The limit lives in
+// the forms' shared contract, because the forms ask for a new token before it (FORM_TOKEN_RENEW_MS)
+// and this module cannot be imported in the browser.
+export { FORM_TOKEN_MAX_AGE_MS };
 
 const TOKEN_SHAPE = /^(\d{1,16})\.([0-9a-f]{64})$/;
 

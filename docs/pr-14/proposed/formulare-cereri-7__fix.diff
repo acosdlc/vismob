@@ -1,0 +1,44 @@
+--- /tmp/claude-0/-home-user-vismob/6607813d-fa6a-5717-a399-4bd31a4a00d2/scratchpad/real/src/lib/admin/leads.ts	2026-11-24 06:14:58.948590784 +0000
++++ copy/src/lib/admin/leads.ts	2026-11-24 08:01:47.794657219 +0000
+@@ -113,6 +113,32 @@
+   return /^0\d{3,}$/.test(digits) ? digits.slice(1) : null;
+ }
+ 
++/**
++ * The letters Romanian writes with a diacritic, each with every form it reaches the database in:
++ * plain (typed without diacritics), comma-below, and the cedilla of old keyboard layouts.
++ */
++const LETTER_FORMS = ["aăâ", "iî", "sșş", "tțţ"] as const;
++
++/**
++ * The search as a regular expression for PostgREST's `imatch` (Postgres `~*`), in which „Stirbu”,
++ * „Știrbu” and „Ştirbu” are one name: clients type their names either way, and so does the
++ * workshop. Every other character stands for itself; the ones a regular expression or PostgREST
++ * reads are escaped (sanitizeSearch already dropped `,` `(` `)` `%` and the backslash). Null when
++ * the search has none of those letters, so `ilike` already says everything.
++ */
++export function nameSearchPattern(search: string): string | null {
++  const letters = Array.from(search.normalize("NFC"));
++  const formsOf = (letter: string) => LETTER_FORMS.find((forms) => forms.includes(letter.toLowerCase()));
++  if (!letters.some(formsOf)) return null;
++  return letters
++    .map((letter) => {
++      const forms = formsOf(letter);
++      if (forms) return `[${forms}${forms.toUpperCase()}]`;
++      return /[.*+?^${}|[\]"]/.test(letter) ? `\\${letter}` : letter;
++    })
++    .join("");
++}
++
+ /** The three filter methods the chain uses; PostgREST's builder has them, and so can a test's fake. */
+ export interface LeadQuery {
+   eq(column: string, value: string): this;
+@@ -132,6 +158,8 @@
+     const terms = SEARCH_COLUMNS.map((column) => `${column}.ilike.%${search}%`);
+     const digits = phoneSearchDigits(search);
+     if (digits) terms.push(`phone.ilike.%${digits}%`);
++    const name = nameSearchPattern(search);
++    if (name) terms.push(`name.imatch.${name}`);
+     q = q.or(terms.join(","));
+   }
+   return q;

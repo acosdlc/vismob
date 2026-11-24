@@ -41,6 +41,9 @@ export function photoFieldNames(field: string): PhotoFieldNames {
 /**
  * `materials/ct-verde-1792569508760.webp`: the folder, a slug and a timestamp, so a
  * replaced photo gets a new URL (the public bucket URL is cached by browsers and CDNs).
+ * The new name does nothing for the photo that is gone: its old URL answers from those
+ * caches until the lifetime it was uploaded with runs out, so PhotoField uploads with
+ * one hour, not with a year.
  */
 export function mediaObjectPath(folder: MediaFolder, slug: string, stamp: number): string {
   return `${folder}/${mediaSlug(slug)}-${Math.trunc(stamp)}.${MEDIA_UPLOAD.extension}`;
@@ -91,7 +94,10 @@ export function photoChange(
   return { ok: true, path: next, remove: previous !== null && previous !== next ? previous : null };
 }
 
-/** Removes one object of the `media` bucket; a failure is logged, never fatal (the row is already saved). */
+/**
+ * Removes one object of the `media` bucket; a failure is logged, never fatal (an action's
+ * row is already saved; PhotoField's own unsaved upload was on no row).
+ */
 export async function removeMediaObject(storage: MediaStorage, path: string | null): Promise<void> {
   if (!path) return;
   try {

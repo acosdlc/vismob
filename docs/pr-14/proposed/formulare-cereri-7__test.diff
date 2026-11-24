@@ -1,0 +1,62 @@
+--- /tmp/claude-0/-home-user-vismob/6607813d-fa6a-5717-a399-4bd31a4a00d2/scratchpad/real/src/lib/admin/leads.test.ts	2026-11-24 06:14:58.948590784 +0000
++++ copy/src/lib/admin/leads.test.ts	2026-11-24 08:00:01.339892657 +0000
+@@ -96,7 +96,7 @@
+       ["eq", "kind", "contact"],
+       ["eq", "status", "nou"],
+       ["gte", "created_at", "2026-10-14T10:00:00.000Z"],
+-      ["or", "name.ilike.%Ana%,email.ilike.%Ana%,phone.ilike.%Ana%,config_code.ilike.%Ana%"],
++      ["or", "name.ilike.%Ana%,email.ilike.%Ana%,phone.ilike.%Ana%,config_code.ilike.%Ana%,name.imatch.[aăâAĂÂ]n[aăâAĂÂ]"],
+     ]);
+   });
+ 
+@@ -104,7 +104,9 @@
+     expect(sanitizeSearch("a,b(c)d%e\\f")).toBe("abcdef");
+     const q = fakeQuery();
+     applyLeadFilters(q, { period: "all", q: "pop,ana(x)%" }, NOW);
+-    expect(q.calls).toEqual([["or", "name.ilike.%popanax%,email.ilike.%popanax%,phone.ilike.%popanax%,config_code.ilike.%popanax%"]]);
++    expect(q.calls).toEqual([
++      ["or", "name.ilike.%popanax%,email.ilike.%popanax%,phone.ilike.%popanax%,config_code.ilike.%popanax%,name.imatch.pop[aăâAĂÂ]n[aăâAĂÂ]x"],
++    ]);
+   });
+ 
+   it("skips the search when nothing is left after sanitising", () => {
+@@ -137,6 +139,39 @@
+     applyLeadFilters(name, { period: "all", q: "Ana" }, NOW);
+     expect(name.calls[0][1]).not.toContain(",phone.ilike.%na%");
+   });
++
++  it("finds a name whichever way its diacritics were typed: plain, comma-below or cedilla", () => {
++    /** The regular expression of the name term the search adds (`imatch` is Postgres `~*`). */
++    const namePattern = (search: string) => {
++      const q = fakeQuery();
++      applyLeadFilters(q, { period: "all", q: search }, NOW);
++      const term = q.calls[0][1].split(",").find((part) => part.startsWith("name.imatch."));
++      expect(term, `the or-filter of „${search}” has a name.imatch term`).toBeDefined();
++      return term!.slice("name.imatch.".length);
++    };
++    const finds = (search: string, name: string) => new RegExp(namePattern(search), "i").test(name);
++
++    // The workshop types without diacritics, the client wrote the name with them.
++    expect(finds("Stirbu", "Andreea Știrbu")).toBe(true);
++    expect(finds("tirlea-brancusi", "Ștefan Țîrlea-Brâncuși")).toBe(true);
++    // The other way round, and the cedilla letters of old keyboard layouts.
++    expect(finds("Știrbu", "Andreea Stirbu")).toBe(true);
++    expect(finds("Știrbu", "Andreea Ştirbu")).toBe(true);
++    expect(finds("ŢURCANU", "D'Artagnan Țurcanu")).toBe(true);
++    // Still the same letters in the same order, and nothing a regular expression reads.
++    expect(finds("Stirbu", "Andreea Sturbu")).toBe(false);
++    expect(finds("a.b", "Axb")).toBe(false);
++    expect(finds("a*", "Bob")).toBe(false);
++    // A quote is escaped: PostgREST reads a term in double quotes as a quoted value and drops them.
++    expect(namePattern('"Stirbu"')).toMatch(/^\\"/);
++    expect(finds('"Stirbu"', "Andreea Știrbu")).toBe(false);
++  });
++
++  it("adds no name term when the search has no letter that takes a diacritic", () => {
++    const q = fakeQuery();
++    applyLeadFilters(q, { period: "all", q: "+40 722 123 456" }, NOW);
++    expect(q.calls[0][1]).not.toContain("imatch");
++  });
+ });
+ 
+ describe("phoneSearchDigits", () => {

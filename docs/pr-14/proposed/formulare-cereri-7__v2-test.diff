@@ -1,0 +1,75 @@
+--- /tmp/claude-0/-home-user-vismob/6607813d-fa6a-5717-a399-4bd31a4a00d2/scratchpad/real/src/lib/admin/leads.test.ts	2026-11-24 06:14:58.948590784 +0000
++++ v2-copy/src/lib/admin/leads.test.ts	2026-11-24 09:09:08.796139194 +0000
+@@ -96,7 +96,7 @@
+       ["eq", "kind", "contact"],
+       ["eq", "status", "nou"],
+       ["gte", "created_at", "2026-10-14T10:00:00.000Z"],
+-      ["or", "name.ilike.%Ana%,email.ilike.%Ana%,phone.ilike.%Ana%,config_code.ilike.%Ana%"],
++      ["or", "name.ilike.%Ana%,email.ilike.%Ana%,phone.ilike.%Ana%,config_code.ilike.%Ana%,name.imatch.[aăâAĂÂ]n[aăâAĂÂ]"],
+     ]);
+   });
+ 
+@@ -104,7 +104,9 @@
+     expect(sanitizeSearch("a,b(c)d%e\\f")).toBe("abcdef");
+     const q = fakeQuery();
+     applyLeadFilters(q, { period: "all", q: "pop,ana(x)%" }, NOW);
+-    expect(q.calls).toEqual([["or", "name.ilike.%popanax%,email.ilike.%popanax%,phone.ilike.%popanax%,config_code.ilike.%popanax%"]]);
++    expect(q.calls).toEqual([
++      ["or", "name.ilike.%popanax%,email.ilike.%popanax%,phone.ilike.%popanax%,config_code.ilike.%popanax%,name.imatch.pop[aăâAĂÂ]n[aăâAĂÂ]x"],
++    ]);
+   });
+ 
+   it("skips the search when nothing is left after sanitising", () => {
+@@ -137,6 +139,52 @@
+     applyLeadFilters(name, { period: "all", q: "Ana" }, NOW);
+     expect(name.calls[0][1]).not.toContain(",phone.ilike.%na%");
+   });
++
++  it("finds a name whichever way its diacritics were typed: without them, comma-below or cedilla", () => {
++    /**
++     * Whether the filter built for `search` keeps a request with this name. The two operators as
++     * Postgres reads them, both without letter case: `ilike.%x%` is „contains x”, `imatch` is a
++     * regular expression. (The search holds no comma: sanitizeSearch drops it.)
++     */
++    const finds = (search: string, name: string) => {
++      const q = fakeQuery();
++      applyLeadFilters(q, { period: "all", q: search }, NOW);
++      const row: Record<string, string | null> = { name, email: "client@example.com", phone: "+40722123456", config_code: null };
++      return q.calls[0][1].split(",").some((term) => {
++        const [column, operator, ...rest] = term.split(".");
++        const value = rest.join(".");
++        const cell = row[column];
++        if (cell === null || cell === undefined) return false;
++        if (operator === "ilike") return cell.toLowerCase().includes(value.slice(1, -1).toLowerCase());
++        if (operator === "imatch") return new RegExp(value, "i").test(cell);
++        throw new Error(`the operator „${operator}” is not modelled`);
++      });
++    };
++
++    // The workshop types without diacritics; the client wrote the name with them.
++    expect(finds("Stirbu", "Andreea Știrbu")).toBe(true);
++    expect(finds("andreea stirbu", "Andreea Știrbu")).toBe(true);
++    expect(finds("tirlea-brancusi", "Ștefan Țîrlea-Brâncuși")).toBe(true);
++    // The other way round, and the cedilla letters of older keyboards (Ş U+015E, Ţ U+0162) against comma-below.
++    expect(finds("Știrbu", "Andreea Stirbu")).toBe(true);
++    expect(finds("Știrbu", "Andreea \u015Etirbu")).toBe(true);
++    expect(finds("\u0162URCANU", "Ion Țurcanu")).toBe(true);
++    // Still the same letters in the same order.
++    expect(finds("Stirbu", "Andreea Sturbu")).toBe(false);
++    expect(finds("Stirbu", "Andreea Stirb")).toBe(false);
++    // Every other character stands for itself, also the ones a regular expression or PostgREST reads.
++    for (const mark of ".*+?^${}|[]\"'-_@/:;!#&=<>~ ") {
++      expect(finds(`s${mark}a`, `Vasile Ș${mark}ă`), `„s${mark}a”, name with the mark`).toBe(true);
++      expect(finds(`s${mark}a`, "Vasile ȘZă"), `„s${mark}a”, name with another character`).toBe(false);
++      expect(finds(`s${mark}a`, "Vasile Șă"), `„s${mark}a”, name without the mark`).toBe(false);
++    }
++  });
++
++  it("adds nothing to the search when no letter in it takes a diacritic", () => {
++    const q = fakeQuery();
++    applyLeadFilters(q, { period: "all", q: "CP-160x200" }, NOW);
++    expect(q.calls).toEqual([["or", "name.ilike.%CP-160x200%,email.ilike.%CP-160x200%,phone.ilike.%CP-160x200%,config_code.ilike.%CP-160x200%"]]);
++  });
+ });
+ 
+ describe("phoneSearchDigits", () => {

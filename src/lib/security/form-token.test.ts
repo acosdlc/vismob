@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FORM_TOKEN_RENEW_MS } from "@/lib/leads/types";
 import { FORM_TOKEN_MAX_AGE_MS, mintFormToken, verifyFormToken } from "./form-token";
 
 vi.mock("server-only", () => ({}));
@@ -48,6 +49,15 @@ describe("form token", () => {
     const token = mintFormToken(NOW);
     expect(verifyFormToken(token, NOW + FORM_TOKEN_MAX_AGE_MS).ok).toBe(true);
     expect(verifyFormToken(token, NOW + FORM_TOKEN_MAX_AGE_MS + 1)).toEqual({ ok: false });
+  });
+
+  it("still accepts, with an hour to spare, a token as old as the one the forms replace", () => {
+    // ContactForm and QuoteForm ask for a new token once theirs is FORM_TOKEN_RENEW_MS old. That
+    // age has to stay well under the limit above: a form that replaced its token only after the
+    // limit would post, until then, a token that is refused on every try.
+    expect(FORM_TOKEN_MAX_AGE_MS - FORM_TOKEN_RENEW_MS).toBeGreaterThanOrEqual(60 * 60 * 1000);
+    const token = mintFormToken(NOW);
+    expect(verifyFormToken(token, NOW + FORM_TOKEN_RENEW_MS)).toEqual({ ok: true, ageSeconds: FORM_TOKEN_RENEW_MS / 1000 });
   });
 
   it("cannot mint or verify without the secret", () => {

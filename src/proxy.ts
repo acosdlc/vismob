@@ -32,6 +32,18 @@ export async function proxy(request: NextRequest) {
     return redirect;
   }
 
+  // A Server Action call from a visitor who is not an admin (the session was ended, its
+  // renewal was refused, the role was removed) gets no cookie on the response. Next counts
+  // a cookie set here as set by the action and renders the page again inside the action's
+  // answer; the (panel) layout's guard would redirect that render to the login screen, and
+  // the form would be gone with what was typed before the action's notice is ever shown.
+  // The request still goes on with the cookies updateSession left on it, so the action
+  // sees the session as it is now, and the next navigation writes them to the browser.
+  // An admin's call keeps its cookies: a session renewed during a save must reach the
+  // browser, and the guard lets that render pass.
+  const admin = session.kind === "signed-in" && session.admin;
+  if (!navigation && !admin) return NextResponse.next({ request });
+
   return response;
 }
 

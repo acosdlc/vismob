@@ -1,5 +1,5 @@
 import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
-import { startTransition, useActionState, type FormEvent } from "react";
+import { Activity, startTransition, useActionState, type FormEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ADMIN_INITIAL_STATE, ADMIN_MESSAGES, type AdminActionState } from "@/lib/admin/types";
 import { useSavedNotice } from "./useSavedNotice";
@@ -87,6 +87,7 @@ function Harness({ action }: { action: Action }) {
         Salvează
       </button>
       {!pending && state.status === "ok" && !edited && <p role="status">{state.message}</p>}
+      {!pending && state.status === "error" && <p role="alert">{state.message}</p>}
     </form>
   );
 }
@@ -164,5 +165,90 @@ describe("useSavedNotice in a form driven by useActionState", () => {
     answer(SAVED);
     expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
     expect(action.mock.calls[1][1].get("name")).toBe("Catifea fină");
+  });
+});
+
+// With `cacheComponents` the router does not unmount a screen that is left: it hides it in
+// a React <Activity> and shows it again, with its state, when the same record is opened
+// (up to three screens are kept). The form's last answer comes back with it.
+function KeptScreen({ shown, action }: { shown: boolean; action: Action }) {
+  return (
+    <Activity mode={shown ? "visible" : "hidden"}>
+      <Harness action={action} />
+    </Activity>
+  );
+}
+
+describe("useSavedNotice on a screen the router kept and shows again", () => {
+  it("does not bring „Salvat.” back with the screen; what was typed stays and the next save shows it again", async () => {
+    const { action, answer } = heldAction();
+    const { rerender } = render(<KeptScreen shown action={action} />);
+
+    fireEvent.change(screen.getByLabelText("Nume"), { target: { value: "Catifea fină" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    answer(SAVED);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+
+    // She goes to the list (the router hides this screen) and opens the same record again.
+    rerender(<KeptScreen shown={false} action={action} />);
+    expect(screen.queryByRole("status")).toBeNull();
+    rerender(<KeptScreen shown action={action} />);
+
+    // Nothing was saved in this visit, so nothing says „Salvat.”.
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByLabelText("Nume")).toHaveValue("Catifea fină");
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    answer(SAVED);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(action.mock.calls[1][1].get("name")).toBe("Catifea fină");
+  });
+
+  it("still confirms a save that was on its way when she left: its answer has not been shown yet", async () => {
+    const { action, answer } = heldAction();
+    const { rerender } = render(<KeptScreen shown action={action} />);
+
+    // A slow connection: she presses „Salvează” and goes elsewhere before the answer.
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    rerender(<KeptScreen shown={false} action={action} />);
+    await act(async () => answer(SAVED));
+    rerender(<KeptScreen shown action={action} />);
+
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeEnabled();
+
+    // Shown once: it does not come back with the screen a second time.
+    rerender(<KeptScreen shown={false} action={action} />);
+    rerender(<KeptScreen shown action={action} />);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("confirms it as well when she comes back before the answer arrives", async () => {
+    const { action, answer } = heldAction();
+    const { rerender } = render(<KeptScreen shown action={action} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    rerender(<KeptScreen shown={false} action={action} />);
+    // React shows a kept screen again only once the save it was sending has its answer.
+    rerender(<KeptScreen shown action={action} />);
+    expect(screen.queryByRole("status")).toBeNull();
+
+    answer(SAVED);
+    expect(await screen.findByRole("status")).toHaveTextContent(ADMIN_MESSAGES.saved);
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeEnabled();
+  });
+
+  it("leaves an error where it was: only „Salvat.” is retired", async () => {
+    const { action, answer } = heldAction();
+    const { rerender } = render(<KeptScreen shown action={action} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    answer({ status: "error", message: ADMIN_MESSAGES.generic });
+    expect(await screen.findByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.generic);
+
+    rerender(<KeptScreen shown={false} action={action} />);
+    rerender(<KeptScreen shown action={action} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(ADMIN_MESSAGES.generic);
   });
 });

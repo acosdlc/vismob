@@ -1,0 +1,41 @@
+--- ../LoginForm.main.tsx	2026-11-24 07:30:18.415786186 +0000
++++ ../LoginForm.option2.tsx	2026-11-24 07:32:27.098382765 +0000
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useActionState, useId } from "react";
++import { useActionState, useId, useState, type FormEvent } from "react";
+ import { signIn } from "@/actions/admin/sign-in";
+ import { Notice } from "@/components/admin/ui";
+ import { Button } from "@/components/site/Button";
+@@ -12,13 +12,21 @@
+ // Turnstile, no honeypot: the admin forms are behind credentials.
+ export function LoginForm() {
+   const [state, formAction, pending] = useActionState(signIn, ADMIN_INITIAL_STATE);
++  // React resets a form it submitted through `action` once the action settles, whatever the
++  // answer was, and a reset goes back to the defaults. So the address of the last submit is kept
++  // as the Email default: a refused sign-in then empties only the password.
++  const [email, setEmail] = useState("");
+   const id = useId();
+   const errors = state.status === "error" ? (state.fieldErrors ?? {}) : {};
+   const emailId = `${id}-email`;
+   const passwordId = `${id}-password`;
+ 
++  function onSubmit(event: FormEvent<HTMLFormElement>) {
++    setEmail(String(new FormData(event.currentTarget).get("email") ?? ""));
++  }
++
+   return (
+-    <form action={formAction} className={formStackClasses}>
++    <form action={formAction} onSubmit={onSubmit} className={formStackClasses}>
+       <Field>
+         <Label htmlFor={emailId}>Email</Label>
+         <Input
+@@ -27,6 +35,7 @@
+           type="email"
+           autoComplete="username"
+           required
++          defaultValue={email}
+           invalid={Boolean(errors.email)}
+         />
+         <FieldError fieldId={emailId}>{errors.email}</FieldError>

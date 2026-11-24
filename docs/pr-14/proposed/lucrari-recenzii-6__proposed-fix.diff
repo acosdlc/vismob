@@ -1,0 +1,278 @@
+diff --git a/src/actions/admin/save-model.ts b/src/actions/admin/save-model.ts
+index a2aac52..a26ece0 100644
+--- a/src/actions/admin/save-model.ts
++++ b/src/actions/admin/save-model.ts
+@@ -12,8 +12,8 @@ import { createClient, type ServerClient } from "@/lib/supabase/server";
+  * replaces its model ↔ family rules through the signed-in user's cookie client (RLS:
+  * `admin_all`), and expires the "catalog" tag. The "projects" tag goes with it, as after
+  * every catalogue write: the projects are cached for a day with the catalogue names
+- * they print (src/lib/data/projects.ts). That reader takes no column of a model today,
+- * so here the rule is kept rather than something on the site changed. The model itself
++ * they print (src/lib/data/projects.ts): the model's name is one of them, in the caption
++ * of every project and on the hero ticket. The model itself
+  * is never created or deleted here (its drawing and rules live in code), and it keeps at
+  * least one family: without one, catalogFromRows() would drop it from the configurator.
+  * Deactivating the last active model is refused too: getCatalog() throws on a catalogue
+diff --git a/src/app/sitemap.test.ts b/src/app/sitemap.test.ts
+index 1bd395d..f905747 100644
+--- a/src/app/sitemap.test.ts
++++ b/src/app/sitemap.test.ts
+@@ -17,6 +17,7 @@ function project(slug: string, src?: string): Project {
+     ticketNo: "",
+     title: slug,
+     modelId: "capitonat",
++    modelName: "Capitonat",
+     widthCm: 160,
+     lengthCm: 200,
+     materialLabel: "",
+diff --git a/src/components/home/Hero.test.tsx b/src/components/home/Hero.test.tsx
+new file mode 100644
+index 0000000..33543f0
+--- /dev/null
++++ b/src/components/home/Hero.test.tsx
+@@ -0,0 +1,35 @@
++import { render, screen } from "@testing-library/react";
++import { describe, expect, it } from "vitest";
++import type { Project } from "@/lib/data/projects.seed";
++import { SEED_SETTINGS } from "@/lib/data/settings.seed";
++import { Hero } from "./Hero";
++
++/** The hero project as getHeroProject() returns it after the workshop renamed the model in Catalog. */
++const HERO = {
++  slug: "capitonat-cluj",
++  ticketNo: "0123",
++  title: "Pat capitonat pentru un dormitor din Cluj",
++  modelId: "capitonat",
++  modelName: "Capitonat clasic „Ștefan”",
++  widthCm: 180,
++  lengthCm: 200,
++  materialLabel: "Catifea, verde sticlă",
++  baseLabel: "Ladă de depozitare",
++  extras: [],
++  city: "Cluj-Napoca",
++  deliveredLabel: "Cluj-Napoca, martie 2026",
++  featured: false,
++  hero: true,
++} satisfies Project;
++
++describe("Hero", () => {
++  it("prints the model's name on the ticket, not its id", () => {
++    render(<Hero settings={SEED_SETTINGS} hero={HERO} />);
++    expect(screen.getByText("Model").nextElementSibling).toHaveTextContent("Capitonat clasic „Ștefan”");
++  });
++
++  it("shows no ticket without a hero project", () => {
++    render(<Hero settings={SEED_SETTINGS} hero={null} />);
++    expect(screen.queryByText("FIȘĂ PROIECT")).not.toBeInTheDocument();
++  });
++});
+diff --git a/src/components/home/Hero.tsx b/src/components/home/Hero.tsx
+index b951d52..1edfe15 100644
+--- a/src/components/home/Hero.tsx
++++ b/src/components/home/Hero.tsx
+@@ -20,7 +20,7 @@ export function Hero({
+ }) {
+   const rows = hero
+     ? [
+-        { k: "Model", v: hero.modelId.charAt(0).toUpperCase() + hero.modelId.slice(1) },
++        { k: "Model", v: hero.modelName },
+         { k: "Saltea", v: `${hero.widthCm} × ${hero.lengthCm} cm` },
+         { k: "Material", v: hero.materialLabel },
+         { k: "Bază", v: hero.baseLabel },
+diff --git a/src/lib/data/projects.seed.ts b/src/lib/data/projects.seed.ts
+index ecf3b1a..f877cec 100644
+--- a/src/lib/data/projects.seed.ts
++++ b/src/lib/data/projects.seed.ts
+@@ -24,6 +24,8 @@ export interface Project {
+   /** The gallery caption (DESIGN §3.4 template) until the workshop names the project. */
+   title: string;
+   modelId: ModelId;
++  /** „Capitonat”: the model's name as Catalog holds it (`models.name`), which the workshop may change. */
++  modelName: string;
+   widthCm: number;
+   lengthCm: number;
+   /** „Catifea, verde sticlă” */
+@@ -62,7 +64,11 @@ function baseName(id: BaseId): string {
+ const BASE_LEGS = baseName("lemn"); // „Picioare din lemn” (DEFAULT_CONFIG.base)
+ const BASE_LADA = baseName("lada"); // „Ladă de depozitare”
+ 
+-function modelName(id: ModelId): string {
++/**
++ * The seed's name of a model: what the placeholders print, and what a project keeps when
++ * the model's row cannot be read (the public_read policy hides a model switched off since).
++ */
++export function seedModelName(id: ModelId): string {
+   const model = SEED_CATALOG.models.find((m) => m.id === id);
+   if (!model) throw new Error(`projects.seed: unknown model "${id}".`);
+   return model.name;
+@@ -72,8 +78,8 @@ function modelName(id: ModelId): string {
+  * The DESIGN §3.4 caption: „[Model] · [160 × 200] · [material, culoare] · [oraș]”.
+  * A part the workshop left empty (no material, no city) is dropped, not shown as „ ·  · ”.
+  */
+-export function projectCaption(p: Pick<Project, "modelId" | "widthCm" | "lengthCm" | "materialLabel" | "city">): string {
+-  return [modelName(p.modelId), `${p.widthCm} × ${p.lengthCm}`, p.materialLabel, p.city].filter(Boolean).join(" · ");
++export function projectCaption(p: Pick<Project, "modelName" | "widthCm" | "lengthCm" | "materialLabel" | "city">): string {
++  return [p.modelName, `${p.widthCm} × ${p.lengthCm}`, p.materialLabel, p.city].filter(Boolean).join(" · ");
+ }
+ 
+ interface PlaceholderInput {
+@@ -90,10 +96,12 @@ interface PlaceholderInput {
+ 
+ function placeholder(input: PlaceholderInput): Project {
+   const { photo, ...rest } = input;
++  const modelName = seedModelName(input.modelId);
+   return {
+     ...rest,
++    modelName,
+     ticketNo: TICKET_NO,
+-    title: projectCaption({ ...rest, materialLabel: MATERIAL }),
++    title: projectCaption({ ...rest, modelName, materialLabel: MATERIAL }),
+     materialLabel: MATERIAL,
+     extras: [],
+     deliveredLabel: DELIVERED,
+diff --git a/src/lib/data/projects.test.ts b/src/lib/data/projects.test.ts
+index 0fc1bf4..14e6939 100644
+--- a/src/lib/data/projects.test.ts
++++ b/src/lib/data/projects.test.ts
+@@ -96,6 +96,10 @@ function rows(projects: ProjectRow[], photos: ProjectRows["photos"] = []): Proje
+     materials: [{ id: "ct-verde", name: "Verde sticlă", family_id: "catifea" }],
+     families: [{ id: "catifea", name: "Catifea" }],
+     bases: [{ id: "lada", name: "Ladă de depozitare" }],
++    models: [
++      { id: "capitonat", name: "Capitonat" },
++      { id: "arcuit", name: "Arcuit" },
++    ],
+   };
+ }
+ 
+@@ -106,6 +110,7 @@ function tablesFrom(r: ProjectRows) {
+     materials: { data: r.materials, error: null },
+     material_families: { data: r.families, error: null },
+     bases: { data: r.bases, error: null },
++    models: { data: r.models, error: null },
+   };
+ }
+ 
+@@ -154,6 +159,7 @@ describe("projectsFromRows", () => {
+       ticketNo: "0123",
+       title: "Pat capitonat pentru un dormitor din Cluj",
+       modelId: "capitonat",
++      modelName: "Capitonat",
+       widthCm: 180,
+       lengthCm: 200,
+       materialLabel: "Catifea, verde sticlă",
+@@ -181,6 +187,7 @@ describe("projectsFromRows", () => {
+       ticketNo: "",
+       title: "Pat arcuit",
+       modelId: "arcuit",
++      modelName: "Arcuit",
+       widthCm: 160,
+       lengthCm: 200,
+       materialLabel: "",
+@@ -204,6 +211,23 @@ describe("projectsFromRows", () => {
+     expect(projectsFromRows(r)[0].materialLabel).toBe("");
+   });
+ 
++  it("takes the model's name from the models rows, so a model renamed in Catalog reaches the caption", () => {
++    const r = rows([FULL]);
++    r.models = [{ id: "capitonat", name: "Capitonat clasic „Ștefan”" }];
++    const [p] = projectsFromRows(r);
++    expect(p.modelName).toBe("Capitonat clasic „Ștefan”");
++    expect(projectCaption(p)).toBe("Capitonat clasic „Ștefan” · 180 × 200 · Catifea, verde sticlă · Cluj-Napoca");
++  });
++
++  it("falls back to the seed's name when the model's row is not readable (a model switched off since)", () => {
++    const r = rows([FULL]);
++    r.models = [];
++    const [p] = projectsFromRows(r);
++    expect(p.modelName).toBe("Capitonat");
++    expect(projectCaption(p)).toBe("Capitonat · 180 × 200 · Catifea, verde sticlă · Cluj-Napoca");
++    expect(console.error).not.toHaveBeenCalled();
++  });
++
+   it("skips a row with a model the site does not know or without a size, with a console.error", () => {
+     const unknown = { ...BARE, id: "3", slug: "rotund", model_id: "rotund" };
+     const noSize = { ...BARE, id: "4", slug: "fara-latime", width_cm: null };
+@@ -259,6 +283,17 @@ describe("getProjects / getHeroProject", () => {
+     expect(state.filters).toEqual([]);
+   });
+ 
++  it("read the models' names with the projects, so the caption and the hero ticket follow a rename", async () => {
++    const r = rows([FULL]);
++    r.models = [{ id: "capitonat", name: "Capitonat clasic" }];
++    state.tables = tablesFrom(r);
++    const hero = await getHeroProject();
++    expect(hero?.modelName).toBe("Capitonat clasic");
++    expect(hero && projectCaption(hero)).toBe("Capitonat clasic · 180 × 200 · Catifea, verde sticlă · Cluj-Napoca");
++    // No `active` filter: the policies decide which model rows the site may read.
++    expect(state.filters).toEqual([]);
++  });
++
+   it("return nothing, not the seed, when the database has no published projects", async () => {
+     state.tables = tablesFrom(rows([]));
+     expect(await allProjects()).toEqual([]);
+diff --git a/src/lib/data/projects.ts b/src/lib/data/projects.ts
+index 1dd7b6a..a2f5ca7 100644
+--- a/src/lib/data/projects.ts
++++ b/src/lib/data/projects.ts
+@@ -5,7 +5,7 @@ import { createPublicClient } from "@/lib/supabase/public";
+ import { isModelId } from "./catalog";
+ import { failedRead } from "./fallback";
+ import { mediaUrl } from "./media";
+-import { SEED_PROJECTS, type Project } from "./projects.seed";
++import { SEED_PROJECTS, seedModelName, type Project } from "./projects.seed";
+ 
+ export type { Project, ProjectPhoto } from "./projects.seed";
+ export { projectCaption } from "./projects.seed";
+@@ -48,6 +48,8 @@ export interface ProjectRows {
+   materials: Pick<Tables<"materials">, "id" | "name" | "family_id">[];
+   families: Pick<Tables<"material_families">, "id" | "name">[];
+   bases: Pick<Tables<"bases">, "id" | "name">[];
++  /** The models the reader may read: the active ones (public_read on `models`). */
++  models: Pick<Tables<"models">, "id" | "name">[];
+ }
+ 
+ const MONTHS = [
+@@ -83,6 +85,7 @@ export function projectsFromRows(rows: ProjectRows): Project[] {
+   const familyName = new Map(rows.families.map((f) => [f.id, f.name]));
+   const materials = new Map(rows.materials.map((m) => [m.id, m]));
+   const baseName = new Map(rows.bases.map((b) => [b.id, b.name]));
++  const modelName = new Map(rows.models.map((m) => [m.id, m.name]));
+   const photos = [...rows.photos].sort((a, b) => a.sort - b.sort || a.path.localeCompare(b.path));
+ 
+   const projects: Project[] = [];
+@@ -108,6 +111,9 @@ export function projectsFromRows(rows: ProjectRows): Project[] {
+       ticketNo: row.ticket_no ?? "",
+       title: row.title,
+       modelId: row.model_id,
++      // The name Catalog holds, so a rename there reaches the caption and the hero ticket;
++      // the seed's name when the row is not readable (a model switched off since).
++      modelName: modelName.get(row.model_id) || seedModelName(row.model_id),
+       widthCm: row.width_cm,
+       lengthCm: row.length_cm,
+       materialLabel,
+@@ -135,7 +141,7 @@ function unwrap<T>(result: { data: T[] | null; error: { message: string } | null
+ async function readProjects(): Promise<Project[] | null> {
+   try {
+     const db = createPublicClient();
+-    const [projects, photos, materials, families, bases] = await Promise.all([
++    const [projects, photos, materials, families, bases, models] = await Promise.all([
+       db
+         .from("projects")
+         .select(
+@@ -146,6 +152,7 @@ async function readProjects(): Promise<Project[] | null> {
+       db.from("materials").select("id, name, family_id"),
+       db.from("material_families").select("id, name"),
+       db.from("bases").select("id, name"),
++      db.from("models").select("id, name"),
+     ]);
+     return projectsFromRows({
+       projects: unwrap(projects, "projects"),
+@@ -153,6 +160,7 @@ async function readProjects(): Promise<Project[] | null> {
+       materials: unwrap(materials, "materials"),
+       families: unwrap(families, "material_families"),
+       bases: unwrap(bases, "bases"),
++      models: unwrap(models, "models"),
+     });
+   } catch (err) {
+     return failedRead("getProjects", err);

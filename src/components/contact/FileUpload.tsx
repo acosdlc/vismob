@@ -39,10 +39,12 @@ const STATUS_TEXT: Record<UploadStatus, string> = {
   error: "Eroare",
 };
 
-/** FORM_MESSAGES.uploads when the selection breaks the count or size limits, else null. */
+/**
+ * FORM_MESSAGES.uploads when the selection breaks the count limit, else null. The size limit
+ * is not checked here: it is on what Storage keeps, so `onChange` measures the resized file.
+ */
 export function uploadLimitError(existing: number, files: readonly File[]): string | null {
   if (existing + files.length > UPLOAD_LIMITS.maxFiles) return FORM_MESSAGES.uploads;
-  if (files.some((file) => file.size > UPLOAD_LIMITS.maxBytes)) return FORM_MESSAGES.uploads;
   return null;
 }
 
@@ -107,12 +109,20 @@ export function FileUpload({ id, error, onUploadingChange }: FileUploadProps) {
     setUploading(1);
 
     try {
-      const compressed = await Promise.all(files.map(compress));
-      // A file the browser could not decode is refused here; the others go on.
+      // One photo at a time: no original is refused for its size (see below), and a camera's
+      // original takes hundreds of megabytes while it is decoded, so six decoded together could
+      // be more than a phone gives a page. It costs little: the resize runs on the main thread.
+      const compressed: (File | null)[] = [];
+      for (const file of files) compressed.push(await compress(file));
+      // A file the browser could not decode is refused here, and so is one over the bucket's
+      // limit; the others go on. That limit is on what is stored, so it is the resized file that
+      // is measured: a camera's original, often over it, comes out of the resize far under it
+      // (a JPEG the library cannot process goes as it is, and so is measured as it is).
       const ready = batch.filter((item, index) => {
-        if (compressed[index]) return true;
+        const file = compressed[index];
+        if (file && file.size <= UPLOAD_LIMITS.maxBytes) return true;
         update(item.id, { status: "error" });
-        setLocalError(FORM_MESSAGES.uploads);
+        setLocalError(file ? FORM_MESSAGES.uploads : FORM_MESSAGES.uploadType);
         return false;
       });
       if (ready.length === 0) return;
@@ -131,7 +141,7 @@ export function FileUpload({ id, error, onUploadingChange }: FileUploadProps) {
           const file = compressed[batch.indexOf(item)];
           if (!target || !file) {
             update(item.id, { status: "error" });
-            setLocalError(FORM_MESSAGES.generic);
+            setLocalError(FORM_MESSAGES.uploadFailed);
             return;
           }
           const { error: uploadError } = await bucket.uploadToSignedUrl(target.path, target.token, file, {
@@ -139,7 +149,7 @@ export function FileUpload({ id, error, onUploadingChange }: FileUploadProps) {
           });
           if (uploadError) {
             update(item.id, { status: "error" });
-            setLocalError(FORM_MESSAGES.generic);
+            setLocalError(FORM_MESSAGES.uploadFailed);
             return;
           }
           update(item.id, { status: "done", path: target.path });
@@ -148,7 +158,8 @@ export function FileUpload({ id, error, onUploadingChange }: FileUploadProps) {
     } catch (caught) {
       console.error("FileUpload", caught);
       for (const item of batch) update(item.id, { status: "error" });
-      setLocalError(FORM_MESSAGES.generic);
+      // No request was tried yet and it can still be sent, so the text speaks of the photo.
+      setLocalError(FORM_MESSAGES.uploadFailed);
     } finally {
       setUploading(-1);
     }

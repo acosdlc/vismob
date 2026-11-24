@@ -22,6 +22,7 @@ import {
   CONSENT_TEXT,
   FORM_FIELDS,
   FORM_MESSAGES,
+  FORM_TOKEN_RENEW_MS,
   INITIAL_FORM_STATE,
   MATTRESS_SIZES,
   type FieldErrors,
@@ -88,6 +89,8 @@ function RequestForm({
   const [startedAt, setStartedAt] = useState("");
   const [uploading, setUploading] = useState(false);
   const tokenRequested = useRef(false);
+  /** When the token in hand was asked for, on the visitor's clock: requestToken replaces an old one. */
+  const tokenRequestedAt = useRef(0);
   const submitReported = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const confirmHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -122,21 +125,28 @@ function RequestForm({
   }, [state]);
 
   function requestToken() {
-    if (tokenRequested.current) return;
+    // One token per form, replaced once it has grown old: the server refuses a token older than
+    // 24 hours, so a form left open since yesterday would be refused as sent too fast on every
+    // try, and nothing short of a reload would get the request through.
+    if (tokenRequested.current && Date.now() - tokenRequestedAt.current < FORM_TOKEN_RENEW_MS) return;
     tokenRequested.current = true;
+    tokenRequestedAt.current = Date.now();
     issueFormToken()
       .then((token) => setStartedAt(token))
       .catch(() => {
         // The call brought no answer (the connection was away for a moment). The next focus
         // or pointer-down asks again: without a token the server refuses every submit as
-        // sent too fast, and nothing short of a reload would get the request through.
+        // sent too fast, and nothing short of a reload would get the request through. A
+        // token already in the form stays there: until it expires the server still takes it.
         tokenRequested.current = false;
-        setStartedAt("");
       });
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Enter in a field that kept the focus brings no focus and no pointer-down, so an old token
+    // is replaced here too. This submit still carries the old one; the next try carries the new.
+    requestToken();
     const form = event.currentTarget;
     const formData = new FormData(form);
     formData.set(FORM_FIELDS.source, JSON.stringify(collectSource(page, window.location, document.referrer)));

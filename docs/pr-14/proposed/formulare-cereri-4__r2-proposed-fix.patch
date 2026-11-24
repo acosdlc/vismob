@@ -1,0 +1,39 @@
+--- a/src/lib/leads/types.ts
++++ b/src/lib/leads/types.ts
+@@ -93,4 +93,6 @@
+   tooFast: "Formularul a fost trimis prea repede. Încearcă din nou.",
+   rateLimited: "Ai trimis deja mai multe cereri. Te rugăm să ne suni.",
+   turnstile: "Verificarea anti-spam nu a reușit. Încearcă din nou.",
++  /** Inside <noscript>: the form is sent by the page's script (the anti-spam token, and Turnstile, come from it). */
++  noScript: "Formularul are nevoie de JavaScript ca să fie trimis. Activează-l în browser sau sună-ne.",
+ } as const;
+--- a/src/lib/leads/create-lead.ts
++++ b/src/lib/leads/create-lead.ts
+@@ -117,7 +117,12 @@
+     // 3.1 Honeypot and minimum time.
+     if (stringField(formData, FORM_FIELDS.honeypot)) return error(FORM_MESSAGES.generic);
+ 
+-    const token = verifyFormToken(stringField(formData, FORM_FIELDS.startedAt), deps.now());
++    const startedAt = stringField(formData, FORM_FIELDS.startedAt);
++    const token = verifyFormToken(startedAt, deps.now());
++    // No token at all: the form was posted as the server rendered it, before or without the page's
++    // script (which asks for the token at the first touch). Waiting cannot help a browser whose script
++    // never runs, so the answer is the one with the way out, not „prea repede”.
++    if (!startedAt) return error(FORM_MESSAGES.generic);
+     if (!token.ok || token.ageSeconds < MIN_FORM_SECONDS) return error(FORM_MESSAGES.tooFast);
+ 
+     // 3.2 Turnstile.
+--- a/src/components/contact/ContactForm.tsx
++++ b/src/components/contact/ContactForm.tsx
+@@ -189,6 +189,11 @@
+         onPointerDownCapture={requestToken}
+         className={formStackClasses}
+       >
++        {/* A browser without JavaScript cannot send the form: the anti-spam token is asked for by the script. */}
++        <noscript>
++          <p className="text-[14px] leading-[1.4] text-error">{FORM_MESSAGES.noScript}</p>
++        </noscript>
++
+         {/* 1. Nume + Telefon */}
+         <div className="flex flex-wrap gap-[18px]">
+           <Field className="flex-[1_1_200px]">

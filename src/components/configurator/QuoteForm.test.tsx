@@ -181,6 +181,113 @@ describe("QuoteForm", () => {
     expect(issueFormToken).toHaveBeenCalledTimes(3);
   });
 
+  it("asks for a new form token once the one it holds is too old for the server, and posts the new one", async () => {
+    // She configured the bed on Monday evening and comes back to the form on Tuesday evening. The
+    // server refuses a token older than 24 hours (form-token.ts), so the token of Monday can no longer pass.
+    issueFormToken.mockResolvedValueOnce("token-of-monday").mockResolvedValueOnce("token-of-tuesday");
+    vi.setSystemTime(new Date("2026-11-23T20:00:00+02:00"));
+    try {
+      const { container } = render(<QuoteForm config={DEFAULT_CONFIG} code={CODE} responseTime="24 de ore" />);
+      const startedAt = container.querySelector(`input[name="${FORM_FIELDS.startedAt}"]`);
+      fireEvent.focus(screen.getByLabelText("Nume"));
+      await waitFor(() => expect(startedAt).toHaveValue("token-of-monday"));
+
+      // Tuesday afternoon, 21 hours later, the server still accepts the token: nothing asks again
+      // (a new token would start the three seconds of the minimum time once more).
+      vi.setSystemTime(new Date("2026-11-24T17:00:00+02:00"));
+      fireEvent.focus(screen.getByLabelText("Telefon"));
+      fireEvent.pointerDown(screen.getByLabelText("Email"));
+      expect(issueFormToken).toHaveBeenCalledTimes(1);
+
+      // Tuesday, 25 hours after the first touch: the first focus asks for a new token.
+      vi.setSystemTime(new Date("2026-11-24T21:00:00+02:00"));
+      fireEvent.focus(screen.getByLabelText("Telefon"));
+      expect(issueFormToken).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(startedAt).toHaveValue("token-of-tuesday"));
+
+      // The submit carries the new token, and nothing asks a third time.
+      fillValid();
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Trimite configurația" }));
+      fireEvent.click(screen.getByRole("button", { name: "Trimite configurația" }));
+      await waitFor(() => expect(submitQuote).toHaveBeenCalledTimes(1));
+      expect(submitQuote.mock.calls[0][1].get(FORM_FIELDS.startedAt)).toBe("token-of-tuesday");
+      expect(issueFormToken).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("asks for a new form token at the submit of a form untouched since yesterday, so that trying again passes", async () => {
+    // The field kept the focus overnight: she presses Enter with no new focus or pointer-down. The
+    // server refuses the token of Monday with „… prea repede. Încearcă din nou.”; trying again must work.
+    issueFormToken.mockResolvedValueOnce("token-of-monday").mockResolvedValueOnce("token-of-tuesday");
+    submitQuote
+      .mockResolvedValueOnce({ status: "error", message: FORM_MESSAGES.tooFast })
+      .mockResolvedValueOnce({ status: "ok", leadId: "lead-1", code: CODE });
+    vi.setSystemTime(new Date("2026-11-23T20:00:00+02:00"));
+    try {
+      const { container } = render(<QuoteForm config={DEFAULT_CONFIG} code={CODE} responseTime="24 de ore" />);
+      const startedAt = container.querySelector(`input[name="${FORM_FIELDS.startedAt}"]`);
+      fireEvent.focus(screen.getByLabelText("Nume"));
+      await waitFor(() => expect(startedAt).toHaveValue("token-of-monday"));
+      fillValid();
+
+      vi.setSystemTime(new Date("2026-11-24T21:00:00+02:00"));
+      const submit = screen.getByRole("button", { name: "Trimite configurația" });
+      fireEvent.click(submit);
+      expect(await screen.findByRole("alert")).toHaveTextContent(FORM_MESSAGES.tooFast);
+      expect(submitQuote.mock.calls[0][1].get(FORM_FIELDS.startedAt)).toBe("token-of-monday");
+
+      // That submit asked for a new token; what she typed is still there.
+      expect(issueFormToken).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(startedAt).toHaveValue("token-of-tuesday"));
+      expect(screen.getByLabelText("Nume")).toHaveValue("Ana Pop");
+
+      fireEvent.click(submit);
+      expect(await screen.findByText(`Configurație trimisă · ${CODE}`)).toBeInTheDocument();
+      expect(submitQuote.mock.calls[1][1].get(FORM_FIELDS.startedAt)).toBe("token-of-tuesday");
+      expect(issueFormToken).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the token it holds when the call for a new one brings no answer, and asks again at the next touch", async () => {
+    // Monday's token is 23 and a half hours old: old enough for the form to ask for a new one,
+    // young enough for the server, which takes it for another half hour.
+    issueFormToken
+      .mockResolvedValueOnce("token-of-monday")
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce("token-of-tuesday");
+    vi.setSystemTime(new Date("2026-11-23T20:00:00+02:00"));
+    try {
+      const { container } = render(<QuoteForm config={DEFAULT_CONFIG} code={CODE} responseTime="24 de ore" />);
+      const startedAt = container.querySelector(`input[name="${FORM_FIELDS.startedAt}"]`);
+      fireEvent.focus(screen.getByLabelText("Nume"));
+      await waitFor(() => expect(startedAt).toHaveValue("token-of-monday"));
+      fillValid();
+
+      // Her laptop wakes up on Tuesday at 19:30 with the connection still away.
+      vi.setSystemTime(new Date("2026-11-24T19:30:00+02:00"));
+      fireEvent.focus(screen.getByLabelText("Telefon"));
+      expect(issueFormToken).toHaveBeenCalledTimes(2);
+      await act(async () => {}); // the rejection arrives
+      // A failed renewal must not cost her the token that still works.
+      expect(startedAt).toHaveValue("token-of-monday");
+
+      // The next touch asks again; the submit that follows it at once still carries Monday's token,
+      // which the server takes (the new one would be refused as too fresh).
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Trimite configurația" }));
+      expect(issueFormToken).toHaveBeenCalledTimes(3);
+      fireEvent.click(screen.getByRole("button", { name: "Trimite configurația" }));
+      await waitFor(() => expect(submitQuote).toHaveBeenCalledTimes(1));
+      expect(submitQuote.mock.calls[0][1].get(FORM_FIELDS.startedAt)).toBe("token-of-monday");
+      expect(issueFormToken).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("on an empty submit shows the field errors, focuses the name and does not call the action", () => {
     render(<QuoteForm config={DEFAULT_CONFIG} code={CODE} responseTime="24 de ore" />);
     fireEvent.click(screen.getByRole("button", { name: "Trimite configurația" }));
